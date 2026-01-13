@@ -1416,6 +1416,1343 @@
         .search-box {
             animation-delay: 0.2s;
         }
+
+        /* ============================================
+           NEW SECTIONS STYLES
+           ============================================ */
+
+        /* Profile Search Section */
+        .search-section {
+            padding: 2rem;
+            background: var(--cream);
+            min-height: 100vh;
+        }
+
+        .search-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2rem;
+        }
+
+        /* Filters Sidebar */
+        .filters-sidebar {
+            background: var(--white);
+            border-radius: 15px;
+            padding: 1.5rem;
+            height: fit-content;
+            position: sticky;
+            top: 100px;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+
+        .filters-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--cream-dark);
+        }
+
+        .filters-header h3 {
+            font-size: 1.2rem;
+            color: var(--text-dark);
+        }
+
+        .clear-filters-btn {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .filter-group {
+            margin-bottom: 1rem;
+        }
+
+        .filter-group > label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: var(--text-dark);
+            font-size: 0.9rem;
+        }
+
+        .filter-select {
+            width: 100%;
+            padding: 0.6rem;
+            border: 1px solid var(--cream-dark);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            background: var(--white);
+        }
+
+        .gender-toggle {
+            display: flex;
+            background: var(--cream);
+            border-radius: 25px;
+            padding: 0.25rem;
+        }
+
+        .gender-btn {
+            flex: 1;
+            padding: 0.5rem;
+            border: none;
+            background: transparent;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .gender-btn.active {
+            background: var(--primary);
+            color: var(--white);
+        }
+
+        .filter-group.collapsible .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--cream-dark);
+        }
+
+        .filter-group.collapsible .filter-header span:first-child {
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .filter-arrow {
+            font-size: 0.7rem;
+            transition: transform 0.3s;
+            color: var(--text-light);
+        }
+
+        .filter-group.collapsible.open .filter-arrow {
+            transform: rotate(180deg);
+        }
+
+        .filter-content {
+            padding: 0.75rem 0;
+            display: none;
+        }
+
+        .filter-group.collapsible.open .filter-content {
+            display: block;
+        }
+
+        .range-inputs {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .range-inputs input,
+        .range-inputs select {
+            flex: 1;
+            padding: 0.5rem;
+            border: 1px solid var(--cream-dark);
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .range-inputs span {
+            color: var(--text-light);
+            font-size: 0.85rem;
+        }
+
+        .checkbox-filters {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .checkbox-filters label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .checkbox-filters input[type="checkbox"] {
+            accent-color: var(--primary);
+        }
+
+        .save-search-box {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: var(--cream);
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .save-search-box p {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-bottom: 0.75rem;
+        }
+
+        .save-search-box .btn {
+            padding: 0.5rem 1.5rem;
+        }
+
+        /* Search Results */
+        .search-results {
+            background: var(--white);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--cream-dark);
+        }
+
+        .results-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .results-toggle span {
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--cream-dark);
+            border-radius: 24px;
+            transition: 0.3s;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: var(--white);
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--primary);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        .results-count {
+            font-size: 0.9rem;
+            color: var(--text-light);
+        }
+
+        /* Search Profile Cards */
+        .search-profile-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 1.5rem;
+            padding: 1.5rem;
+            border: 1px solid var(--cream-dark);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .search-profile-card:hover {
+            box-shadow: 0 5px 20px var(--shadow);
+            border-color: var(--primary-light);
+        }
+
+        .search-profile-card.boosted {
+            border-color: var(--gold);
+            background: linear-gradient(135deg, rgba(212, 168, 83, 0.05) 0%, transparent 100%);
+        }
+
+        .boost-badge {
+            position: absolute;
+            top: 0;
+            left: 1.5rem;
+            background: var(--gold);
+            color: var(--text-dark);
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 0 0 8px 8px;
+        }
+
+        .profile-avatar {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .profile-avatar img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--cream-dark);
+        }
+
+        .online-status {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            width: 14px;
+            height: 14px;
+            background: #22c55e;
+            border: 2px solid var(--white);
+            border-radius: 50%;
+        }
+
+        .profile-main-info {
+            flex: 1;
+        }
+
+        .profile-name-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .profile-name-row h4 {
+            font-size: 1.1rem;
+            color: var(--text-dark);
+        }
+
+        .verified-badge {
+            background: var(--primary);
+            color: var(--white);
+            font-size: 0.7rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 50%;
+        }
+
+        .country-flag {
+            font-size: 1.2rem;
+            margin-left: auto;
+        }
+
+        .profile-location {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-bottom: 0.75rem;
+        }
+
+        .profile-quick-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .profile-quick-info span {
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .profile-quick-info i {
+            font-style: normal;
+        }
+
+        .published-date {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            margin-top: 0.5rem;
+        }
+
+        .more-details-btn {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            align-self: center;
+            white-space: nowrap;
+        }
+
+        .more-details-btn:hover {
+            text-decoration: underline;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 2rem;
+        }
+
+        .page-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--cream-dark);
+            background: var(--white);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .page-btn:hover:not(:disabled) {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .page-btn.active {
+            background: var(--primary);
+            color: var(--white);
+            border-color: var(--primary);
+        }
+
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .page-dots {
+            color: var(--text-light);
+        }
+
+        /* Top Live Profiles Section */
+        .top-profiles-section {
+            padding: 4rem 2rem;
+            background: var(--white);
+        }
+
+        .top-profiles-slider {
+            display: flex;
+            gap: 1.5rem;
+            overflow-x: auto;
+            padding: 1rem 0;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .top-profiles-slider::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .top-profiles-slider::-webkit-scrollbar-track {
+            background: var(--cream);
+            border-radius: 4px;
+        }
+
+        .top-profiles-slider::-webkit-scrollbar-thumb {
+            background: var(--primary-light);
+            border-radius: 4px;
+        }
+
+        .top-profile-card {
+            flex-shrink: 0;
+            width: 260px;
+            border: 2px solid var(--cream-dark);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .top-profile-card:hover {
+            border-color: var(--gold);
+            box-shadow: 0 10px 30px var(--shadow);
+            transform: translateY(-5px);
+        }
+
+        .top-profile-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+
+        .top-profile-info {
+            padding: 1rem;
+        }
+
+        .top-profile-info h4 {
+            font-size: 1.1rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .top-profile-info .location {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            margin-bottom: 0.75rem;
+        }
+
+        .quick-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            margin-bottom: 0.75rem;
+        }
+
+        .profile-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .profile-tags span {
+            background: var(--cream);
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            color: var(--text-light);
+        }
+
+        /* Categories Section */
+        .categories-section {
+            max-width: 1400px;
+            margin: 3rem auto 0;
+        }
+
+        .categories-section h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .categories-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .category-card {
+            background: var(--cream);
+            border: 2px solid transparent;
+            border-radius: 15px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .category-card:hover {
+            border-color: var(--gold);
+            background: var(--white);
+            box-shadow: 0 5px 20px var(--shadow);
+        }
+
+        .category-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .category-card span {
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+
+        /* Testimonials Section */
+        .testimonials-section {
+            padding: 4rem 2rem;
+            background: var(--cream);
+        }
+
+        .testimonials-grid {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+        }
+
+        .testimonial-card {
+            background: var(--white);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px var(--shadow);
+        }
+
+        .testimonial-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .testimonial-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .google-icon {
+            font-family: serif;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #4285f4;
+        }
+
+        .web-icon {
+            color: var(--text-light);
+        }
+
+        .star-rating {
+            color: #fbbf24;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+        }
+
+        .testimonial-text {
+            font-size: 0.95rem;
+            color: var(--text-dark);
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+
+        .testimonial-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .testimonial-date {
+            font-size: 0.85rem;
+            color: var(--text-light);
+        }
+
+        .read-more-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .read-more-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Blog Section */
+        .blog-section {
+            padding: 4rem 2rem;
+            background: var(--cream);
+        }
+
+        .blog-grid {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 2rem;
+        }
+
+        .blog-card {
+            background: var(--white);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px var(--shadow);
+            transition: all 0.3s;
+        }
+
+        .blog-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px var(--shadow);
+        }
+
+        .blog-image img {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+        }
+
+        .blog-content {
+            padding: 1.25rem;
+        }
+
+        .blog-content h4 {
+            font-size: 1rem;
+            line-height: 1.4;
+            margin-bottom: 0.75rem;
+            color: var(--text-dark);
+        }
+
+        .blog-meta {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-light);
+            margin-bottom: 0.75rem;
+        }
+
+        .blog-category {
+            display: inline-block;
+            background: var(--cream);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-light);
+            margin-bottom: 0.75rem;
+        }
+
+        .blog-category.highlight {
+            background: var(--gold);
+            color: var(--text-dark);
+        }
+
+        .blog-category.interview {
+            background: var(--primary-light);
+            color: var(--white);
+        }
+
+        .blog-content p {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+
+        /* FAQ Section */
+        .faq-section {
+            padding: 4rem 2rem;
+            background: var(--cream);
+        }
+
+        .faq-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 4rem;
+            align-items: start;
+        }
+
+        .faq-illustration {
+            display: flex;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .wedding-arch {
+            position: relative;
+            width: 200px;
+            height: 280px;
+        }
+
+        .arch-top {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 180px;
+            height: 200px;
+            border: 8px solid var(--gold);
+            border-bottom: none;
+            border-radius: 90px 90px 0 0;
+        }
+
+        .arch-top::before,
+        .arch-top::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            width: 8px;
+            height: 80px;
+            background: var(--gold);
+        }
+
+        .arch-top::before {
+            left: -8px;
+        }
+
+        .arch-top::after {
+            right: -8px;
+        }
+
+        .couple-silhouette {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+        }
+
+        .bride, .groom {
+            width: 50px;
+            height: 100px;
+            background: var(--text-dark);
+            border-radius: 25px 25px 0 0;
+        }
+
+        .bride::before, .groom::before {
+            content: '';
+            position: absolute;
+            top: -30px;
+            width: 30px;
+            height: 30px;
+            background: var(--text-dark);
+            border-radius: 50%;
+        }
+
+        .bride::before {
+            left: 10px;
+        }
+
+        .groom::before {
+            right: 10px;
+        }
+
+        .faq-content {
+            background: var(--white);
+            border-radius: 15px;
+            padding: 2rem;
+        }
+
+        .faq-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .faq-tab {
+            padding: 0.75rem 1.5rem;
+            border: 2px solid var(--cream-dark);
+            background: var(--white);
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .faq-tab:hover {
+            border-color: var(--primary);
+        }
+
+        .faq-tab.active {
+            background: var(--gold);
+            border-color: var(--gold);
+            color: var(--text-dark);
+        }
+
+        .faq-panel {
+            display: none;
+        }
+
+        .faq-panel.active {
+            display: block;
+        }
+
+        .faq-item {
+            border: 1px solid var(--cream-dark);
+            border-radius: 10px;
+            margin-bottom: 0.75rem;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .faq-question {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            background: var(--cream);
+            font-weight: 500;
+        }
+
+        .faq-question span:first-child {
+            font-size: 0.95rem;
+        }
+
+        .faq-arrow {
+            transition: transform 0.3s;
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        .faq-item.open .faq-arrow {
+            transform: rotate(180deg);
+        }
+
+        .faq-answer {
+            padding: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: all 0.3s;
+        }
+
+        .faq-item.open .faq-answer {
+            padding: 1rem 1.25rem;
+            max-height: 200px;
+        }
+
+        .faq-answer p {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            line-height: 1.6;
+        }
+
+        /* Profile Detail Modal Styles */
+        .profile-detail-content {
+            padding: 2rem;
+        }
+
+        .profile-detail-header {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--cream-dark);
+        }
+
+        .profile-detail-photo {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .profile-detail-photo img {
+            width: 200px;
+            height: 250px;
+            object-fit: cover;
+            border-radius: 15px;
+        }
+
+        .verified-badge-large {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: var(--white);
+            padding: 0.35rem 0.75rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .profile-detail-summary {
+            flex: 1;
+        }
+
+        .profile-detail-summary h2 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .profile-tagline {
+            color: var(--text-light);
+            font-style: italic;
+            margin-bottom: 1rem;
+        }
+
+        .profile-key-info {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .profile-key-info span {
+            color: var(--text-dark);
+            font-size: 0.95rem;
+        }
+
+        .profile-actions-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .profile-actions-row .btn {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .match-score {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .profile-detail-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 2px solid var(--cream-dark);
+            padding-bottom: 0;
+        }
+
+        .profile-tab {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--text-light);
+            position: relative;
+            transition: color 0.3s;
+        }
+
+        .profile-tab:hover {
+            color: var(--primary);
+        }
+
+        .profile-tab.active {
+            color: var(--primary);
+        }
+
+        .profile-tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+        }
+
+        .profile-tab-content {
+            display: none;
+        }
+
+        .profile-tab-content.active {
+            display: block;
+        }
+
+        .profile-section {
+            margin-bottom: 2rem;
+        }
+
+        .profile-section h3 {
+            font-size: 1.1rem;
+            color: var(--primary);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--cream-dark);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .info-item label {
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        .info-item span {
+            font-size: 0.95rem;
+            color: var(--text-dark);
+        }
+
+        .about-text {
+            font-size: 0.95rem;
+            color: var(--text-dark);
+            line-height: 1.7;
+        }
+
+        /* Habits Grid */
+        .habits-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .habit-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--cream);
+            border-radius: 10px;
+        }
+
+        .habit-icon {
+            font-size: 1.5rem;
+        }
+
+        .habit-info label {
+            font-size: 0.8rem;
+            color: var(--text-light);
+            display: block;
+        }
+
+        .habit-info span {
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+
+        /* Tags Container (Likes/Dislikes) */
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .tags-container .tag {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .tags-container.likes .tag {
+            background: rgba(34, 197, 94, 0.1);
+            color: #16a34a;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .tags-container.dislikes .tag {
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        /* Hobbies Grid */
+        .hobbies-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 1rem;
+        }
+
+        .hobby-card {
+            text-align: center;
+            padding: 1rem;
+            background: var(--cream);
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+
+        .hobby-card:hover {
+            background: var(--primary);
+            color: var(--white);
+        }
+
+        .hobby-card span {
+            font-size: 1.5rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .hobby-card p {
+            font-size: 0.85rem;
+            margin: 0;
+        }
+
+        /* Traits Container */
+        .traits-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .trait-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .trait-label {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            min-width: 80px;
+        }
+
+        .trait-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--cream-dark);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .trait-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--gold) 100%);
+            border-radius: 4px;
+        }
+
+        /* Contact Section (Blurred) */
+        .contact-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: var(--cream);
+            border-radius: 12px;
+            position: relative;
+        }
+
+        .blurred-section .contact-info-hidden {
+            filter: blur(5px);
+            pointer-events: none;
+        }
+
+        .contact-blur-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            z-index: 1;
+        }
+
+        .contact-blur-overlay span {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .contact-blur-overlay h4 {
+            margin-bottom: 0.5rem;
+        }
+
+        .contact-blur-overlay p {
+            color: var(--text-light);
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .contact-info-hidden {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .contact-item > span {
+            font-size: 1.5rem;
+        }
+
+        /* Responsive for new sections */
+        @media (max-width: 1024px) {
+            .search-container {
+                grid-template-columns: 1fr;
+            }
+
+            .filters-sidebar {
+                position: static;
+                order: -1;
+            }
+
+            .blog-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .testimonials-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .faq-container {
+                grid-template-columns: 1fr;
+            }
+
+            .faq-illustration {
+                display: none;
+            }
+
+            .profile-detail-header {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+
+            .profile-key-info {
+                justify-content: center;
+            }
+
+            .profile-actions-row {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hobbies-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .search-profile-card {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .profile-name-row {
+                justify-content: center;
+            }
+
+            .profile-quick-info {
+                justify-content: center;
+            }
+
+            .country-flag {
+                margin-left: 0;
+            }
+
+            .blog-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .faq-tabs {
+                flex-wrap: wrap;
+            }
+
+            .habits-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hobbies-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .profile-detail-tabs {
+                overflow-x: auto;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1800,6 +3137,782 @@
         </div>
     </section>
 
+    <!-- Profile Search Section -->
+    <section class="search-section" id="search">
+        <div class="search-container">
+            <!-- Filters Sidebar -->
+            <aside class="filters-sidebar">
+                <div class="filters-header">
+                    <h3>Filters</h3>
+                    <button class="clear-filters-btn">Clear Filters</button>
+                </div>
+
+                <div class="filter-group">
+                    <label>Sort By</label>
+                    <select class="filter-select">
+                        <option>Latest First</option>
+                        <option>Oldest First</option>
+                        <option>Age: Low to High</option>
+                        <option>Age: High to Low</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>I'm looking for</label>
+                    <div class="gender-toggle">
+                        <button class="gender-btn active">Bride</button>
+                        <button class="gender-btn">Groom</button>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Age</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="range-inputs">
+                            <input type="number" placeholder="Min" value="18" min="18" max="70">
+                            <span>to</span>
+                            <input type="number" placeholder="Max" value="35" min="18" max="70">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Country of Residence</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <select class="filter-select">
+                            <option>Any</option>
+                            <option>Sri Lanka</option>
+                            <option>United Kingdom</option>
+                            <option>United States</option>
+                            <option>Australia</option>
+                            <option>Canada</option>
+                            <option>Japan</option>
+                            <option>Italy</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Region / District</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <select class="filter-select">
+                            <option>Any</option>
+                            <option>Colombo</option>
+                            <option>Gampaha</option>
+                            <option>Kandy</option>
+                            <option>Kalutara</option>
+                            <option>Galle</option>
+                            <option>Matara</option>
+                            <option>Kurunegala</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Ethnicity</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Sinhalese</label>
+                            <label><input type="checkbox"> Tamil</label>
+                            <label><input type="checkbox"> Muslim</label>
+                            <label><input type="checkbox"> Burgher</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Religion</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Buddhist</label>
+                            <label><input type="checkbox"> Hindu</label>
+                            <label><input type="checkbox"> Christian</label>
+                            <label><input type="checkbox"> Catholic</label>
+                            <label><input type="checkbox"> Muslim</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Civil Status</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Never Married</label>
+                            <label><input type="checkbox"> Divorced</label>
+                            <label><input type="checkbox"> Widowed</label>
+                            <label><input type="checkbox"> Separated</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Profession</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Software Engineer</label>
+                            <label><input type="checkbox"> Doctor</label>
+                            <label><input type="checkbox"> Teacher</label>
+                            <label><input type="checkbox"> Engineer</label>
+                            <label><input type="checkbox"> Business Owner</label>
+                            <label><input type="checkbox"> Accountant</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Education Level</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> PhD</label>
+                            <label><input type="checkbox"> Masters</label>
+                            <label><input type="checkbox"> Bachelors</label>
+                            <label><input type="checkbox"> Diploma</label>
+                            <label><input type="checkbox"> A/L</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Height</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="range-inputs">
+                            <select class="filter-select">
+                                <option>4' 6"</option>
+                                <option>5' 0"</option>
+                                <option selected>5' 4"</option>
+                                <option>5' 8"</option>
+                            </select>
+                            <span>to</span>
+                            <select class="filter-select">
+                                <option>5' 8"</option>
+                                <option selected>6' 0"</option>
+                                <option>6' 4"</option>
+                                <option>6' 8"</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Food Preference</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Vegetarian</label>
+                            <label><input type="checkbox"> Non-Vegetarian</label>
+                            <label><input type="checkbox"> Vegan</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Drinking</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Non-Drinker</label>
+                            <label><input type="checkbox"> Social Drinker</label>
+                            <label><input type="checkbox"> Regular</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Smoking</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Non-Smoker</label>
+                            <label><input type="checkbox"> Occasional</label>
+                            <label><input type="checkbox"> Regular</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>Account Created by</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Self</label>
+                            <label><input type="checkbox"> Parents</label>
+                            <label><input type="checkbox"> Sibling</label>
+                            <label><input type="checkbox"> Matchmaker</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-group collapsible">
+                    <div class="filter-header" onclick="toggleFilter(this)">
+                        <span>ID Verified</span>
+                        <span class="filter-arrow">▼</span>
+                    </div>
+                    <div class="filter-content">
+                        <div class="checkbox-filters">
+                            <label><input type="checkbox"> Verified Only</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="save-search-box">
+                    <p>Save this search as your preferred search criteria?</p>
+                    <button class="btn btn-primary">Save</button>
+                </div>
+            </aside>
+
+            <!-- Search Results -->
+            <div class="search-results">
+                <div class="results-header">
+                    <div class="results-toggle">
+                        <span>Preferred Search</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <p class="results-count">Showing 1 - 20 of 529 posts</p>
+                </div>
+
+                <div class="results-list">
+                    <!-- Profile Card 1 - Boosted -->
+                    <div class="search-profile-card boosted">
+                        <span class="boost-badge">Boost Ad</span>
+                        <div class="profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100" alt="Profile">
+                            <span class="online-status"></span>
+                        </div>
+                        <div class="profile-main-info">
+                            <div class="profile-name-row">
+                                <h4>Shahan Madhumal M <span class="verified-badge">✓</span></h4>
+                                <span class="country-flag">🇯🇵</span>
+                            </div>
+                            <p class="profile-location">Kamagaya-shi, Japan</p>
+                            <div class="profile-quick-info">
+                                <span><i>👤</i> 31 years</span>
+                                <span><i>📏</i> 5' 4"</span>
+                                <span><i>🏛️</i> Sinhalese</span>
+                                <span><i>🙏</i> Buddhist</span>
+                                <span><i>💼</i> Business Owner</span>
+                            </div>
+                            <p class="published-date">Published 6 days ago</p>
+                        </div>
+                        <a href="#" class="more-details-btn" onclick="openModal('profileDetailModal')">More Details ></a>
+                    </div>
+
+                    <!-- Profile Card 2 - Boosted -->
+                    <div class="search-profile-card boosted">
+                        <span class="boost-badge">Boost Ad</span>
+                        <div class="profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100" alt="Profile">
+                        </div>
+                        <div class="profile-main-info">
+                            <div class="profile-name-row">
+                                <h4>Supun P <span class="verified-badge">✓</span></h4>
+                                <span class="country-flag">🇬🇧</span>
+                            </div>
+                            <p class="profile-location">Manchester, United Kingdom</p>
+                            <div class="profile-quick-info">
+                                <span><i>👤</i> 34 years</span>
+                                <span><i>📏</i> 5' 6"</span>
+                                <span><i>🏛️</i> Sinhalese</span>
+                                <span><i>🙏</i> Buddhist</span>
+                                <span><i>💼</i> Software Engineer</span>
+                            </div>
+                            <p class="published-date">Published 15 days ago</p>
+                        </div>
+                        <a href="#" class="more-details-btn" onclick="openModal('profileDetailModal')">More Details ></a>
+                    </div>
+
+                    <!-- Profile Card 3 -->
+                    <div class="search-profile-card">
+                        <div class="profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" alt="Profile">
+                        </div>
+                        <div class="profile-main-info">
+                            <div class="profile-name-row">
+                                <h4>Y Antony <span class="verified-badge">✓</span></h4>
+                                <span class="country-flag">🇮🇹</span>
+                            </div>
+                            <p class="profile-location">Lecco, Italy</p>
+                            <div class="profile-quick-info">
+                                <span><i>👤</i> 34 years</span>
+                                <span><i>📏</i> 5' 4"</span>
+                                <span><i>🏛️</i> Sinhalese</span>
+                                <span><i>🙏</i> Catholic</span>
+                                <span><i>💼</i> Engineer</span>
+                            </div>
+                            <p class="published-date">Published 4 hours ago</p>
+                        </div>
+                        <a href="#" class="more-details-btn" onclick="openModal('profileDetailModal')">More Details ></a>
+                    </div>
+
+                    <!-- Profile Card 4 -->
+                    <div class="search-profile-card">
+                        <div class="profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100" alt="Profile">
+                        </div>
+                        <div class="profile-main-info">
+                            <div class="profile-name-row">
+                                <h4>C Wijesinghe</h4>
+                                <span class="country-flag">🇦🇺</span>
+                            </div>
+                            <p class="profile-location">Sydney, Australia</p>
+                            <div class="profile-quick-info">
+                                <span><i>👤</i> 39 years</span>
+                                <span><i>📏</i> 5' 7"</span>
+                                <span><i>🏛️</i> Sinhalese</span>
+                                <span><i>🙏</i> Catholic</span>
+                                <span><i>💼</i> IT Professional</span>
+                            </div>
+                            <p class="published-date">Published 4 hours ago</p>
+                        </div>
+                        <a href="#" class="more-details-btn" onclick="openModal('profileDetailModal')">More Details ></a>
+                    </div>
+
+                    <!-- Profile Card 5 -->
+                    <div class="search-profile-card">
+                        <div class="profile-avatar">
+                            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" alt="Profile">
+                        </div>
+                        <div class="profile-main-info">
+                            <div class="profile-name-row">
+                                <h4>Nethmi Fernando <span class="verified-badge">✓</span></h4>
+                                <span class="country-flag">🇱🇰</span>
+                            </div>
+                            <p class="profile-location">Colombo, Sri Lanka</p>
+                            <div class="profile-quick-info">
+                                <span><i>👤</i> 26 years</span>
+                                <span><i>📏</i> 5' 3"</span>
+                                <span><i>🏛️</i> Sinhalese</span>
+                                <span><i>🙏</i> Buddhist</span>
+                                <span><i>💼</i> Software Engineer</span>
+                            </div>
+                            <p class="published-date">Published 1 day ago</p>
+                        </div>
+                        <a href="#" class="more-details-btn" onclick="openModal('profileDetailModal')">More Details ></a>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination">
+                    <button class="page-btn prev" disabled>&lt; Prev</button>
+                    <button class="page-btn active">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">3</button>
+                    <span class="page-dots">...</span>
+                    <button class="page-btn">27</button>
+                    <button class="page-btn next">Next &gt;</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Top Live Profiles Section -->
+    <section class="top-profiles-section">
+        <div class="section-header">
+            <h2>Top Live Profiles</h2>
+            <p>Browse our featured and most active profiles</p>
+        </div>
+        <div class="top-profiles-slider">
+            <div class="top-profile-card">
+                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200" alt="Profile">
+                <div class="top-profile-info">
+                    <h4>Sandun L</h4>
+                    <p class="location">Discovery Garden, United Arab Emirates</p>
+                    <div class="quick-stats">
+                        <span>33 Years</span>
+                        <span>162.56cm</span>
+                    </div>
+                    <div class="profile-tags">
+                        <span>IT Professional</span>
+                        <span>Buddhist</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-profile-card">
+                <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200" alt="Profile">
+                <div class="top-profile-info">
+                    <h4>Shahan madhumal m</h4>
+                    <p class="location">Kamagaya-Shi, Japan</p>
+                    <div class="quick-stats">
+                        <span>31 Years</span>
+                        <span>162.56cm</span>
+                    </div>
+                    <div class="profile-tags">
+                        <span>Business Owner</span>
+                        <span>Buddhist</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-profile-card">
+                <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200" alt="Profile">
+                <div class="top-profile-info">
+                    <h4>Roshan Indika</h4>
+                    <p class="location">Delgoda, Sri Lanka</p>
+                    <div class="quick-stats">
+                        <span>30 Years</span>
+                        <span>172.72cm</span>
+                    </div>
+                    <div class="profile-tags">
+                        <span>Engineer</span>
+                        <span>Buddhist</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-profile-card">
+                <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200" alt="Profile">
+                <div class="top-profile-info">
+                    <h4>Sameera</h4>
+                    <p class="location">Nittambuwa, Sri Lanka</p>
+                    <div class="quick-stats">
+                        <span>36 Years</span>
+                        <span>182.88cm</span>
+                    </div>
+                    <div class="profile-tags">
+                        <span>Engineer</span>
+                        <span>Buddhist</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-profile-card">
+                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200" alt="Profile">
+                <div class="top-profile-info">
+                    <h4>Chanaka M</h4>
+                    <p class="location">Veyangoda, Sri Lanka</p>
+                    <div class="quick-stats">
+                        <span>37 Years</span>
+                        <span>175cm</span>
+                    </div>
+                    <div class="profile-tags">
+                        <span>Manager</span>
+                        <span>Buddhist</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Categories Section -->
+        <div class="categories-section">
+            <h3>Top Categories</h3>
+            <div class="categories-grid">
+                <div class="category-card">
+                    <div class="category-icon">👨</div>
+                    <span>Grooms</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">👰</div>
+                    <span>Brides in Sri Lanka</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">🎓</div>
+                    <span>Diploma holders</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">💻</div>
+                    <span>Male IT Professionals</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">👩‍🏫</div>
+                    <span>Female Teachers</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">👨‍👩‍👧</div>
+                    <span>Parents created Ads</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">✓</div>
+                    <span>ID verified Ads</span>
+                </div>
+                <div class="category-card">
+                    <div class="category-icon">🎓</div>
+                    <span>Bachelor Degree holders</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section class="testimonials-section">
+        <div class="section-header">
+            <h2>Trusted by thousands of Happy Customers</h2>
+        </div>
+        <div class="testimonials-grid">
+            <div class="testimonial-card">
+                <div class="testimonial-header">
+                    <span class="testimonial-name">Malki K</span>
+                    <span class="google-icon">G</span>
+                </div>
+                <div class="star-rating">★★★★★</div>
+                <p class="testimonial-text">I had a great experience with Poruwa.lk! The platform is easy to navigate, and I really appreciate the emphasis on privacy and security. The matchmaking process is efficient, and the customer support team is very responsive. Highly recommended for anyone looking for a genuine and reliable matrimonial service in Sri Lanka!</p>
+                <div class="testimonial-footer">
+                    <span class="testimonial-date">4/1/2025</span>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+            <div class="testimonial-card">
+                <div class="testimonial-header">
+                    <span class="testimonial-name">Sugath S</span>
+                    <span class="google-icon">G</span>
+                </div>
+                <div class="star-rating">★★★★★</div>
+                <p class="testimonial-text">Thank you very much for your trusted and valuable service.</p>
+                <div class="testimonial-footer">
+                    <span class="testimonial-date">6/4/2025</span>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+            <div class="testimonial-card">
+                <div class="testimonial-header">
+                    <span class="testimonial-name">Thanusha P</span>
+                    <span class="google-icon web-icon">🌐</span>
+                </div>
+                <div class="star-rating">★★★★★</div>
+                <p class="testimonial-text">Actually a good matrimonial service. Highly recommended.</p>
+                <div class="testimonial-footer">
+                    <span class="testimonial-date">3/5/2025</span>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Blog Articles Section -->
+    <section class="blog-section">
+        <div class="section-header">
+            <h2>Explore Our Latest Blog Articles</h2>
+        </div>
+        <div class="blog-grid">
+            <div class="blog-card">
+                <div class="blog-image">
+                    <img src="https://images.unsplash.com/photo-1519741497674-611481863552?w=400" alt="Blog">
+                </div>
+                <div class="blog-content">
+                    <h4>Why gaining family trust matters in love marriage in Sri Lanka?</h4>
+                    <div class="blog-meta">
+                        <span class="author">Praboda Sandeepani</span>
+                        <span class="date">2025/12/19</span>
+                    </div>
+                    <span class="blog-category">RELATIONSHIP ADVICES</span>
+                    <p>Winning your family's trust can make all the difference in a love marriage. Taking the time to listen to their concerns, sharing your feelings honestly, and showing responsibility helps everyone feel secure...</p>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+            <div class="blog-card">
+                <div class="blog-image">
+                    <img src="https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=400" alt="Blog">
+                </div>
+                <div class="blog-content">
+                    <h4>Love Marriage vs. Arranged Marriage: Which is better in Sri Lanka?</h4>
+                    <div class="blog-meta">
+                        <span class="author">Praboda Sandeepani</span>
+                        <span class="date">2025/12/18</span>
+                    </div>
+                    <span class="blog-category">RELATIONSHIP ADVICES</span>
+                    <p>Choosing between a love marriage and an arranged marriage is personal and every story is different. What matters most is finding someone you connect with, someone who respects you...</p>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+            <div class="blog-card">
+                <div class="blog-image">
+                    <img src="https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400" alt="Blog">
+                </div>
+                <div class="blog-content">
+                    <h4>Poruwa.lk subscription plans (2025): Choose the perfect plan for your matchmaking journey</h4>
+                    <div class="blog-meta">
+                        <span class="author">Praboda Sandeepani</span>
+                        <span class="date">2025/12/05</span>
+                    </div>
+                    <span class="blog-category highlight">PORUWA.LK - FEATURES AND BENEFITS</span>
+                    <p>Find your perfect partner with Poruwa.lk subscription plans. Whether you're testing the waters or fully committed to your search, each plan helps you connect with genuine matches...</p>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+            <div class="blog-card">
+                <div class="blog-image">
+                    <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400" alt="Blog">
+                </div>
+                <div class="blog-content">
+                    <h4>An interview with Hashini Peiris – The owner of Talia Beauty Salon</h4>
+                    <div class="blog-meta">
+                        <span class="author">Praboda Sandeepani</span>
+                        <span class="date">2025/12/04</span>
+                    </div>
+                    <span class="blog-category interview">INTERVIEWS</span>
+                    <p>Step into the inspiring journey of Hashini Peiris, the creator behind Talia Beauty Salon. In this interview, she shares how her childhood love for beauty transformed into a thriving bridal artistry career...</p>
+                    <a href="#" class="read-more-link">Read More →</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="faq-section">
+        <div class="section-header">
+            <h2>Quick Answers for Curious Minds</h2>
+        </div>
+        <div class="faq-container">
+            <div class="faq-illustration">
+                <div class="wedding-arch">
+                    <div class="arch-top"></div>
+                    <div class="couple-silhouette">
+                        <div class="bride"></div>
+                        <div class="groom"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="faq-content">
+                <div class="faq-tabs">
+                    <button class="faq-tab active" onclick="switchFaqTab('advertisement')">Advertisement</button>
+                    <button class="faq-tab" onclick="switchFaqTab('features')">Features</button>
+                    <button class="faq-tab" onclick="switchFaqTab('assistance')">Assistance</button>
+                </div>
+
+                <div id="advertisementFaq" class="faq-panel active">
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>How do you create an Ad on Poruwa.lk?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Creating an ad is simple! Register for a free account, fill in your profile details including personal information, education, profession, and partner preferences. Upload photos and submit for verification. Your ad will be live once approved.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>Who can post an Ad?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Anyone seeking a life partner can post an ad. You can register yourself, or family members (parents, siblings) can create profiles on your behalf. Professional matchmakers can also create and manage multiple profiles.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>What's the Ad cost?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Creating a basic ad is completely FREE! You can upgrade to premium plans starting from LKR 1,200/month to unlock features like viewing contact details, unlimited messaging, and profile boosting.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>Can parents create accounts for their children?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Yes, absolutely! Parents, guardians, or family members can create and manage profiles on behalf of their children. Simply select "Father", "Mother", or "Sibling" when registering.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>Can you remove your Ad?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Yes, you can deactivate or permanently delete your ad at any time from your account settings. You can also temporarily hide your profile if you need a break.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="featuresFaq" class="faq-panel">
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>What features are included in Premium?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Premium includes unlimited profile views, viewing contact details, sending unlimited interests, chat with matches, advanced search filters, see who viewed your profile, and priority customer support.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>How does the matching algorithm work?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Our smart matching system analyzes your preferences including age, religion, profession, location, and lifestyle choices to suggest highly compatible matches with a percentage score.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>Can I verify my profile?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Yes! Upload a valid government ID to get a verified badge on your profile. Verified profiles get more responses and appear higher in search results.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="assistanceFaq" class="faq-panel">
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>How can I contact customer support?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>You can reach us via email at support@vivahaBandhu.lk, call our hotline +94 11 XXX XXXX, or use the live chat feature on our website. Our team is available Monday to Saturday, 9 AM to 6 PM.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>What if I find a fake profile?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Please report suspicious profiles using the "Report" button on their profile. Our team reviews all reports within 24 hours and takes appropriate action to maintain platform integrity.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item" onclick="toggleFaq(this)">
+                        <div class="faq-question">
+                            <span>Can I get a refund?</span>
+                            <span class="faq-arrow">▼</span>
+                        </div>
+                        <div class="faq-answer">
+                            <p>Refunds are available within 7 days of purchase if you haven't used any premium features. Please contact support with your transaction details for processing.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Pricing Section -->
     <section class="pricing-section" id="pricing">
         <div class="section-header">
@@ -2103,6 +4216,422 @@
         </div>
     </div>
 
+    <!-- Profile Detail Modal -->
+    <div class="modal-overlay profile-detail-modal" id="profileDetailModal">
+        <div class="modal" style="max-width: 900px;">
+            <button class="modal-close" onclick="closeModal('profileDetailModal')">✕</button>
+
+            <div class="profile-detail-content">
+                <!-- Profile Header -->
+                <div class="profile-detail-header">
+                    <div class="profile-detail-photo">
+                        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300" alt="Profile">
+                        <span class="verified-badge-large">✓ Verified</span>
+                    </div>
+                    <div class="profile-detail-summary">
+                        <h2>Shahan Madhumal M</h2>
+                        <p class="profile-tagline">Looking for a caring and understanding life partner</p>
+                        <div class="profile-key-info">
+                            <span>31 years</span>
+                            <span>5' 4" (162 cm)</span>
+                            <span>Kamagaya-shi, Japan</span>
+                        </div>
+                        <div class="profile-actions-row">
+                            <button class="btn btn-primary"><span>❤️</span> Express Interest</button>
+                            <button class="btn btn-outline"><span>💬</span> Message</button>
+                            <button class="btn btn-outline"><span>⭐</span> Shortlist</button>
+                        </div>
+                        <p class="match-score">92% Match with your preferences</p>
+                    </div>
+                </div>
+
+                <!-- Profile Tabs -->
+                <div class="profile-detail-tabs">
+                    <button class="profile-tab active" onclick="switchProfileTab('about')">About</button>
+                    <button class="profile-tab" onclick="switchProfileTab('family')">Family</button>
+                    <button class="profile-tab" onclick="switchProfileTab('lifestyle')">Lifestyle</button>
+                    <button class="profile-tab" onclick="switchProfileTab('partner')">Partner Preferences</button>
+                </div>
+
+                <!-- About Tab -->
+                <div id="aboutTab" class="profile-tab-content active">
+                    <div class="profile-section">
+                        <h3>Basic Information</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Full Name</label>
+                                <span>Shahan Madhumal M</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Age</label>
+                                <span>31 years</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Height</label>
+                                <span>5' 4" (162 cm)</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Weight</label>
+                                <span>65 kg</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Body Type</label>
+                                <span>Average</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Complexion</label>
+                                <span>Fair</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Marital Status</label>
+                                <span>Never Married</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Mother Tongue</label>
+                                <span>Sinhala</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Religion & Ethnicity</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Religion</label>
+                                <span>Buddhist</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Caste</label>
+                                <span>Govi</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Ethnicity</label>
+                                <span>Sinhalese</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Horoscope</label>
+                                <span>Required</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Education & Profession</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Education</label>
+                                <span>Bachelor's Degree in Business</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Profession</label>
+                                <span>Business Owner</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Annual Income</label>
+                                <span>LKR 50-75 Lakhs</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Working Location</label>
+                                <span>Japan</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Location</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Country</label>
+                                <span>Japan</span>
+                            </div>
+                            <div class="info-item">
+                                <label>City</label>
+                                <span>Kamagaya-shi</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Hometown</label>
+                                <span>Colombo, Sri Lanka</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Citizenship</label>
+                                <span>Sri Lankan</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>About Me</h3>
+                        <p class="about-text">I am a dedicated business owner currently residing in Japan. I value family traditions and am looking for a life partner who shares similar values. I enjoy traveling, reading, and spending quality time with loved ones. I believe in mutual respect, trust, and understanding as the foundation of a successful marriage.</p>
+                    </div>
+                </div>
+
+                <!-- Family Tab -->
+                <div id="familyTab" class="profile-tab-content">
+                    <div class="profile-section">
+                        <h3>Family Details</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Family Type</label>
+                                <span>Nuclear Family</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Family Status</label>
+                                <span>Middle Class</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Family Values</label>
+                                <span>Traditional</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Father's Occupation</label>
+                                <span>Retired Government Officer</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Mother's Occupation</label>
+                                <span>Homemaker</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Siblings</label>
+                                <span>1 Brother, 1 Sister (Both Married)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Family Location</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Native Place</label>
+                                <span>Colombo</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Family Living In</label>
+                                <span>Sri Lanka</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lifestyle Tab (Habits, Likes, Dislikes) -->
+                <div id="lifestyleTab" class="profile-tab-content">
+                    <div class="profile-section">
+                        <h3>Habits</h3>
+                        <div class="habits-grid">
+                            <div class="habit-item">
+                                <span class="habit-icon">🍽️</span>
+                                <div class="habit-info">
+                                    <label>Food Preference</label>
+                                    <span>Non-Vegetarian</span>
+                                </div>
+                            </div>
+                            <div class="habit-item">
+                                <span class="habit-icon">🚬</span>
+                                <div class="habit-info">
+                                    <label>Smoking</label>
+                                    <span>Non-Smoker</span>
+                                </div>
+                            </div>
+                            <div class="habit-item">
+                                <span class="habit-icon">🍺</span>
+                                <div class="habit-info">
+                                    <label>Drinking</label>
+                                    <span>Occasionally</span>
+                                </div>
+                            </div>
+                            <div class="habit-item">
+                                <span class="habit-icon">🏋️</span>
+                                <div class="habit-info">
+                                    <label>Exercise</label>
+                                    <span>Regular</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Likes</h3>
+                        <div class="tags-container likes">
+                            <span class="tag">Traveling</span>
+                            <span class="tag">Reading</span>
+                            <span class="tag">Photography</span>
+                            <span class="tag">Cooking</span>
+                            <span class="tag">Music</span>
+                            <span class="tag">Movies</span>
+                            <span class="tag">Hiking</span>
+                            <span class="tag">Technology</span>
+                            <span class="tag">Sports</span>
+                            <span class="tag">Nature</span>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Dislikes</h3>
+                        <div class="tags-container dislikes">
+                            <span class="tag">Dishonesty</span>
+                            <span class="tag">Arrogance</span>
+                            <span class="tag">Loud Environments</span>
+                            <span class="tag">Junk Food</span>
+                            <span class="tag">Negativity</span>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Hobbies & Interests</h3>
+                        <div class="hobbies-grid">
+                            <div class="hobby-card">
+                                <span>📚</span>
+                                <p>Reading</p>
+                            </div>
+                            <div class="hobby-card">
+                                <span>✈️</span>
+                                <p>Traveling</p>
+                            </div>
+                            <div class="hobby-card">
+                                <span>📸</span>
+                                <p>Photography</p>
+                            </div>
+                            <div class="hobby-card">
+                                <span>🎵</span>
+                                <p>Music</p>
+                            </div>
+                            <div class="hobby-card">
+                                <span>🍳</span>
+                                <p>Cooking</p>
+                            </div>
+                            <div class="hobby-card">
+                                <span>⚽</span>
+                                <p>Sports</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Personality Traits</h3>
+                        <div class="traits-container">
+                            <div class="trait-item">
+                                <span class="trait-label">Introvert</span>
+                                <div class="trait-bar">
+                                    <div class="trait-fill" style="width: 60%;"></div>
+                                </div>
+                                <span class="trait-label">Extrovert</span>
+                            </div>
+                            <div class="trait-item">
+                                <span class="trait-label">Traditional</span>
+                                <div class="trait-bar">
+                                    <div class="trait-fill" style="width: 70%;"></div>
+                                </div>
+                                <span class="trait-label">Modern</span>
+                            </div>
+                            <div class="trait-item">
+                                <span class="trait-label">Reserved</span>
+                                <div class="trait-bar">
+                                    <div class="trait-fill" style="width: 50%;"></div>
+                                </div>
+                                <span class="trait-label">Outgoing</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Partner Preferences Tab -->
+                <div id="partnerTab" class="profile-tab-content">
+                    <div class="profile-section">
+                        <h3>Basic Preferences</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Age</label>
+                                <span>22 - 28 years</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Height</label>
+                                <span>5' 0" - 5' 6"</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Marital Status</label>
+                                <span>Never Married</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Body Type</label>
+                                <span>Slim, Average</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Religion & Location</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Religion</label>
+                                <span>Buddhist</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Caste</label>
+                                <span>Govi, Karawa</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Country</label>
+                                <span>Sri Lanka, Japan</span>
+                            </div>
+                            <div class="info-item">
+                                <label>District</label>
+                                <span>Any</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>Education & Profession</h3>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <label>Education</label>
+                                <span>Bachelor's or higher</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Profession</label>
+                                <span>Any Professional</span>
+                            </div>
+                            <div class="info-item">
+                                <label>Income</label>
+                                <span>Not specified</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="profile-section">
+                        <h3>What I'm Looking For</h3>
+                        <p class="about-text">I am looking for a kind-hearted, family-oriented woman who values relationships and traditions. She should be understanding, supportive, and have a positive outlook on life. Education and career are important but personality and compatibility matter more to me.</p>
+                    </div>
+                </div>
+
+                <!-- Contact Section (Blurred for non-premium) -->
+                <div class="contact-section blurred-section">
+                    <div class="contact-blur-overlay">
+                        <span>🔒</span>
+                        <h4>Upgrade to View Contact Details</h4>
+                        <p>Subscribe to premium to view phone numbers and connect directly</p>
+                        <button class="btn btn-primary" onclick="closeModal('profileDetailModal'); openModal('subscriptionModal')">Upgrade Now</button>
+                    </div>
+                    <div class="contact-info-hidden">
+                        <div class="contact-item">
+                            <span>📱</span>
+                            <div>
+                                <label>Mobile</label>
+                                <span>+81 XX XXX XXXX</span>
+                            </div>
+                        </div>
+                        <div class="contact-item">
+                            <span>📧</span>
+                            <div>
+                                <label>Email</label>
+                                <span>sha***@gmail.com</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Modal Functions
         function openModal(modalId) {
@@ -2176,6 +4705,100 @@
                 }
             });
         });
+
+        // Filter toggle function
+        function toggleFilter(element) {
+            const filterGroup = element.closest('.filter-group');
+            filterGroup.classList.toggle('open');
+        }
+
+        // Initialize all filters as open by default
+        document.querySelectorAll('.filter-group.collapsible').forEach(group => {
+            group.classList.add('open');
+        });
+
+        // Gender toggle
+        document.querySelectorAll('.gender-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.gender-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // FAQ tab switching
+        function switchFaqTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.faq-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update panels
+            document.querySelectorAll('.faq-panel').forEach(panel => panel.classList.remove('active'));
+            document.getElementById(tabName + 'Faq').classList.add('active');
+        }
+
+        // FAQ item toggle
+        function toggleFaq(element) {
+            element.classList.toggle('open');
+        }
+
+        // Profile tab switching
+        function switchProfileTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.profile-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.profile-tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+
+        // Pagination functionality
+        document.querySelectorAll('.page-btn:not(.prev):not(.next)').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.page-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // Category card click
+        document.querySelectorAll('.category-card').forEach(card => {
+            card.addEventListener('click', () => {
+                // Scroll to search section
+                document.getElementById('search').scrollIntoView({ behavior: 'smooth' });
+            });
+        });
+
+        // Top profile card click
+        document.querySelectorAll('.top-profile-card').forEach(card => {
+            card.addEventListener('click', () => {
+                openModal('profileDetailModal');
+            });
+        });
+
+        // Clear filters button
+        document.querySelector('.clear-filters-btn')?.addEventListener('click', () => {
+            // Reset all checkboxes
+            document.querySelectorAll('.checkbox-filters input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+            // Reset selects
+            document.querySelectorAll('.filter-select').forEach(select => {
+                select.selectedIndex = 0;
+            });
+            // Reset range inputs
+            document.querySelectorAll('.range-inputs input[type="number"]').forEach(input => {
+                input.value = input.getAttribute('value') || '';
+            });
+        });
+
+        // Add navigation link for search
+        const navMain = document.querySelector('.nav-main');
+        if (navMain) {
+            const searchLink = document.createElement('a');
+            searchLink.href = '#search';
+            searchLink.textContent = 'Search';
+            navMain.insertBefore(searchLink, navMain.firstChild);
+        }
     </script>
 </body>
 </html>
