@@ -7,9 +7,9 @@ import Modals from '../../components/Modals';
 import SearchSection from '../../components/SearchSection';
 
 export default function ProfilesPage() {
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog') => {
         setActiveModal(modal);
     };
 
