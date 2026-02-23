@@ -12,7 +12,7 @@ import ProfileCompletionForm from './ProfileCompletionForm';
 export default function ProfilePage() {
     const { user, loading, updateUser } = useAuth();
     const router = useRouter();
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
     const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
     const [profileCompleted, setProfileCompleted] = useState(false);
 
@@ -52,7 +52,7 @@ export default function ProfilePage() {
         }
     };
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
         setActiveModal(modal);
     };
 

@@ -1,16 +1,16 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import { mockProfiles, Profile } from '../../data/mockProfiles';
 import Image from 'next/image';
 
-function SearchContent() {
+export default function SearchPage() {
     const searchParams = useSearchParams();
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
     const [results, setResults] = useState<Profile[]>([]);
 
     useEffect(() => {
@@ -43,7 +43,7 @@ function SearchContent() {
         setResults(filtered);
     }, [searchParams]);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
         setActiveModal(modal);
     };
 
@@ -103,13 +103,5 @@ function SearchContent() {
                 onSwitch={openModal}
             />
         </main>
-    );
-}
-
-export default function SearchPage() {
-    return (
-        <Suspense fallback={<main style={{ paddingTop: '100px', minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading search...</main>}>
-            <SearchContent />
-        </Suspense>
     );
 }

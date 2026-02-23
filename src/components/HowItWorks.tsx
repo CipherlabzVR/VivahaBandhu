@@ -1,83 +1,136 @@
 'use client';
 
+import { useRef, useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
+
+const HEART_PATH =
+    'M 5 25 ' +
+    'C 15 45, 45 50, 60 35 ' +
+    'C 75 20, 80 5, 60 15 ' +
+    'C 40 5, 45 20, 60 35 ' +
+    'C 75 50, 105 45, 115 25';
+
+const HIDDEN_LENGTH = 320;
 
 export default function HowItWorks() {
     const { t } = useLanguage();
+    const sectionRef = useRef<HTMLElement>(null);
+    const pathRef = useRef<SVGPathElement>(null);
+    const [inView, setInView] = useState(false);
+    const [pathLength, setPathLength] = useState<number | null>(null);
+
+    useEffect(() => {
+        const el = sectionRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) setInView(true);
+                });
+            },
+            { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        const path = pathRef.current;
+        if (path) setPathLength(path.getTotalLength());
+    }, []);
+
+    const length = pathLength ?? HIDDEN_LENGTH;
+    const drawReady = pathLength !== null && inView;
+
     return (
-        <section className="py-24 px-4 relative bg-cream overflow-hidden" id="how-it-works" style={{
-            backgroundImage: 'url(/how.png)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
-        }}>
+        <section
+            ref={sectionRef}
+            className="py-24 px-4 relative bg-cream overflow-hidden"
+            id="how-it-works"
+            style={{
+                backgroundImage: 'url(/how.png)',
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+            }}
+        >
             {/* Overlay for better text readability */}
             <div className="absolute inset-0 bg-primary/70 z-0"></div>
-            
-            {/* Animated White Hearts */}
-            <div className="absolute inset-0 z-[5] pointer-events-none overflow-hidden">
-                {/* Heart 1 - Small */}
-                <div className="absolute top-16 left-8 w-8 h-8 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '0s', animationDuration: '12s' }}>
-                    <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+
+            {/* Line-drawn hearts - same layout as footer (sides + bottom), white animated */}
+            <div className="absolute inset-0 z-[5] pointer-events-none flex items-center justify-center overflow-hidden">
+                {/* Heart 1 - left, large */}
+                <div className="absolute left-[-5%] top-1/2 -translate-y-1/2 w-[280px] md:w-[360px]">
+                    <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
+                        <path d={HEART_PATH} stroke="rgba(255,255,255,0.12)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ filter: 'blur(3px)' }} />
+                        <path
+                            ref={pathRef}
+                            d={HEART_PATH}
+                            stroke="#ffffff"
+                            strokeWidth="0.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            fill="none"
+                            className={drawReady ? 'animate-heart-draw-loop' : ''}
+                            style={{
+                                strokeDasharray: length,
+                                strokeDashoffset: length,
+                                ['--heart-length' as string]: `${length}`,
+                                animationDuration: '3s',
+                                animationDelay: '0ms',
+                                filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.6)) drop-shadow(0 0 8px rgba(255,255,255,0.25))',
+                            } as React.CSSProperties}
+                        />
                     </svg>
                 </div>
-                {/* Heart 2 - Medium */}
-                <div className="absolute top-1/4 right-16 w-12 h-12 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '1.5s', animationDuration: '14s' }}>
-                    <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                {/* Heart 2 - right, large, mirrored */}
+                <div className="absolute right-[-5%] top-1/2 -translate-y-1/2 w-[280px] md:w-[360px] scale-x-[-1]">
+                    <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
+                        <path d={HEART_PATH} stroke="rgba(255,255,255,0.12)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ filter: 'blur(3px)' }} />
+                        <path
+                            d={HEART_PATH}
+                            stroke="#ffffff"
+                            strokeWidth="0.8"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            fill="none"
+                            className={drawReady ? 'animate-heart-draw-loop' : ''}
+                            style={{
+                                strokeDasharray: length,
+                                strokeDashoffset: length,
+                                ['--heart-length' as string]: `${length}`,
+                                animationDuration: '3s',
+                                animationDelay: '0.4s',
+                                filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.6)) drop-shadow(0 0 8px rgba(255,255,255,0.25))',
+                            } as React.CSSProperties}
+                        />
                     </svg>
                 </div>
-                {/* Heart 3 - Large */}
-                <div className="absolute bottom-40 left-1/4 w-16 h-16 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '0.8s', animationDuration: '15s' }}>
-                    <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 4 - Small */}
-                <div className="absolute top-1/2 right-1/3 w-9 h-9 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '2.5s', animationDuration: '13s' }}>
-                    <svg className="w-4.5 h-4.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 5 - Medium */}
-                <div className="absolute bottom-24 right-12 w-11 h-11 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '3.2s', animationDuration: '16s' }}>
-                    <svg className="w-5.5 h-5.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 6 - Small */}
-                <div className="absolute top-3/4 left-1/3 w-7 h-7 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '1.8s', animationDuration: '14.5s' }}>
-                    <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 7 - Large */}
-                <div className="absolute top-10 right-1/4 w-14 h-14 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '4s', animationDuration: '17s' }}>
-                    <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 8 - Medium */}
-                <div className="absolute bottom-16 left-1/2 w-10 h-10 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '2.2s', animationDuration: '13.5s' }}>
-                    <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 9 - Small */}
-                <div className="absolute top-2/3 right-8 w-6 h-6 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '3.8s', animationDuration: '15.5s' }}>
-                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-                {/* Heart 10 - Medium */}
-                <div className="absolute bottom-32 left-12 w-13 h-13 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '1.2s', animationDuration: '16.5s' }}>
-                    <svg className="w-6.5 h-6.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                {/* Heart 3 - center bottom, smaller */}
+                <div className="absolute left-1/2 bottom-0 -translate-x-1/2 w-[200px] md:w-[240px]">
+                    <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
+                        <path d={HEART_PATH} stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ filter: 'blur(2px)' }} />
+                        <path
+                            d={HEART_PATH}
+                            stroke="#ffffff"
+                            strokeWidth="0.7"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            fill="none"
+                            className={drawReady ? 'animate-heart-draw-loop' : ''}
+                            style={{
+                                strokeDasharray: length,
+                                strokeDashoffset: length,
+                                ['--heart-length' as string]: `${length}`,
+                                animationDuration: '2.8s',
+                                animationDelay: '0.8s',
+                                filter: 'drop-shadow(0 0 2px rgba(255,255,255,0.5)) drop-shadow(0 0 6px rgba(255,255,255,0.2))',
+                            } as React.CSSProperties}
+                        />
                     </svg>
                 </div>
             </div>
-            
+
             <div className="relative z-10">
                 <div className="text-center max-w-2xl mx-auto mb-16">
                     <h2 className="text-4xl md:text-5xl font-playfair font-bold text-white mb-4">{t('howItWorks')}</h2>

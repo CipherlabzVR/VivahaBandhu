@@ -19,7 +19,7 @@ export default function Header({ onOpenLogin, onOpenRegister }: HeaderProps) {
             <div className="max-w-[1400px] mx-auto px-8 py-3 flex justify-between items-center">
                 <Link href="/" className="flex items-center h-[50px]">
                     <Image 
-                        src="/logo2.png" 
+                        src="/logo3.png" 
                         alt="VivahaBandhu Logo" 
                         width={200} 
                         height={100}
@@ -31,13 +31,13 @@ export default function Header({ onOpenLogin, onOpenRegister }: HeaderProps) {
                     <Link href="/profiles" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('browseProfiles')}
                     </Link>
-                    <Link href="#about-us" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
+                    <Link href="/about" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('aboutUs')}
                     </Link>
-                    <Link href="#success-stories" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
+                    <Link href="/success-stories" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('successStories')}
                     </Link>
-                    <Link href="#contact-us" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
+                    <Link href="/contact" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('contactUs')}
                     </Link>
                 </nav>

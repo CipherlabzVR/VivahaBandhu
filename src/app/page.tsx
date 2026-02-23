@@ -7,13 +7,13 @@ import Features from '../components/Features';
 import Profiles from '../components/Profiles';
 import HowItWorks from '../components/HowItWorks';
 import Matchmaker from '../components/Matchmaker';
-import SearchSection from '../components/SearchSection';
 import TopProfiles from '../components/TopProfiles';
 import Blog from '../components/Blog';
 import FAQ from '../components/FAQ';
 import Pricing from '../components/Pricing';
 import Footer from '../components/Footer';
 import Modals from '../components/Modals';
+import AnimateIn from '../components/AnimateIn';
 
 export default function Home() {
   const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
@@ -47,27 +47,47 @@ export default function Home() {
         onOpenLogin={() => openModal('login')}
         onOpenRegister={() => openModal('register')}
       />
-      <Hero
-        onOpenLogin={() => openModal('login')}
-        onOpenRegister={() => openModal('register')}
-      />
-      <Features onOpenRegister={() => openModal('register')} />
-      <Profiles
-        onOpenSubscription={() => openModal('subscription')}
-      />
-      <HowItWorks />
-      <Matchmaker
-        onOpenRegister={openRegisterAsMatchmaker}
-      />
-      <TopProfiles
-        onOpenProfileDetail={() => openModal('profile')}
-      />
-      <Blog onOpenBlogDetail={(blogId) => openModal('blog', blogId)} />
-      <FAQ />
-      <Pricing
-        onOpenSubscription={() => openModal('subscription')}
-      />
-      <Footer />
+      <AnimateIn delay={0}>
+        <Hero
+          onOpenLogin={() => openModal('login')}
+          onOpenRegister={() => openModal('register')}
+        />
+      </AnimateIn>
+      <AnimateIn delay={100}>
+        <Features onOpenRegister={() => openModal('register')} />
+      </AnimateIn>
+      <AnimateIn delay={150}>
+        <Profiles
+          onOpenSubscription={() => openModal('subscription')}
+        />
+      </AnimateIn>
+      <AnimateIn delay={100}>
+        <HowItWorks />
+      </AnimateIn>
+      <AnimateIn delay={150}>
+        <Matchmaker
+          onOpenRegister={openRegisterAsMatchmaker}
+        />
+      </AnimateIn>
+      <AnimateIn delay={150}>
+        <TopProfiles
+          onOpenProfileDetail={() => openModal('profile')}
+        />
+      </AnimateIn>
+      <AnimateIn delay={100}>
+        <Blog onOpenBlogDetail={(blogId) => openModal('blog', blogId)} />
+      </AnimateIn>
+      <AnimateIn delay={150}>
+        <FAQ />
+      </AnimateIn>
+      <AnimateIn delay={100}>
+        <Pricing
+          onOpenSubscription={() => openModal('subscription')}
+        />
+      </AnimateIn>
+      <AnimateIn delay={50}>
+        <Footer />
+      </AnimateIn>
       <Modals
         activeModal={activeModal}
         onClose={closeModal}

@@ -92,12 +92,12 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                 </div>
             </div>
             
-            <div className="relative z-10 max-w-[1400px] mx-auto px-4 py-20 flex flex-col min-h-[calc(100vh-80px)]" style={{ position: 'relative', zIndex: 10 }}>
+            <div className={`relative z-10 max-w-[1400px] mx-auto px-4 py-20 flex flex-col min-h-[calc(100vh-80px)] ${language === 'si' ? 'font-sinhala' : ''}`} style={{ position: 'relative', zIndex: 10 }}>
                 <div className="text-text-dark flex-1 flex flex-col justify-center">
-                    <h1 className={`font-playfair font-bold mb-6 leading-tight text-text-dark ${
+                    <h1 className={`mb-6 leading-tight text-text-dark ${
                         language === 'en' 
-                            ? 'text-4xl md:text-5xl lg:text-6xl' 
-                            : 'text-2xl md:text-3xl lg:text-4xl'
+                            ? 'font-playfair font-bold text-4xl md:text-5xl lg:text-6xl' 
+                            : 'font-sinhala font-bold text-2xl md:text-3xl lg:text-4xl'
                     }`}>
                         {language === 'en' ? (
                             <>
@@ -105,11 +105,11 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                             </>
                         ) : (
                             <>
-                                විශ්වාසයෙන් ඔබේ <span className="font-dancing-script text-primary relative text-3xl md:text-4xl lg:text-5xl font-semibold">{t('heroTitlePerfect')} <br /> {t('heroTitlePartner')}</span> සොයන්න
+                                විශ්වාසයෙන් ඔබේ <span className="font-sinhala text-primary relative text-3xl md:text-4xl lg:text-5xl font-semibold">{t('heroTitlePerfect')} <br /> {t('heroTitlePartner')}</span> සොයන්න
                             </>
                         )}
                     </h1>
-                    <p className="text-lg md:text-xl mb-8 max-w-lg leading-relaxed text-text-light">
+                    <p className={`text-lg md:text-xl mb-8 max-w-lg leading-relaxed text-text-light ${language === 'si' ? 'font-sinhala' : ''}`}>
                         {t('heroDescription')}
                     </p>
                     <div className="flex gap-4 flex-wrap mb-12">

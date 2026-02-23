@@ -1443,7 +1443,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img 
-                                            src="https://images.unsplash.com/photo-1511285560982-1356c11d4606?w=1200" 
+                                            src="/blog1.png" 
                                             alt="How to Discuss Important Topics Before Marriage" 
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
@@ -1491,7 +1491,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img 
-                                            src="https://images.unsplash.com/photo-1519225421980-715cb0202128?w=1200" 
+                                            src="/blog2.png" 
                                             alt="Top 5 Buddhist Wedding Traditions in Sri Lanka" 
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
@@ -1591,7 +1591,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img 
-                                            src="https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=1200" 
+                                            src="/blog4.png" 
                                             alt="First Meeting Tips for Arranged Marriages" 
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />

@@ -4,14 +4,14 @@
 
 @layer base {
     :root {
-        /* Primary is now Gold */
-        --primary: #D4AF37;
-        --primary-dark: #B8941F;
-        --primary-light: #E8C85A;
+        /* Primary Orange */
+        --primary: #F97316;
+        --primary-dark: #EA580C;
+        --primary-light: #FB923C;
 
-        /* Secondary/Accent remains Gold */
-        --gold: #D4AF37;
-        --gold-light: #E8C85A;
+        /* Secondary/Accent Orange */
+        --gold: #F97316;
+        --gold-light: #FB923C;
 
         --cream: #FDF8F3;
         --cream-dark: #F5EDE3;
@@ -19,8 +19,8 @@
         --text-light: #6B6560;
         --white: #FFFFFF;
 
-        /* Updated shadow to match Gold theme */
-        --shadow: rgba(212, 175, 55, 0.25);
+        /* Updated shadow to match Orange theme */
+        --shadow: rgba(249, 115, 22, 0.25);
         --overlay: rgba(45, 42, 38, 0.7);
     }
 
@@ -49,6 +49,38 @@
         opacity: 0.4;
         z-index: -1;
     }
+
+    /* Sinhala font at reduced size for About page - text only, layout unchanged */
+    .font-sinhala-sm {
+        font-family: "Noto Sans Sinhala", sans-serif;
+    }
+    .font-sinhala-sm .text-xs { font-size: 0.66rem !important; }
+    .font-sinhala-sm .text-sm { font-size: 0.77rem !important; }
+    .font-sinhala-sm .text-base { font-size: 0.88rem !important; }
+    .font-sinhala-sm .text-lg { font-size: 0.99rem !important; }
+    .font-sinhala-sm .text-xl { font-size: 1.1rem !important; }
+    .font-sinhala-sm .text-2xl { font-size: 1.32rem !important; }
+    .font-sinhala-sm .text-3xl { font-size: 1.65rem !important; }
+    .font-sinhala-sm .text-4xl { font-size: 1.98rem !important; }
+    .font-sinhala-sm .text-5xl { font-size: 2.64rem !important; }
+    .font-sinhala-sm .text-6xl { font-size: 3.3rem !important; }
+    /* responsive text sizes */
+    .font-sinhala-sm .md\:text-lg { font-size: 0.99rem !important; }
+    .font-sinhala-sm .md\:text-xl { font-size: 1.1rem !important; }
+    .font-sinhala-sm .md\:text-2xl { font-size: 1.32rem !important; }
+    .font-sinhala-sm .md\:text-3xl { font-size: 1.65rem !important; }
+    .font-sinhala-sm .md\:text-4xl { font-size: 1.98rem !important; }
+    .font-sinhala-sm .md\:text-5xl { font-size: 2.64rem !important; }
+    .font-sinhala-sm .lg\:text-4xl { font-size: 1.98rem !important; }
+    .font-sinhala-sm .lg\:text-5xl { font-size: 2.64rem !important; }
+    .font-sinhala-sm .lg\:text-6xl { font-size: 3.3rem !important; }
+    .font-sinhala-sm .xl\:text-6xl { font-size: 3.3rem !important; }
+    /* arbitrary sizes (e.g. hero decorative) */
+    .font-sinhala-sm .text-\[5\.5rem\] { font-size: 4.4rem !important; }
+    .font-sinhala-sm .text-\[8rem\] { font-size: 6.4rem !important; }
+    .font-sinhala-sm .text-\[10rem\] { font-size: 8rem !important; }
+    .font-sinhala-sm .md\:text-\[8rem\] { font-size: 6.4rem !important; }
+    .font-sinhala-sm .lg\:text-\[10rem\] { font-size: 8rem !important; }
 }
 
 /* Custom Dropdown Styling - handled by CustomDropdown component */
@@ -1605,7 +1637,7 @@
         }
 
         .method-icon.email-icon {
-            background: linear-gradient(135deg, #D4AF37 0%, #B8941F 100%);
+            background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
             color: var(--white);
         }
 
@@ -3586,5 +3618,30 @@
 
             .blog-detail-body .blog-intro {
                 font-size: 1rem;
+        /* Loading screen */
+        .loading-screen-container {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .loading-screen-container.loading-screen-exit {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .loading-heart {
+            animation: loading-heart-pulse 1s ease-in-out infinite;
+        }
+        @keyframes loading-heart-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.08); opacity: 0.9; }
+        }
+        .loading-bar {
+            animation: loading-bar-move 1.2s ease-in-out infinite;
+            width: 40%;
+        }
+        @keyframes loading-bar-move {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(150%); }
+            100% { transform: translateX(-100%); }
+        }
             }
         }

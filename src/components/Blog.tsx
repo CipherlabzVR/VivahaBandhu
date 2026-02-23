@@ -11,14 +11,14 @@ export default function Blog({ onOpenBlogDetail }: BlogProps) {
     const blogs = [
         {
             id: 1,
-            image: 'https://images.unsplash.com/photo-1511285560982-1356c11d4606?w=600',
+            image: '/blog1.png',
             category: 'Relationships',
             title: 'How to Discuss Important Topics Before Marriage',
             excerpt: 'Financial planning, family expectations, and more...'
         },
         {
             id: 2,
-            image: 'https://images.unsplash.com/photo-1519225421980-715cb0202128?w=600',
+            image: '/blog2.png',
             category: 'Wedding',
             title: 'Top 5 Buddhist Wedding Traditions in Sri Lanka',
             excerpt: 'Understanding the significance of Poruwa ceremony...'
@@ -32,7 +32,7 @@ export default function Blog({ onOpenBlogDetail }: BlogProps) {
         },
         {
             id: 4,
-            image: 'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=600',
+            image: '/blog4.png',
             category: 'Dating',
             title: 'First Meeting Tips for Arranged Marriages',
             excerpt: 'Making a great first impression and asking the right questions...'
@@ -40,7 +40,20 @@ export default function Blog({ onOpenBlogDetail }: BlogProps) {
     ];
 
     return (
-        <section className="blog-section">
+        <section className="blog-section relative overflow-hidden !bg-transparent">
+            <video
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                className="absolute inset-0 w-full h-full object-cover"
+                aria-hidden
+            >
+                <source src="/blog.mp4" type="video/mp4" />
+            </video>
+            <div className="absolute inset-0 bg-cream/65 z-[1]" aria-hidden />
+            <div className="relative z-10">
             <div className="section-header">
                 <h2>{t('blogAdvice')}</h2>
                 <p>{t('blogAdviceDesc')}</p>
@@ -76,6 +89,7 @@ export default function Blog({ onOpenBlogDetail }: BlogProps) {
                         </div>
                     </div>
                 ))}
+            </div>
             </div>
         </section>
     );
