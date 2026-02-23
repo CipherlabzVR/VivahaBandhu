@@ -7,14 +7,17 @@ import Modals from '../../components/Modals';
 import SearchSection from '../../components/SearchSection';
 
 export default function ProfilesPage() {
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number) => {
         setActiveModal(modal);
+        if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
     };
 
     const closeModal = () => {
         setActiveModal(null);
+        setSelectedBlogId(null);
     };
 
     return (
@@ -33,6 +36,7 @@ export default function ProfilesPage() {
                 activeModal={activeModal}
                 onClose={closeModal}
                 onSwitch={openModal}
+                selectedBlogId={selectedBlogId}
             />
         </main>
     );
