@@ -10,7 +10,8 @@ import Image from 'next/image';
 
 export default function SearchPage() {
     const searchParams = useSearchParams();
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [results, setResults] = useState<Profile[]>([]);
 
     useEffect(() => {
@@ -43,12 +44,14 @@ export default function SearchPage() {
         setResults(filtered);
     }, [searchParams]);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number) => {
         setActiveModal(modal);
+        if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
     };
 
     const closeModal = () => {
         setActiveModal(null);
+        setSelectedBlogId(null);
     };
 
     return (
@@ -101,6 +104,7 @@ export default function SearchPage() {
                 activeModal={activeModal}
                 onClose={closeModal}
                 onSwitch={openModal}
+                selectedBlogId={selectedBlogId}
             />
         </main>
     );
