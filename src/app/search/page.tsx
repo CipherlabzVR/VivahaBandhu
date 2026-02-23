@@ -1,14 +1,13 @@
 'use client';
 
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useState, useEffect } from 'react';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import { mockProfiles, Profile } from '../../data/mockProfiles';
-import Image from 'next/image';
 
-export default function SearchPage() {
+function SearchContent() {
     const searchParams = useSearchParams();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
@@ -22,22 +21,14 @@ export default function SearchPage() {
         const district = searchParams.get('district');
 
         const filtered = mockProfiles.filter(profile => {
-            // Filter by Gender (Look for Bride -> Female, Groom -> Male)
             if (gender && gender !== 'Any') {
                 const targetGender = gender === 'Bride' ? 'Female' : 'Male';
                 if (profile.gender !== targetGender) return false;
             }
-
-            // Filter by Age
             if (ageFrom && profile.age < parseInt(ageFrom)) return false;
             if (ageTo && profile.age > parseInt(ageTo)) return false;
-
-            // Filter by Religion
             if (religion && religion !== 'Any' && profile.religion !== religion) return false;
-
-            // Filter by District
             if (district && district !== 'Any' && profile.district !== district) return false;
-
             return true;
         });
 
@@ -55,7 +46,7 @@ export default function SearchPage() {
     };
 
     return (
-        <main>
+        <>
             <Header
                 onOpenLogin={() => openModal('login')}
                 onOpenRegister={() => openModal('register')}
@@ -106,6 +97,29 @@ export default function SearchPage() {
                 onSwitch={openModal}
                 selectedBlogId={selectedBlogId}
             />
+        </>
+    );
+}
+
+function SearchFallback() {
+    return (
+        <>
+            <Header onOpenLogin={() => {}} onOpenRegister={() => {}} />
+            <div style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px', textAlign: 'center', color: '#666' }}>
+                <h1>Search Results</h1>
+                <p>Loading...</p>
+            </div>
+            <Footer />
+        </>
+    );
+}
+
+export default function SearchPage() {
+    return (
+        <main>
+            <Suspense fallback={<SearchFallback />}>
+                <SearchContent />
+            </Suspense>
         </main>
     );
 }
