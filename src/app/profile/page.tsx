@@ -12,7 +12,8 @@ import ProfileCompletionForm from './ProfileCompletionForm';
 export default function ProfilePage() {
     const { user, loading, updateUser } = useAuth();
     const router = useRouter();
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
     const [profileCompleted, setProfileCompleted] = useState(false);
 
@@ -52,12 +53,14 @@ export default function ProfilePage() {
         }
     };
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile') => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number) => {
         setActiveModal(modal);
+        if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
     };
 
     const closeModal = () => {
         setActiveModal(null);
+        setSelectedBlogId(null);
     };
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -338,6 +341,7 @@ export default function ProfilePage() {
                 activeModal={activeModal}
                 onClose={closeModal}
                 onSwitch={openModal}
+                selectedBlogId={selectedBlogId}
             />
         </main>
     );
