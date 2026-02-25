@@ -13,15 +13,55 @@ interface ModalsProps {
     onSwitch: (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog') => void;
     selectedBlogId?: number | null;
     registerAsMatchmaker?: boolean;
+    selectedProfile?: any | null;
 }
 
-export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false }: ModalsProps) {
-    const { login } = useAuth();
+export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
+    const { login, user } = useAuth();
     const router = useRouter();
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
     const [profileTab, setProfileTab] = useState('about');
     const [registerAccountType, setRegisterAccountType] = useState('Self');
     const [subscriptionOption, setSubscriptionOption] = useState('3 Months');
+
+    const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
+    const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+
+    useEffect(() => {
+        if (initialSelectedProfile) {
+            setSelectedProfile(initialSelectedProfile);
+            if (activeModal === 'profile' && initialSelectedProfile.userId) {
+                const fetchDetailedProfile = async () => {
+                    setIsLoadingProfile(true);
+                    try {
+                        const res = await matrimonialService.getProfile(initialSelectedProfile.userId);
+                        if (res.statusCode === 200 && res.result) {
+                            setSelectedProfile((prev: any) => ({
+                                ...prev,
+                                ...res.result,
+                                firstName: prev?.firstName || res.result.firstName,
+                                lastName: prev?.lastName || res.result.lastName,
+                                profilePhoto: prev?.profilePhoto || res.result.profilePhoto,
+                                educationLevel: res.result.qualificationLevel || prev?.educationLevel,
+                                aboutMe: res.result.remarks || prev?.aboutMe,
+                                diet: res.result.eatingHabits || prev?.diet,
+                                smoking: res.result.smokingHabits || prev?.smoking,
+                                drinking: res.result.drinkingHabits || prev?.drinking,
+                                partnerPreferences: res.result.partnerAdditionalRequirements || prev?.partnerPreferences,
+                            }));
+                        }
+                    } catch (error) {
+                        console.error("Failed to load detailed profile", error);
+                    } finally {
+                        setIsLoadingProfile(false);
+                    }
+                };
+                fetchDetailedProfile();
+            }
+        } else {
+            setSelectedProfile(null);
+        }
+    }, [activeModal, initialSelectedProfile]);
     const [isWhatsAppSame, setIsWhatsAppSame] = useState(false);
     const [nic, setNic] = useState('');
     const [dob, setDob] = useState('');
@@ -40,6 +80,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginError, setLoginError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [profilePhotoBase64, setProfilePhotoBase64] = useState('');
+    const [photoPreview, setPhotoPreview] = useState('');
 
     // Verification states
     const [showVerification, setShowVerification] = useState(false);
@@ -105,6 +147,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 email,
                 password,
                 accountType: registerAccountType,
+                profilePhotoBase64: registerAccountType === 'Self' ? profilePhotoBase64 : undefined,
             });
 
             console.log('Registration response:', response);
@@ -251,6 +294,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         // Reset all registration/verification state after welcome popup closes
         setRegisteredUserId(null);
         setRegisteredFirstName('');
+        setProfilePhotoBase64('');
+        setPhotoPreview('');
         setVerificationMethod('');
         setVerificationCode('');
         setVerificationError(null);
@@ -277,6 +322,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setIsSendingCode(false);
             setIsVerifying(false);
             setRegisteredFirstName('');
+            setProfilePhotoBase64('');
+            setPhotoPreview('');
         }
         onClose();
     };
@@ -344,19 +391,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 };
 
                 login(newUser);
-                
+
                 // Ensure firstName is set for welcome popup (use firstName from form if registeredFirstName is not set)
                 const firstNameToUse = registeredFirstName || firstName;
                 if (firstNameToUse) {
                     setRegisteredFirstName(firstNameToUse);
                 }
-                
+
                 // Close the verification modal first
                 setShowVerification(false);
-                
+
                 // Show welcome popup immediately (before closing modal to preserve state)
                 setShowWelcomePopup(true);
-                
+
                 // Close modal after popup is shown
                 setTimeout(() => {
                     onClose();
@@ -383,8 +430,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         <>
             {/* Welcome Popup */}
             {showWelcomePopup && (registeredFirstName || firstName) && (
-                <WelcomePopup 
-                    firstName={registeredFirstName || firstName} 
+                <WelcomePopup
+                    firstName={registeredFirstName || firstName}
                     onClose={handleWelcomePopupClose}
                 />
             )}
@@ -756,6 +803,40 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     )}
                                 </div>
+                                {registerAccountType === 'Self' && (
+                                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                                        <label>Profile Photo</label>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', border: '1px dashed var(--cream-dark)', padding: '1rem', borderRadius: '8px' }}>
+                                            {photoPreview ? (
+                                                <div style={{ position: 'relative', width: '100px', height: '100px' }}>
+                                                    <Image src={photoPreview} alt="Preview" fill style={{ objectFit: 'cover', borderRadius: '50%' }} />
+                                                    <button type="button" onClick={() => { setProfilePhotoBase64(''); setPhotoPreview(''); }} style={{ position: 'absolute', top: -5, right: -5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>✕</button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: 'var(--cream-light)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--text-light)" />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                            <input type="file" accept="image/*" id="profilePhoto" style={{ display: 'none' }} onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    const reader = new FileReader();
+                                                    reader.onloadend = () => {
+                                                        const base64String = reader.result as string;
+                                                        setPhotoPreview(base64String);
+                                                        setProfilePhotoBase64(base64String);
+                                                    };
+                                                    reader.readAsDataURL(file);
+                                                }
+                                            }} />
+                                            <label htmlFor="profilePhoto" className="btn btn-outline" style={{ cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '0.9rem', width: 'auto', display: 'inline-block', textAlign: 'center' }}>
+                                                {photoPreview ? 'Change Photo' : 'Upload Photo'}
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="checkbox-group">
                                     <input
                                         type="checkbox"
@@ -1257,170 +1338,182 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             {/* Profile Detail Modal */}
             <div className={`modal-overlay profile-detail-modal ${activeModal === 'profile' ? 'active' : ''}`} id="profileDetailModal" onClick={handleOverlayClick}>
-                <div className="modal" style={{ maxWidth: '900px' }}>
+                <div className="modal" style={{ maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
                     <button className="modal-close" onClick={close}>✕</button>
 
-                    <div className="profile-detail-content">
-                        {/* Profile Header */}
-                        <div className="profile-detail-header">
-                            <div className="profile-detail-photo">
-                                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300" alt="Profile" />
-                                <span className="verified-badge-large">✓ Verified</span>
+                    {selectedProfile ? (
+                        <div className="profile-detail-content">
+                            {/* Profile Header */}
+                            <div className="profile-detail-header">
+                                <div className="profile-detail-photo">
+                                    <img
+                                        src={selectedProfile.profilePhoto || (selectedProfile.gender === 'Female' ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400')}
+                                        alt={`${selectedProfile.firstName || 'User'}'s Profile`}
+                                    />
+                                    {selectedProfile.isVerified && <span className="verified-badge-large">✓ Verified</span>}
+                                </div>
+                                <div className="profile-detail-summary">
+                                    <h2>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</h2>
+                                    <p className="profile-tagline">{selectedProfile.bio || 'Looking for a caring and understanding life partner'}</p>
+                                    <div className="profile-key-info">
+                                        <span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Age Not Specified'}</span>
+                                        <span>{selectedProfile.height || 'Height Not Specified'}</span>
+                                        <span>{selectedProfile.cityOfResidence || 'Location Not Specified'}</span>
+                                    </div>
+                                    <div className="profile-actions-row">
+                                        {user && (String(user.id) === String(selectedProfile.userId) || String(user.id) === String(selectedProfile.id)) ? (
+                                            <div style={{ color: 'var(--primary)', fontWeight: 500, padding: '0.75rem', backgroundColor: '#fdf8f3', borderRadius: '8px', textAlign: 'center', width: '100%', border: '1px solid var(--primary-light)' }}>
+                                                ✨ This is your profile
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button className="btn btn-primary" onClick={() => onSwitch('subscription')}><span>❤️</span> Express Interest</button>
+                                                <button className="btn btn-outline" onClick={() => {
+                                                    if (!user) {
+                                                        onSwitch('login');
+                                                    } else {
+                                                        onClose();
+                                                        router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
+                                                    }
+                                                }}><span>💬</span> Message</button>
+                                                <button className="btn btn-outline" onClick={() => onSwitch('login')}><span>⭐</span> Shortlist</button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="profile-detail-summary">
-                                <h2>Shahan Madhumal M</h2>
-                                <p className="profile-tagline">Looking for a caring and understanding life partner</p>
-                                <div className="profile-key-info">
-                                    <span>31 years</span>
-                                    <span>5&apos; 4&quot; (162 cm)</span>
-                                    <span>Kamagaya-shi, Japan</span>
+
+                            {/* Profile Tabs */}
+                            <div className="profile-detail-tabs">
+                                <button className={`profile-tab ${profileTab === 'about' ? 'active' : ''}`} onClick={() => setProfileTab('about')}>About</button>
+                                <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
+                                <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
+                                <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
+                            </div>
+
+                            {/* About Tab */}
+                            {profileTab === 'about' && (
+                                <div className="profile-tab-content active">
+                                    <div className="profile-section">
+                                        <h3>Basic Information</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Full Name</label><span>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</span></div>
+                                            <div className="info-item"><label>Age</label><span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Marital Status</label><span>{selectedProfile.maritalStatus || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="profile-section">
+                                        <h3>Religion & Ethnicity</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Religion</label><span>{selectedProfile.religion || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="profile-section">
+                                        <h3>Education & Profession</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Education</label><span>{selectedProfile.educationLevel || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Profession</label><span>{selectedProfile.occupation || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="profile-section">
+                                        <h3>Location</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Country of Origin</label><span>{selectedProfile.countryOfOrigin || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Country of Residence</label><span>{selectedProfile.countryOfResidence || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>City of Residence</label><span>{selectedProfile.cityOfResidence || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Residency Status</label><span>{selectedProfile.residencyStatus || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="profile-section">
+                                        <h3>About Me</h3>
+                                        <p className="about-text">{selectedProfile.aboutMe || 'This user has not provided an about me section yet.'}</p>
+                                    </div>
                                 </div>
-                                <div className="profile-actions-row">
-                                    <button className="btn btn-primary"><span>❤️</span> Express Interest</button>
-                                    <button className="btn btn-outline"><span>💬</span> Message</button>
-                                    <button className="btn btn-outline"><span>⭐</span> Shortlist</button>
+                            )}
+
+                            {/* Family Tab */}
+                            {profileTab === 'family' && (
+                                <div className="profile-tab-content active">
+                                    <div className="profile-section">
+                                        <h3>Family Information</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Father's Occupation</label><span>{selectedProfile.fatherOccupation || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother's Occupation</label><span>{selectedProfile.motherOccupation || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Father's Religion</label><span>{selectedProfile.fatherReligion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother's Religion</label><span>{selectedProfile.motherReligion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Father's Country</label><span>{selectedProfile.fatherCountryOfResidence || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother's Country</label><span>{selectedProfile.motherCountryOfResidence || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <p className="match-score">92% Match with your preferences</p>
+                            )}
+
+                            {/* Lifestyle Tab */}
+                            {profileTab === 'lifestyle' && (
+                                <div className="profile-tab-content active">
+                                    <div className="profile-section">
+                                        <h3>Habits & Hobbies</h3>
+                                        <div className="habits-grid">
+                                            <div className="habit-item"><span className="habit-icon">🍽️</span><div className="habit-info"><label>Diet</label><span>{selectedProfile.diet || 'Not Specified'}</span></div></div>
+                                            <div className="habit-item"><span className="habit-icon">🚬</span><div className="habit-info"><label>Smoking</label><span>{selectedProfile.smoking || 'Not Specified'}</span></div></div>
+                                            <div className="habit-item"><span className="habit-icon">🍺</span><div className="habit-info"><label>Drinking</label><span>{selectedProfile.drinking || 'Not Specified'}</span></div></div>
+                                        </div>
+                                        <div style={{ marginTop: '1.5rem' }}>
+                                            <h4>Hobbies</h4>
+                                            <p className="about-text">{selectedProfile.hobbies || 'Not specified'}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Partner Tab */}
+                            {profileTab === 'partner' && (
+                                <div className="profile-tab-content active">
+                                    <div className="profile-section">
+                                        <h3>Basic Preferences</h3>
+                                        <div className="info-grid">
+                                            <div className="info-item"><label>Age Range</label><span>{selectedProfile.partnerMinAge && selectedProfile.partnerMaxAge ? `${selectedProfile.partnerMinAge} - ${selectedProfile.partnerMaxAge} years` : 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Religion</label><span>{selectedProfile.partnerReligion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Education</label><span>{selectedProfile.partnerQualificationLevel || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Country</label><span>{selectedProfile.partnerCountryOfResidence || 'Not Specified'}</span></div>
+                                        </div>
+                                    </div>
+                                    <div className="profile-section">
+                                        <h3>Additional Requirements</h3>
+                                        <p className="about-text">{selectedProfile.partnerPreferences || 'This user has not specified their additional partner preferences yet.'}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Contact Section - Blur Logic */}
+                            <div className="contact-section blurred-section">
+                                <div className="contact-blur-overlay">
+                                    <span>🔒</span>
+                                    <h4>Upgrade to View Contact Details</h4>
+                                    <p>Subscribe to premium to view phone numbers and connect directly</p>
+                                    <button className="btn btn-primary" onClick={() => onSwitch('subscription')}>Upgrade Now</button>
+                                </div>
+                                <div className="contact-info-hidden">
+                                    <div className="contact-item">
+                                        <span>📱</span>
+                                        <div><label>Mobile</label><span>+94 XX XXX XXXX</span></div>
+                                    </div>
+                                    <div className="contact-item">
+                                        <span>📧</span>
+                                        <div><label>Email</label><span>use***@gmail.com</span></div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
-                        {/* Profile Tabs */}
-                        <div className="profile-detail-tabs">
-                            <button className={`profile-tab ${profileTab === 'about' ? 'active' : ''}`} onClick={() => setProfileTab('about')}>About</button>
-                            <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
-                            <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
-                            <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
+                    ) : (
+                        <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+                            <div className="spinner" style={{ margin: '0 auto 1rem', display: 'block' }}></div>
+                            <p>Loading profile details...</p>
                         </div>
-
-                        {/* About Tab */}
-                        {profileTab === 'about' && (
-                            <div className="profile-tab-content active">
-                                <div className="profile-section">
-                                    <h3>Basic Information</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Full Name</label><span>Shahan Madhumal M</span></div>
-                                        <div className="info-item"><label>Age</label><span>31 years</span></div>
-                                        <div className="info-item"><label>Height</label><span>5&apos; 4&quot; (162 cm)</span></div>
-                                        <div className="info-item"><label>Weight</label><span>65 kg</span></div>
-                                        <div className="info-item"><label>Body Type</label><span>Average</span></div>
-                                        <div className="info-item"><label>Complexion</label><span>Fair</span></div>
-                                        <div className="info-item"><label>Marital Status</label><span>Never Married</span></div>
-                                        <div className="info-item"><label>Mother Tongue</label><span>Sinhala</span></div>
-                                    </div>
-                                </div>
-                                <div className="profile-section">
-                                    <h3>Religion & Ethnicity</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Religion</label><span>Buddhist</span></div>
-                                        <div className="info-item"><label>Caste</label><span>Govi</span></div>
-                                        <div className="info-item"><label>Ethnicity</label><span>Sinhalese</span></div>
-                                        <div className="info-item"><label>Horoscope</label><span>Required</span></div>
-                                    </div>
-                                </div>
-                                <div className="profile-section">
-                                    <h3>Education & Profession</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Education</label><span>Bachelor&apos;s Degree in Business</span></div>
-                                        <div className="info-item"><label>Profession</label><span>Business Owner</span></div>
-                                        <div className="info-item"><label>Annual Income</label><span>LKR 50-75 Lakhs</span></div>
-                                        <div className="info-item"><label>Working Location</label><span>Japan</span></div>
-                                    </div>
-                                </div>
-                                <div className="profile-section">
-                                    <h3>Location</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Country</label><span>Japan</span></div>
-                                        <div className="info-item"><label>City</label><span>Kamagaya-shi</span></div>
-                                        <div className="info-item"><label>Hometown</label><span>Colombo, Sri Lanka</span></div>
-                                        <div className="info-item"><label>Citizenship</label><span>Sri Lankan</span></div>
-                                    </div>
-                                </div>
-                                <div className="profile-section">
-                                    <h3>About Me</h3>
-                                    <p className="about-text">I am a dedicated business owner currently residing in Japan. I value family traditions and am looking for a life partner who shares similar values. I enjoy traveling, reading, and spending quality time with loved ones. I believe in mutual respect, trust, and understanding as the foundation of a successful marriage.</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Family Tab */}
-                        {profileTab === 'family' && (
-                            <div className="profile-tab-content active">
-                                <div className="profile-section">
-                                    <h3>Family Details</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Family Type</label><span>Nuclear Family</span></div>
-                                        <div className="info-item"><label>Family Status</label><span>Middle Class</span></div>
-                                        <div className="info-item"><label>Family Values</label><span>Traditional</span></div>
-                                        <div className="info-item"><label>Father&apos;s Occupation</label><span>Retired Government Officer</span></div>
-                                        <div className="info-item"><label>Mother&apos;s Occupation</label><span>Homemaker</span></div>
-                                        <div className="info-item"><label>Siblings</label><span>1 Brother, 1 Sister (Both Married)</span></div>
-                                    </div>
-                                </div>
-                                <div className="profile-section">
-                                    <h3>Family Location</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Native Place</label><span>Colombo</span></div>
-                                        <div className="info-item"><label>Family Living In</label><span>Sri Lanka</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Lifestyle Tab */}
-                        {profileTab === 'lifestyle' && (
-                            <div className="profile-tab-content active">
-                                {/* ... content for habits, likes, dislikes, hobbies, traits ... */}
-                                {/* Simplified for brevity but keeping structure */}
-                                <div className="profile-section">
-                                    <h3>Habits</h3>
-                                    <div className="habits-grid">
-                                        <div className="habit-item"><span className="habit-icon">🍽️</span><div className="habit-info"><label>Food Preference</label><span>Non-Vegetarian</span></div></div>
-                                        <div className="habit-item"><span className="habit-icon">🚬</span><div className="habit-info"><label>Smoking</label><span>Non-Smoker</span></div></div>
-                                        <div className="habit-item"><span className="habit-icon">🍺</span><div className="habit-info"><label>Drinking</label><span>Occasionally</span></div></div>
-                                        <div className="habit-item"><span className="habit-icon">🏋️</span><div className="habit-info"><label>Exercise</label><span>Regular</span></div></div>
-                                    </div>
-                                </div>
-                                {/* ... */}
-                            </div>
-                        )}
-
-                        {/* Partner Tab */}
-                        {profileTab === 'partner' && (
-                            <div className="profile-tab-content active">
-                                {/* ... partner preferences ... */}
-                                <div className="profile-section">
-                                    <h3>Basic Preferences</h3>
-                                    <div className="info-grid">
-                                        <div className="info-item"><label>Age</label><span>22 - 28 years</span></div>
-                                        <div className="info-item"><label>Height</label><span>5&apos; 0&quot; - 5&apos; 6&quot;</span></div>
-                                        <div className="info-item"><label>Marital Status</label><span>Never Married</span></div>
-                                        <div className="info-item"><label>Body Type</label><span>Slim, Average</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Contact Section - Blur Logic */}
-                        <div className="contact-section blurred-section">
-                            <div className="contact-blur-overlay">
-                                <span>🔒</span>
-                                <h4>Upgrade to View Contact Details</h4>
-                                <p>Subscribe to premium to view phone numbers and connect directly</p>
-                                <button className="btn btn-primary" onClick={() => onSwitch('subscription')}>Upgrade Now</button>
-                            </div>
-                            <div className="contact-info-hidden">
-                                <div className="contact-item">
-                                    <span>📱</span>
-                                    <div><label>Mobile</label><span>+81 XX XXX XXXX</span></div>
-                                </div>
-                                <div className="contact-item">
-                                    <span>📧</span>
-                                    <div><label>Email</label><span>sha***@gmail.com</span></div>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
+                    )}
                 </div>
             </div>
 
@@ -1442,9 +1535,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     </div>
                                     <div className="blog-detail-image">
-                                        <img 
-                                            src="/blog1.png" 
-                                            alt="How to Discuss Important Topics Before Marriage" 
+                                        <img
+                                            src="/blog1.png"
+                                            alt="How to Discuss Important Topics Before Marriage"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
                                     </div>
@@ -1490,9 +1583,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     </div>
                                     <div className="blog-detail-image">
-                                        <img 
-                                            src="/blog2.png" 
-                                            alt="Top 5 Buddhist Wedding Traditions in Sri Lanka" 
+                                        <img
+                                            src="/blog2.png"
+                                            alt="Top 5 Buddhist Wedding Traditions in Sri Lanka"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
                                     </div>
@@ -1538,9 +1631,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     </div>
                                     <div className="blog-detail-image">
-                                        <img 
-                                            src="https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=1200" 
-                                            alt="Online Matrimony Safety Tips" 
+                                        <img
+                                            src="https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=1200"
+                                            alt="Online Matrimony Safety Tips"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
                                     </div>
@@ -1590,9 +1683,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     </div>
                                     <div className="blog-detail-image">
-                                        <img 
-                                            src="/blog4.png" 
-                                            alt="First Meeting Tips for Arranged Marriages" 
+                                        <img
+                                            src="/blog4.png"
+                                            alt="First Meeting Tips for Arranged Marriages"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
                                     </div>

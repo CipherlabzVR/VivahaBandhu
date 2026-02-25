@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://localhost:44352/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
 export interface MatrimonialRegisterRequest {
     firstName: string;
@@ -12,6 +12,7 @@ export interface MatrimonialRegisterRequest {
     email: string;
     password: string;
     accountType: string;
+    profilePhotoBase64?: string;
 }
 
 export interface MatrimonialRegisterResponse {
@@ -70,6 +71,7 @@ export const matrimonialService = {
                     email: data.email,
                     password: data.password,
                     accountType: data.accountType,
+                    profilePhotoBase64: data.profilePhotoBase64,
                 }),
             });
 
@@ -192,5 +194,146 @@ export const matrimonialService = {
             throw new Error('An unexpected error occurred during verification');
         }
     },
+
+    /**
+     * Get recent registered profiles
+     */
+    async getRecentProfiles(count: number = 4): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentProfiles?count=${count}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to fetch recent profiles: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while fetching recent profiles');
+        }
+    },
+
+    /**
+     * Get detailed profile by user ID
+     */
+    async getProfile(userId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${userId}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to fetch profile: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while fetching the profile');
+        }
+    },
+
+    /**
+     * Send a matrimonial message
+     */
+    async sendMessage(senderId: number, receiverId: number, content: string): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ senderId, receiverId, content })
+            });
+            if (!response.ok) throw new Error('Failed to send message');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Get inbox conversations
+     */
+    async getInbox(userId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetInbox?userId=${userId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) throw new Error('Failed to fetch inbox');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Get single conversation
+     */
+    async getConversation(userId: number, otherUserId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetConversation?userId=${userId}&otherUserId=${otherUserId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) throw new Error('Failed to fetch conversation');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async toggleFavorite(userId: number, profileId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleFavorite?userId=${userId}&profileId=${profileId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async toggleShortlist(userId: number, profileId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleShortlist?userId=${userId}&profileId=${profileId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async getUserInteractions(userId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetUserInteractions?userId=${userId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    }
 };
 

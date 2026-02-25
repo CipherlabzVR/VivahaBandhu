@@ -1,28 +1,88 @@
-'use client';
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { matrimonialService } from '../services/matrimonialService';
 
 interface SearchSectionProps {
-    onOpenProfileDetail: () => void;
+    onOpenProfileDetail: (profile: any) => void;
 }
 
 export default function SearchSection({ onOpenProfileDetail }: SearchSectionProps) {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    const [profiles, setProfiles] = useState<any[]>([]);
+    const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
+    const { user } = useAuth();
+
+    useEffect(() => {
+        const fetchProfiles = async () => {
+            try {
+                const res = await matrimonialService.getRecentProfiles(20);
+                if (res.statusCode === 200 && res.result) {
+                    setProfiles(res.result);
+                }
+            } catch (error) {
+                console.error("Failed to load profiles", error);
+            }
+        };
+
+        const fetchInteractions = async () => {
+            if (user?.id) {
+                try {
+                    const res = await matrimonialService.getUserInteractions(Number(user.id));
+                    if (res.statusCode === 200 && res.result) {
+                        setInteractions(res.result);
+                    }
+                } catch (error) {
+                    console.error("Failed to load interactions", error);
+                }
+            }
+        };
+
+        fetchProfiles();
+        fetchInteractions();
+    }, [user?.id]);
+
+    const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
+        e.stopPropagation();
+        if (!user) return alert('Please login to add favorites');
+        try {
+            const res = await matrimonialService.toggleFavorite(Number(user.id), profileId);
+            if (res.statusCode === 200) {
+                setInteractions(prev => ({
+                    ...prev,
+                    Favorites: prev.Favorites.includes(profileId)
+                        ? prev.Favorites.filter(id => id !== profileId)
+                        : [...prev.Favorites, profileId]
+                }));
+            }
+        } catch (error) {
+            console.error("Error toggling favorite", error);
+        }
+    };
+
+    const handleToggleShortlist = async (e: React.MouseEvent, profileId: number) => {
+        e.stopPropagation();
+        if (!user) return alert('Please login to shortlist profiles');
+        try {
+            const res = await matrimonialService.toggleShortlist(Number(user.id), profileId);
+            if (res.statusCode === 200) {
+                setInteractions(prev => ({
+                    ...prev,
+                    Shortlists: prev.Shortlists.includes(profileId)
+                        ? prev.Shortlists.filter(id => id !== profileId)
+                        : [...prev.Shortlists, profileId]
+                }));
+            }
+        } catch (error) {
+            console.error("Error toggling shortlist", error);
+        }
+    };
 
     const toggleFilter = (group: string) => {
         setCollapsedGroups(prev => ({ ...prev, [group]: !prev[group] }));
     };
 
-    // Default is open, so if key is NOT in state (undefined), it's OPEN.
-    // If key is present and true, it's collapsed (closed).
-    // Wait, my logic below: `!collapsedGroups[group]` means if undefined -> true (open).
-    // No, if undefined -> !undefined -> true.
-    // If true -> !true -> false.
-    // So:
     const isOpen = (group: string) => collapsedGroups[group] !== true;
-    // Wait, I want default open. So set initial to empty.
-    // Toggle: set to true to close?
-    // Let's say: store "closed" state.
+
     const toggle = (group: string) => {
         setCollapsedGroups(prev => ({ ...prev, [group]: !prev[group] }));
     };
@@ -30,18 +90,18 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const getOpenClass = (group: string) => !collapsedGroups[group] ? 'open' : '';
 
     return (
-        <section className="search-section" id="search">
-            <div className="search-container">
+        <section className="search-section" id="search" style={{ padding: '40px 20px', backgroundColor: '#f9f9f9' }}>
+            <div className="search-container" style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: '30px' }}>
                 {/* Filters Sidebar */}
-                <aside className="filters-sidebar">
-                    <div className="filters-header">
-                        <h3>Filters</h3>
-                        <button className="clear-filters-btn">Clear Filters</button>
+                <aside className="filters-sidebar" style={{ width: '300px', flexShrink: 0, backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                    <div className="filters-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+                        <h3 style={{ margin: 0 }}>Filters</h3>
+                        <button className="clear-filters-btn" style={{ background: 'none', border: 'none', color: '#9b2335', cursor: 'pointer' }}>Clear Filters</button>
                     </div>
 
-                    <div className="filter-group">
-                        <label>Sort By</label>
-                        <select className="filter-select">
+                    <div className="filter-group" style={{ marginBottom: '20px' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Sort By</label>
+                        <select className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option>Latest First</option>
                             <option>Oldest First</option>
                             <option>Age: Low to High</option>
@@ -49,403 +109,87 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         </select>
                     </div>
 
-                    <div className="filter-group">
-                        <label>I&apos;m looking for</label>
-                        <div className="gender-toggle">
-                            <button className="gender-btn active">Bride</button>
-                            <button className="gender-btn">Groom</button>
+                    <div className="filter-group" style={{ marginBottom: '20px' }}>
+                        <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>I&apos;m looking for</label>
+                        <div className="gender-toggle" style={{ display: 'flex', backgroundColor: '#f5f5f5', borderRadius: '8px', padding: '4px' }}>
+                            <button className="gender-btn active" style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: 'white', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', cursor: 'pointer' }}>Bride</button>
+                            <button className="gender-btn" style={{ flex: 1, padding: '8px', border: 'none', backgroundColor: 'transparent', cursor: 'pointer', color: '#666' }}>Groom</button>
                         </div>
                     </div>
 
-                    <div className={`filter-group collapsible ${getOpenClass('age')}`}>
-                        <div className="filter-header" onClick={() => toggle('age')}>
-                            <span>Age</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="range-inputs">
-                                <input type="number" placeholder="Min" defaultValue="18" min="18" max="70" />
-                                <span>to</span>
-                                <input type="number" placeholder="Max" defaultValue="35" min="18" max="70" />
-                            </div>
-                        </div>
-                    </div>
+                    {/* Additional filters can be styled here, keeping simplified for now */}
 
-                    <div className={`filter-group collapsible ${getOpenClass('country')}`}>
-                        <div className="filter-header" onClick={() => toggle('country')}>
-                            <span>Country of Residence</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <select className="filter-select">
-                                <option>Any</option>
-                                <option>Sri Lanka</option>
-                                <option>United Kingdom</option>
-                                <option>United States</option>
-                                <option>Australia</option>
-                                <option>Canada</option>
-                                <option>Japan</option>
-                                <option>Italy</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('region')}`}>
-                        <div className="filter-header" onClick={() => toggle('region')}>
-                            <span>Region / District</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <select className="filter-select">
-                                <option>Any</option>
-                                <option>Colombo</option>
-                                <option>Gampaha</option>
-                                <option>Kandy</option>
-                                <option>Kalutara</option>
-                                <option>Galle</option>
-                                <option>Matara</option>
-                                <option>Kurunegala</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('ethnicity')}`}>
-                        <div className="filter-header" onClick={() => toggle('ethnicity')}>
-                            <span>Ethnicity</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Sinhalese</label>
-                                <label><input type="checkbox" /> Tamil</label>
-                                <label><input type="checkbox" /> Muslim</label>
-                                <label><input type="checkbox" /> Burgher</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('religion')}`}>
-                        <div className="filter-header" onClick={() => toggle('religion')}>
-                            <span>Religion</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Buddhist</label>
-                                <label><input type="checkbox" /> Hindu</label>
-                                <label><input type="checkbox" /> Christian</label>
-                                <label><input type="checkbox" /> Catholic</label>
-                                <label><input type="checkbox" /> Muslim</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('status')}`}>
-                        <div className="filter-header" onClick={() => toggle('status')}>
-                            <span>Civil Status</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Never Married</label>
-                                <label><input type="checkbox" /> Divorced</label>
-                                <label><input type="checkbox" /> Widowed</label>
-                                <label><input type="checkbox" /> Separated</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('profession')}`}>
-                        <div className="filter-header" onClick={() => toggle('profession')}>
-                            <span>Profession</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Software Engineer</label>
-                                <label><input type="checkbox" /> Doctor</label>
-                                <label><input type="checkbox" /> Teacher</label>
-                                <label><input type="checkbox" /> Engineer</label>
-                                <label><input type="checkbox" /> Business Owner</label>
-                                <label><input type="checkbox" /> Accountant</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('education')}`}>
-                        <div className="filter-header" onClick={() => toggle('education')}>
-                            <span>Education Level</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> PhD</label>
-                                <label><input type="checkbox" /> Masters</label>
-                                <label><input type="checkbox" /> Bachelors</label>
-                                <label><input type="checkbox" /> Diploma</label>
-                                <label><input type="checkbox" /> A/L</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('height')}`}>
-                        <div className="filter-header" onClick={() => toggle('height')}>
-                            <span>Height</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="range-inputs">
-                                <select className="filter-select">
-                                    <option>4&apos; 6&quot;</option>
-                                    <option>5&apos; 0&quot;</option>
-                                    <option defaultValue="selected">5&apos; 4&quot;</option>
-                                    <option>5&apos; 8&quot;</option>
-                                </select>
-                                <span>to</span>
-                                <select className="filter-select">
-                                    <option>5&apos; 8&quot;</option>
-                                    <option defaultValue="selected">6&apos; 0&quot;</option>
-                                    <option>6&apos; 4&quot;</option>
-                                    <option>6&apos; 8&quot;</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('food')}`}>
-                        <div className="filter-header" onClick={() => toggle('food')}>
-                            <span>Food Preference</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Vegetarian</label>
-                                <label><input type="checkbox" /> Non-Vegetarian</label>
-                                <label><input type="checkbox" /> Vegan</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* I'll skip some repetitive groups like drinking/smoking/creator/verified to save space, but add them if critical. */}
-                    {/* Adding Created By and Verified */}
-
-                    <div className={`filter-group collapsible ${getOpenClass('creator')}`}>
-                        <div className="filter-header" onClick={() => toggle('creator')}>
-                            <span>Account Created by</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Self</label>
-                                <label><input type="checkbox" /> Parents</label>
-                                <label><input type="checkbox" /> Sibling</label>
-                                <label><input type="checkbox" /> Matchmaker</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className={`filter-group collapsible ${getOpenClass('verified')}`}>
-                        <div className="filter-header" onClick={() => toggle('verified')}>
-                            <span>ID Verified</span>
-                            <span className="filter-arrow">▼</span>
-                        </div>
-                        <div className="filter-content">
-                            <div className="checkbox-filters">
-                                <label><input type="checkbox" /> Verified Only</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="save-search-box">
-                        <p>Save this search as your preferred search criteria?</p>
-                        <button className="btn btn-primary">Save</button>
+                    <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
+                        <p style={{ margin: '0 0 15px 0', fontSize: '14px', color: '#666' }}>Save this search as your preferred search criteria?</p>
+                        <button className="btn btn-primary" style={{ backgroundColor: '#d4af37', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '25px', cursor: 'pointer', fontWeight: 600 }}>Save</button>
                     </div>
                 </aside>
 
                 {/* Search Results */}
-                <div className="search-results">
-                    <div className="results-header">
-                        <div className="results-toggle">
+                <div className="search-results" style={{ flex: 1 }}>
+                    <div className="results-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
+                        <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span>Preferred Search</span>
-                            <label className="toggle-switch">
-                                <input type="checkbox" />
-                                <span className="toggle-slider"></span>
+                            <label className="toggle-switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
+                                <input type="checkbox" style={{ opacity: 0, width: 0, height: 0 }} />
+                                <span className="toggle-slider" style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#ccc', borderRadius: '24px' }}></span>
                             </label>
                         </div>
-                        <p className="results-count">Showing 1 - 20 of 529 posts</p>
+                        <p className="results-count" style={{ margin: 0, color: '#666' }}>Showing {profiles.length} profiles</p>
                     </div>
 
-                    <div className="results-list">
-                        {/* Profile Card 1 */}
-                        <div className="search-profile-card boosted">
-                            <span className="boost-badge">Boost Ad</span>
-                            <div className="profile-photo-container">
-                                <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400" alt="Profile" className="profile-photo" />
-                            </div>
-                            <div className="profile-info-section">
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                    <span className="profile-info-text">Ishani</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">28 yrs</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                    <span className="profile-info-text">4'10"</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                    <span className="profile-info-text">No Job</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">Matale</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                                    </svg>
-                                    <span className="profile-info-text">Buddhism</span>
-                                </div>
-                                <div className="profile-activity-badge">
-                                    <svg className="profile-activity-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span>2 days ago</span>
-                                </div>
-                            </div>
-                            <button className="view-profile-btn" onClick={onOpenProfileDetail}>View Profile</button>
-                        </div>
+                    <div className="results-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                        {profiles.map((profile, index) => {
+                            const placeholderImg = profile.gender === "Female"
+                                ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
+                                : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
 
-                        {/* Profile Card 2 */}
-                        <div className="search-profile-card boosted">
-                            <span className="boost-badge">Boost Ad</span>
-                            <div className="profile-photo-container">
-                                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400" alt="Profile" className="profile-photo" />
-                            </div>
-                            <div className="profile-info-section">
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                    <span className="profile-info-text">Shahan</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">31 yrs</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                    <span className="profile-info-text">5' 4"</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                    <span className="profile-info-text">Business Owner</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">Kamagaya-shi, Japan</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                                    </svg>
-                                    <span className="profile-info-text">Buddhist</span>
-                                </div>
-                                <div className="profile-activity-badge">
-                                    <svg className="profile-activity-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span>6 days ago</span>
-                                </div>
-                            </div>
-                            <button className="view-profile-btn" onClick={onOpenProfileDetail}>View Profile</button>
-                        </div>
+                            return (
+                                <div key={profile.id} onClick={() => onOpenProfileDetail(profile)} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={{ borderRadius: '20px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', cursor: 'pointer' }}>
+                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#9b2335', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    <div style={{ position: 'relative', height: '300px' }}>
+                                        <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', padding: '20px 15px', color: 'white' }}>
+                                            <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{profile.firstName || 'User'} {profile.lastName || ''}</div>
+                                            <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>{profile.age || 0} years • {profile.cityOfResidence || 'Unknown'}</div>
+                                        </div>
+                                    </div>
 
-                        {/* Profile Card 3 */}
-                        <div className="search-profile-card">
-                            <div className="profile-photo-container">
-                                <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400" alt="Profile" className="profile-photo" />
-                            </div>
-                            <div className="profile-info-section">
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                    <span className="profile-info-text">Supun</span>
+                                    <div style={{ padding: '20px' }}>
+                                        <div style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#666', fontSize: '0.95rem' }}>
+                                                <span>🎓</span> {profile.qualificationLevel || 'Not Specified'}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#666', fontSize: '0.95rem' }}>
+                                                <span>💼</span> {profile.occupation || 'Not Specified'}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#666', fontSize: '0.95rem' }}>
+                                                <span>🙏</span> {profile.religion || 'Not Specified'}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '15px', borderTop: '1px solid #eee' }}>
+                                            <span style={{ color: '#9b2335', fontWeight: 600 }}>New Match!</span>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <button onClick={(e) => handleToggleFavorite(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: interactions.Favorites.includes(profile.id) ? '#ff5a5f' : '#fce4e4', color: interactions.Favorites.includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
+                                                <button onClick={(e) => handleToggleShortlist(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: interactions.Shortlists.includes(profile.id) ? '#ffb400' : '#fdf8e4', color: interactions.Shortlists.includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">34 yrs</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                    </svg>
-                                    <span className="profile-info-text">5' 6"</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                    </svg>
-                                    <span className="profile-info-text">Software Engineer</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span className="profile-info-text">Manchester, UK</span>
-                                </div>
-                                <div className="profile-info-item">
-                                    <svg className="profile-info-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
-                                    </svg>
-                                    <span className="profile-info-text">Buddhist</span>
-                                </div>
-                                <div className="profile-activity-badge">
-                                    <svg className="profile-activity-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span>15 days ago</span>
-                                </div>
-                            </div>
-                            <button className="view-profile-btn" onClick={onOpenProfileDetail}>View Profile</button>
-                        </div>
+                            );
+                        })}
                     </div>
 
-                    <div className="pagination">
-                        <button className="page-btn prev" disabled>&lt; Prev</button>
-                        <button className="page-btn active">1</button>
-                        <button className="page-btn">2</button>
-                        <button className="page-btn">3</button>
-                        <span className="page-dots">...</span>
-                        <button className="page-btn">27</button>
-                        <button className="page-btn next">Next &gt;</button>
+                    {profiles.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+                            <p>No recently registered profiles available.</p>
+                        </div>
+                    )}
+
+                    <div className="pagination" style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '40px' }}>
+                        <button className="page-btn prev" disabled style={{ padding: '8px 16px', border: '1px solid #eee', borderRadius: '8px', background: 'white', color: '#ccc' }}>&lt; Prev</button>
+                        <button className="page-btn active" style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#9b2335', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>1</button>
+                        <button className="page-btn next" style={{ padding: '8px 16px', border: '1px solid #eee', borderRadius: '8px', background: 'white', cursor: 'pointer' }}>Next &gt;</button>
                     </div>
                 </div>
             </div>

@@ -18,15 +18,19 @@ import AnimateIn from '../components/AnimateIn';
 export default function Home() {
   const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
   const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
   const [registerAsMatchmaker, setRegisterAsMatchmaker] = useState(false);
 
-  const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number) => {
+  const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number, profile?: any) => {
     setActiveModal(modal);
     if (modal === 'register') {
       setRegisterAsMatchmaker(false);
     }
     if (modal === 'blog' && blogId) {
       setSelectedBlogId(blogId);
+    }
+    if (modal === 'profile' && profile) {
+      setSelectedProfile(profile);
     }
   };
 
@@ -39,6 +43,7 @@ export default function Home() {
     setActiveModal(null);
     setSelectedBlogId(null);
     setRegisterAsMatchmaker(false);
+    setSelectedProfile(null);
   };
 
   return (
@@ -59,6 +64,7 @@ export default function Home() {
       <AnimateIn delay={150}>
         <Profiles
           onOpenSubscription={() => openModal('subscription')}
+          onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)}
         />
       </AnimateIn>
       <AnimateIn delay={100}>
@@ -71,7 +77,7 @@ export default function Home() {
       </AnimateIn>
       <AnimateIn delay={150}>
         <TopProfiles
-          onOpenProfileDetail={() => openModal('profile')}
+          onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)}
         />
       </AnimateIn>
       <AnimateIn delay={100}>
@@ -93,6 +99,7 @@ export default function Home() {
         onClose={closeModal}
         onSwitch={openModal}
         selectedBlogId={selectedBlogId}
+        selectedProfile={selectedProfile}
         registerAsMatchmaker={registerAsMatchmaker}
       />
     </main>
