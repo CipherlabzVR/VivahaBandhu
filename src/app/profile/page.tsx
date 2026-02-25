@@ -30,7 +30,7 @@ export default function ProfilePage() {
             const token = localStorage.getItem('token');
             if (!user?.id || !token) return;
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://localhost:44352/api'}/Matrimonial/GetProfile?userId=${user.id}`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:5004/api'}/Matrimonial/GetProfile?userId=${user.id}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
