@@ -34,7 +34,11 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 try {
                     const res = await matrimonialService.getUserInteractions(Number(user.id));
                     if (res.statusCode === 200 && res.result) {
-                        setInteractions(res.result);
+                        // Handle potential casing differences (PascalCase vs camelCase)
+                        setInteractions({
+                            Favorites: res.result.Favorites || res.result.favorites || [],
+                            Shortlists: res.result.Shortlists || res.result.shortlists || []
+                        });
                     }
                 } catch (error) {
                     console.error("Failed to load interactions", error);
@@ -52,12 +56,15 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
         try {
             const res = await matrimonialService.toggleFavorite(Number(user.id), profileId);
             if (res.statusCode === 200) {
-                setInteractions(prev => ({
-                    ...prev,
-                    Favorites: prev.Favorites.includes(profileId)
-                        ? prev.Favorites.filter(id => id !== profileId)
-                        : [...prev.Favorites, profileId]
-                }));
+                setInteractions(prev => {
+                    const currentFavorites = prev.Favorites || [];
+                    return {
+                        ...prev,
+                        Favorites: currentFavorites.includes(profileId)
+                            ? currentFavorites.filter(id => id !== profileId)
+                            : [...currentFavorites, profileId]
+                    };
+                });
             }
         } catch (error) {
             console.error("Error toggling favorite", error);
@@ -70,12 +77,15 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
         try {
             const res = await matrimonialService.toggleShortlist(Number(user.id), profileId);
             if (res.statusCode === 200) {
-                setInteractions(prev => ({
-                    ...prev,
-                    Shortlists: prev.Shortlists.includes(profileId)
-                        ? prev.Shortlists.filter(id => id !== profileId)
-                        : [...prev.Shortlists, profileId]
-                }));
+                setInteractions(prev => {
+                    const currentShortlists = prev.Shortlists || [];
+                    return {
+                        ...prev,
+                        Shortlists: currentShortlists.includes(profileId)
+                            ? currentShortlists.filter(id => id !== profileId)
+                            : [...currentShortlists, profileId]
+                    };
+                });
             }
         } catch (error) {
             console.error("Error toggling shortlist", error);
@@ -122,8 +132,8 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                 <div className={`flex items-center justify-between pt-4 border-t border-gray-200 ${isBlurred ? 'blur-sm' : ''}`}>
                                     <span className="text-primary font-semibold">New Match!</span>
                                     <div className="flex gap-2">
-                                        <button onClick={(e) => handleToggleFavorite(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${interactions.Favorites.includes(profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
-                                        <button onClick={(e) => handleToggleShortlist(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${interactions.Shortlists.includes(profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>
+                                        <button onClick={(e) => handleToggleFavorite(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Favorites || []).includes(profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
+                                        <button onClick={(e) => handleToggleShortlist(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Shortlists || []).includes(profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>
                                     </div>
                                 </div>
                                 {isBlurred && (

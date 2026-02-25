@@ -29,7 +29,11 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 try {
                     const res = await matrimonialService.getUserInteractions(Number(user.id));
                     if (res.statusCode === 200 && res.result) {
-                        setInteractions(res.result);
+                        // Handle potential casing differences (PascalCase vs camelCase)
+                        setInteractions({
+                            Favorites: res.result.Favorites || res.result.favorites || [],
+                            Shortlists: res.result.Shortlists || res.result.shortlists || []
+                        });
                     }
                 } catch (error) {
                     console.error("Failed to load interactions", error);
@@ -47,12 +51,15 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         try {
             const res = await matrimonialService.toggleFavorite(Number(user.id), profileId);
             if (res.statusCode === 200) {
-                setInteractions(prev => ({
-                    ...prev,
-                    Favorites: prev.Favorites.includes(profileId)
-                        ? prev.Favorites.filter(id => id !== profileId)
-                        : [...prev.Favorites, profileId]
-                }));
+                setInteractions(prev => {
+                    const currentFavorites = prev.Favorites || [];
+                    return {
+                        ...prev,
+                        Favorites: currentFavorites.includes(profileId)
+                            ? currentFavorites.filter(id => id !== profileId)
+                            : [...currentFavorites, profileId]
+                    };
+                });
             }
         } catch (error) {
             console.error("Error toggling favorite", error);
@@ -65,12 +72,15 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         try {
             const res = await matrimonialService.toggleShortlist(Number(user.id), profileId);
             if (res.statusCode === 200) {
-                setInteractions(prev => ({
-                    ...prev,
-                    Shortlists: prev.Shortlists.includes(profileId)
-                        ? prev.Shortlists.filter(id => id !== profileId)
-                        : [...prev.Shortlists, profileId]
-                }));
+                setInteractions(prev => {
+                    const currentShortlists = prev.Shortlists || [];
+                    return {
+                        ...prev,
+                        Shortlists: currentShortlists.includes(profileId)
+                            ? currentShortlists.filter(id => id !== profileId)
+                            : [...currentShortlists, profileId]
+                    };
+                });
             }
         } catch (error) {
             console.error("Error toggling shortlist", error);
@@ -170,8 +180,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '15px', borderTop: '1px solid #eee' }}>
                                             <span style={{ color: '#9b2335', fontWeight: 600 }}>New Match!</span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
-                                                <button onClick={(e) => handleToggleFavorite(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: interactions.Favorites.includes(profile.id) ? '#ff5a5f' : '#fce4e4', color: interactions.Favorites.includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
-                                                <button onClick={(e) => handleToggleShortlist(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: interactions.Shortlists.includes(profile.id) ? '#ffb400' : '#fdf8e4', color: interactions.Shortlists.includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
+                                                <button onClick={(e) => handleToggleFavorite(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Favorites || []).includes(profile.id) ? '#ff5a5f' : '#fce4e4', color: (interactions.Favorites || []).includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
+                                                <button onClick={(e) => handleToggleShortlist(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Shortlists || []).includes(profile.id) ? '#ffb400' : '#fdf8e4', color: (interactions.Shortlists || []).includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
                                             </div>
                                         </div>
                                     </div>
