@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 
-export default function MessagesPage() {
+function MessagesContent() {
     const { user } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -383,5 +383,13 @@ export default function MessagesPage() {
 
             <Footer />
         </main>
+    );
+}
+
+export default function MessagesPage() {
+    return (
+        <Suspense fallback={<div>Loading messages...</div>}>
+            <MessagesContent />
+        </Suspense>
     );
 }
