@@ -345,6 +345,26 @@ export const matrimonialService = {
         } catch (error) {
             throw error;
         }
+    },
+
+    async deleteMessage(messageId: number, userId: number): Promise<any> {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteMessage?messageId=${messageId}&userId=${userId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to delete message');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
     }
 };
 
