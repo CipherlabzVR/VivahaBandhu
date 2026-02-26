@@ -252,15 +252,27 @@ export const matrimonialService = {
      * Send a matrimonial message
      */
     async sendMessage(senderId: number, receiverId: number, content: string): Promise<any> {
+        if (!senderId || !receiverId) {
+            throw new Error('Invalid sender or receiver ID');
+        }
         try {
+            const token = localStorage.getItem('token');
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SendMessage`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
                 },
-                body: JSON.stringify({ senderId, receiverId, content })
+                body: JSON.stringify({
+                    SenderId: senderId,
+                    ReceiverId: receiverId,
+                    Content: content
+                })
             });
-            if (!response.ok) throw new Error('Failed to send message');
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to send message');
+            }
             return await response.json();
         } catch (error) {
             throw error;

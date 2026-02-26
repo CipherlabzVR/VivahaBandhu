@@ -3,6 +3,7 @@ import { Playfair_Display, Source_Sans_3, Pacifico } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
+import MessageFloatingButton from '../components/MessageFloatingButton';
 import "./globals.css";
 
 
@@ -51,6 +52,7 @@ export default function RootLayout({
           <LanguageProvider>
             <LoadingScreenWrapper>
               {children}
+              <MessageFloatingButton />
             </LoadingScreenWrapper>
           </LanguageProvider>
         </AuthProvider>

@@ -1361,7 +1361,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <span>{selectedProfile.cityOfResidence || 'Location Not Specified'}</span>
                                     </div>
                                     <div className="profile-actions-row">
-                                        {user && (String(user.id) === String(selectedProfile.userId) || String(user.id) === String(selectedProfile.id)) ? (
+                                        {user && (selectedProfile.userId ? String(user.id) === String(selectedProfile.userId) : false) ? (
                                             <div style={{ color: 'var(--primary)', fontWeight: 500, padding: '0.75rem', backgroundColor: '#fdf8f3', borderRadius: '8px', textAlign: 'center', width: '100%', border: '1px solid var(--primary-light)' }}>
                                                 ✨ This is your profile
                                             </div>
