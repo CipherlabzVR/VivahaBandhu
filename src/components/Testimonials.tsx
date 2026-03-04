@@ -3,7 +3,7 @@ export default function Testimonials() {
         <section className="py-24 px-4 bg-white">
             <div className="text-center max-w-2xl mx-auto mb-16">
                 <h2 className="text-4xl md:text-5xl font-playfair font-bold text-text-dark mb-4">Success Stories</h2>
-                <p className="text-text-light text-lg md:text-xl">Real stories from couples who found love on VivahaBandhu.</p>
+                <p className="text-text-light text-lg md:text-xl">Real stories from couples who found love on MyMatch.lk.</p>
             </div>
             <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="bg-cream rounded-3xl p-8 shadow-lg hover:shadow-xl transition-shadow">

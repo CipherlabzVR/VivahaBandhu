@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import Hero from '../components/Hero';
 import Features from '../components/Features';
@@ -16,12 +16,12 @@ import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
 
 export default function Home() {
-  const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+  const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
   const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
   const [registerAsMatchmaker, setRegisterAsMatchmaker] = useState(false);
 
-  const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number, profile?: any) => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
     setActiveModal(modal);
     if (modal === 'register') {
       setRegisterAsMatchmaker(false);
@@ -46,11 +46,18 @@ export default function Home() {
     setSelectedProfile(null);
   };
 
+  useEffect(() => {
+    const handleOpenVerify = () => openModal('verify');
+    window.addEventListener('open-verify-modal', handleOpenVerify);
+    return () => window.removeEventListener('open-verify-modal', handleOpenVerify);
+  }, []);
+
   return (
     <main>
       <Header
         onOpenLogin={() => openModal('login')}
         onOpenRegister={() => openModal('register')}
+        onOpenVerify={() => openModal('verify')}
       />
       <AnimateIn delay={0}>
         <Hero

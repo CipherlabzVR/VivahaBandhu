@@ -39,8 +39,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         eatingHabits: '',
         smokingHabits: '',
         horoscope: '',
+        horoscopeDocument: '',
 
         // Parents - Father
+        fatherName: '',
         fatherCountryOfResidence: '',
         fatherOccupation: '',
         fatherEthnicity: '',
@@ -49,6 +51,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         fatherRemarks: '',
 
         // Parents - Mother
+        motherName: '',
         motherCountryOfResidence: '',
         motherOccupation: '',
         motherEthnicity: '',
@@ -252,7 +255,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             }
 
             const result = await response.json();
-            if (result.statusCode === 1) { // Success
+            if (result.statusCode === 1 || result.statusCode === 200) { // Success
+                alert('Profile updated successfully!');
                 if (onComplete) onComplete();
                 if (onClose) onClose();
             } else {
@@ -450,6 +454,25 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                     <option value="Not Required">Not Required</option>
                                 </select>
                             </div>
+                            {formData.horoscope === 'Required' && (
+                                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                                    <label>Upload Horoscope Document</label>
+                                    <input
+                                        type="file"
+                                        accept="image/*,.pdf,.doc,.docx"
+                                        onChange={(e) => handleFileChange(e, 'horoscopeDocument')}
+                                        disabled={uploading['horoscopeDocument']}
+                                    />
+                                    {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                    {formData.horoscopeDocument && (
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            <a href={formData.horoscopeDocument} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
+                                                View Uploaded Horoscope
+                                            </a>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -460,6 +483,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
                         <h4 style={{ marginTop: '1rem', color: 'var(--primary)' }}>Father</h4>
                         <div className="form-grid">
+                            <div className="form-group">
+                                <label>Father's Name</label>
+                                <input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} placeholder="Full Name" />
+                            </div>
                             <div className="form-group">
                                 <label>Country of Residence*</label>
                                 <select name="fatherCountryOfResidence" value={formData.fatherCountryOfResidence} onChange={handleChange} required>
@@ -498,6 +525,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
                         <h4 style={{ marginTop: '2rem', color: 'var(--primary)' }}>Mother</h4>
                         <div className="form-grid">
+                            <div className="form-group">
+                                <label>Mother's Name</label>
+                                <input type="text" name="motherName" value={formData.motherName} onChange={handleChange} placeholder="Full Name" />
+                            </div>
                             <div className="form-group">
                                 <label>Country of Residence*</label>
                                 <select name="motherCountryOfResidence" value={formData.motherCountryOfResidence} onChange={handleChange} required>

@@ -166,7 +166,7 @@ export default function ContactUs() {
                     {/* Right column - Contact form */}
                     <div className="bg-white rounded-lg p-6 md:p-8 shadow-sm border border-slate-200">
                         <form onSubmit={handleSubmit} className="space-y-5">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label htmlFor="firstName" className="block text-sm font-medium text-slate-800 mb-1">
                                         {t('firstName')}

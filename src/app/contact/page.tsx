@@ -8,11 +8,11 @@ import Modals from '../../components/Modals';
 import AnimateIn from '../../components/AnimateIn';
 
 export default function ContactPage() {
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [registerAsMatchmaker, setRegisterAsMatchmaker] = useState(false);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number) => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number) => {
         setActiveModal(modal);
         if (modal === 'register') setRegisterAsMatchmaker(false);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
@@ -26,9 +26,10 @@ export default function ContactPage() {
 
     return (
         <main>
-            <Header
-                onOpenLogin={() => openModal('login')}
-                onOpenRegister={() => openModal('register')}
+            <Header 
+                onOpenLogin={() => openModal('login')} 
+                onOpenRegister={() => openModal('register')} 
+                onOpenVerify={() => openModal('verify')}
             />
             <AnimateIn delay={0}>
                 <ContactUs />

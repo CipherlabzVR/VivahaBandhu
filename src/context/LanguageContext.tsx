@@ -43,7 +43,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Features Section
     'findTheOne': 'Find the One',
     'findRealConnection': 'Find real connection',
-    'featuresDescription': "If you're serious about finding your life partner, VivahaBandhu is for you. With one of the largest networks of verified profiles in Sri Lanka, connecting families and finding your perfect match has never been more trusted and secure.",
+    'featuresDescription': "If you're serious about finding your life partner, MyMatch.lk is for you. With one of the largest networks of verified profiles in Sri Lanka, connecting families and finding your perfect match has never been more trusted and secure.",
     'familyValues': 'Family Values & Cultural Understanding',
     'familyValuesDesc': 'We respect and understand your family traditions, cultural background, and values to find matches that align with your expectations and beliefs.',
     'verifiedTrusted': 'Verified & Trusted Profiles',
@@ -143,7 +143,7 @@ const translations: Record<Language, Record<string, string>> = {
     'termsOfService': 'Terms of Service',
     'cookiePolicy': 'Cookie Policy',
     'refundPolicy': 'Refund Policy',
-    'allRightsReserved': '© 2026 VivahaBandhu. All rights reserved.',
+    'allRightsReserved': '© 2026 MyMatch.lk. All rights reserved.',
     'madeWithLove': 'Made with ❤️ in Sri Lanka',
     // About page
     'aboutHeroDesc': 'We are committed to helping you find meaningful connections with trust and care at the heart of everything we do.',
@@ -216,7 +216,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Features Section
     'findTheOne': 'එක සොයන්න',
     'findRealConnection': 'සැබෑ සම්බන්ධතාවයක් සොයන්න',
-    'featuresDescription': 'ඔබ ඔබේ ජීවිත හවුල්කරු සොයා ගැනීමට බැඳී සිටින්නේ නම්, VivahaBandhu ඔබටමයි. ශ්‍රී ලංකාවේ සත්‍යාපනය කළ පැතිකඩවල විශාලතම ජාලයක් සමඟ, පවුල් සම්බන්ධ කර ඔබේ පරිපූර්ණ ගැලපීම සොයා ගැනීම කිසිදා වඩා විශ්වාසදායක සහ ආරක්ෂිත නොවීය.',
+    'featuresDescription': 'ඔබ ඔබේ ජීවිත හවුල්කරු සොයා ගැනීමට බැඳී සිටින්නේ නම්, MyMatch.lk ඔබටමයි. ශ්‍රී ලංකාවේ සත්‍යාපනය කළ පැතිකඩවල විශාලතම ජාලයක් සමඟ, පවුල් සම්බන්ධ කර ඔබේ පරිපූර්ණ ගැලපීම සොයා ගැනීම කිසිදා වඩා විශ්වාසදායක සහ ආරක්ෂිත නොවීය.',
     'familyValues': 'පවුල් අගයන් සහ සංස්කෘතික අවබෝධය',
     'familyValuesDesc': 'ඔබේ පවුල් සම්ප්‍රදායන්, සංස්කෘතික පසුබිම සහ අගයන් අපි ගරු කරන අතර අවබෝධ කරන අතර, ඔබේ අපේක්ෂාවන් සහ විශ්වාසයන් සමඟ ගැලපෙන ගැලපීම් සොයා ගනිමු.',
     'verifiedTrusted': 'සත්‍යාපනය කළ සහ විශ්වාසදායක පැතිකඩ',
@@ -316,7 +316,7 @@ const translations: Record<Language, Record<string, string>> = {
     'termsOfService': 'සේවා කොන්දේසි',
     'cookiePolicy': 'කුකී ප්‍රතිපත්තිය',
     'refundPolicy': 'ආපසු ගෙවීමේ ප්‍රතිපත්තිය',
-    'allRightsReserved': '© 2026 VivahaBandhu. සියලුම හිමිකම් ඇවිරිණි.',
+    'allRightsReserved': '© 2026 MyMatch.lk. සියලුම හිමිකම් ඇවිරිණි.',
     'madeWithLove': 'ශ්‍රී ලංකාවේ ❤️ සමඟ සාදන ලදී',
     // About page
     'aboutHeroDesc': 'අප කටයුතු සියල්ලේ හදවතේ විශ්වාසය සහ රැකවරණය තබාගෙන අර්ථවත් සම්බන්ධතා සොයා ගැනීමට ඔබට උදව් කිරීමට අපි කැපවී සිටිමු.',

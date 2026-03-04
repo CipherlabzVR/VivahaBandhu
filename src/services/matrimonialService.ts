@@ -12,6 +12,7 @@ export interface MatrimonialRegisterRequest {
     password: string;
     accountType: string;
     profilePhotoBase64?: string;
+    parentUserId?: number;
 }
 
 export interface MatrimonialRegisterResponse {
@@ -71,6 +72,7 @@ export const matrimonialService = {
                     password: data.password,
                     accountType: data.accountType,
                     profilePhotoBase64: data.profilePhotoBase64,
+                    parentUserId: data.parentUserId,
                 }),
             });
 
@@ -222,6 +224,57 @@ export const matrimonialService = {
     },
 
     /**
+     * Get matched profiles for a user based on their partner preferences
+     */
+    async getMatchedProfiles(userId: number, count: number = 4): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetMatchedProfiles?userId=${userId}&count=${count}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to fetch matched profiles: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while fetching matched profiles');
+        }
+    },
+
+    /**
+     * Search profiles with filters
+     */
+    async searchProfiles(filters: any): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SearchProfiles`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(filters)
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to search profiles: ${response.statusText}`);
+            }
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while searching profiles');
+        }
+    },
+
+    /**
      * Get detailed profile by user ID
      */
     async getProfile(userId: number): Promise<any> {
@@ -361,6 +414,26 @@ export const matrimonialService = {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || 'Failed to delete message');
             }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Get sub-accounts for a parent user
+     */
+    async getSubAccounts(parentUserId: number): Promise<any> {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetSubAccounts?parentUserId=${parentUserId}`, {
+                method: 'GET',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) throw new Error('Failed to fetch sub-accounts');
             return await response.json();
         } catch (error) {
             throw error;

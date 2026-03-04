@@ -13,6 +13,9 @@ interface User {
     phone?: string;
     whatsapp?: string;
     accountType?: string;
+    profilePhoto?: string;
+    isVerified?: boolean;
+    horoscopeDocument?: string;
 }
 
 interface AuthContextType {

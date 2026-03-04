@@ -53,7 +53,7 @@ export default function WelcomePopup({ firstName, onClose }: WelcomePopupProps) 
                     <div className="flex justify-center items-center w-full mb-5">
                         <Image 
                             src="/logo2.png" 
-                            alt="VivahaBandhu Logo" 
+                            alt="MyMatch.lk Logo" 
                             width={200} 
                             height={100}
                             className="max-w-[200px] md:max-w-[150px] h-auto object-contain"

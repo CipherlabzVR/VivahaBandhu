@@ -138,6 +138,14 @@
 }
 
 @layer utilities {
+    .hero-video-clip {
+        clip-path: polygon(0 0, 100% 0, 100% 100%, 0% 100%);
+    }
+    @media (min-width: 768px) {
+        .hero-video-clip {
+            clip-path: polygon(20% 0, 100% 0, 100% 100%, 0% 100%);
+        }
+    }
     .animate-float {
         animation: float 6s ease-in-out infinite;
     }

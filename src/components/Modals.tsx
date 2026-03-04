@@ -8,7 +8,7 @@ import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
 
 interface ModalsProps {
-    activeModal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | null;
+    activeModal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null;
     onClose: () => void;
     onSwitch: (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog') => void;
     selectedBlogId?: number | null;
@@ -102,6 +102,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setRegisterAccountType('Matchmaker');
         }
     }, [activeModal, registerAsMatchmaker]);
+
+    // When opening verify modal, set the registered user ID from the logged-in user
+    useEffect(() => {
+        if (activeModal === 'verify' && user) {
+            setRegisteredUserId(Number(user.id));
+            setRegisteredFirstName(user.firstName);
+            // We don't need to set showVerification to true because we use activeModal === 'verify' in the render
+        }
+    }, [activeModal, user]);
 
     const validateForm = () => {
         const newErrors: { [key: string]: string } = {};
@@ -220,12 +229,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             if (response.statusCode === 200 && response.result) {
                 // Login successful
+                console.log('Login API response:', response.result);
                 const user = {
                     id: response.result.id.toString(),
                     firstName: response.result.firstName,
                     lastName: response.result.lastName,
                     email: response.result.email || response.result.username || loginEmail,
-                    phone: response.result.mobileNumber || '',
+                    phone: response.result.mobileNumber || response.result.phoneNumber || '',
+                    whatsapp: response.result.WhatsApp || response.result.whatsApp || response.result.whatsapp || '',
+                    nic: response.result.nic || response.result.Nic || response.result.nicNumber || response.result.identityDocument || response.result.IdentityDocument || '',
+                    dob: response.result.DateOfBirth || response.result.dateofBirth || response.result.dateOfBirth || response.result.dob || '',
+                    gender: response.result.Gender || response.result.gender || '',
+                    accountType: response.result.AccountType || response.result.accountType || response.result.role || 'Free Member',
+                    profilePhoto: response.result.ProfilePhoto || response.result.profilePhoto || '',
+                    horoscopeDocument: response.result.HoroscopeDocument || response.result.horoscopeDocument || '',
+                    isVerified: response.result.status === 1,
                 };
 
                 login(user);
@@ -236,7 +254,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 }
 
                 onClose();
-                router.push('/profile');
+                router.push('/');
+                // Force a page reload to ensure state is clean
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 100);
             } else {
                 setLoginError(response.message || 'Login failed. Please check your credentials.');
             }
@@ -271,8 +293,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         // Validate dayOfYear to be within 1-366 range
         if (dayOfYear < 1 || dayOfYear > 366) return null;
 
-        const date = new Date(Number(year), 0); // Start at Jan 1st of the year
-        date.setDate(dayOfYear); // Add days
+        // Correct way to calculate date from day of year in JS
+        // Using UTC to avoid timezone issues when converting to ISO string
+        const date = new Date(Date.UTC(Number(year), 0, 1)); // Start at Jan 1st of the year
+        date.setUTCDate(dayOfYear); // Add days (setUTCDate handles the rollover correctly)
 
         // Format to YYYY-MM-DD for input type="date"
         const formattedDate = date.toISOString().split('T')[0];
@@ -306,6 +330,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setShowVerification(false);
         // After welcome popup closes, redirect to homepage
         router.push('/');
+        // Force a page reload to ensure state is clean
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 100);
     };
 
     const close = () => {
@@ -437,65 +465,22 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             )}
 
             {/* Login Modal */}
-            <div className={`modal-overlay ${activeModal === 'login' ? 'active' : ''}`} id="loginModal" onClick={handleOverlayClick}>
+            <div className={`modal-overlay ${activeModal === 'login' || activeModal === 'verify' ? 'active' : ''}`} id="loginModal" onClick={handleOverlayClick}>
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
-                        <h2>Welcome Back</h2>
-                        <p>Login to continue your journey</p>
+                        <h2>{activeModal === 'verify' ? 'Verify Account' : 'Welcome Back'}</h2>
+                        <p>{activeModal === 'verify' ? 'Please verify your account to continue' : 'Login to continue your journey'}</p>
                     </div>
                     <div className="modal-body">
-                        <div className="login-tabs">
-                            <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => setLoginTab('login')}>Login</button>
-                            <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => setLoginTab('register')}>Register</button>
-                        </div>
-
-                        {loginTab === 'login' ? (
-                            <div id="loginTab" className="tab-content active">
-                                <div className="form-group">
-                                    <label>Email / Account ID</label>
-                                    <input type="email" placeholder="Enter your email or account ID" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
-                                </div>
-                                <div className="form-group">
-                                    <label>Password</label>
-                                    <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-                                </div>
-                                <div className="checkbox-group">
-                                    <input type="checkbox" id="remember" />
-                                    <label htmlFor="remember">Remember me</label>
-                                </div>
-                                {loginError && (
-                                    <div style={{
-                                        color: 'red',
-                                        fontSize: '0.9rem',
-                                        marginBottom: '1rem',
-                                        padding: '0.5rem',
-                                        backgroundColor: '#ffe6e6',
-                                        borderRadius: '4px'
-                                    }}>
-                                        {loginError}
-                                    </div>
-                                )}
-                                <button
-                                    className="btn btn-primary"
-                                    style={{ width: '100%', justifyContent: 'center' }}
-                                    onClick={handleLogin}
-                                    disabled={isLoading}
-                                >
-                                    {isLoading ? 'Logging in...' : 'Login'}
-                                </button>
-                                <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-                                    <a href="#" style={{ color: 'var(--primary)' }}>Forgot Password?</a>
-                                </p>
-                                <div className="divider">
-                                    <span>or continue with</span>
-                                </div>
-                                <div className="social-login">
-                                    <button className="social-btn">G</button>
-                                    <button className="social-btn">f</button>
-                                </div>
+                        {activeModal !== 'verify' && !showVerification && (
+                            <div className="login-tabs">
+                                <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => setLoginTab('login')}>Login</button>
+                                <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => setLoginTab('register')}>Register</button>
                             </div>
-                        ) : showVerification ? (
+                        )}
+
+                        {activeModal === 'verify' || showVerification ? (
                             <div id="verificationTab" className="tab-content active verification-screen" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
                                 <div className="verification-header">
                                     <div className="verification-icon">
@@ -693,33 +678,103 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
                                                 Didn't receive the code?
                                             </p>
-                                            <button
-                                                type="button"
-                                                onClick={handleResendCode}
-                                                className="resend-button"
-                                                disabled={isSendingCode}
-                                                style={{
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    color: 'var(--primary)',
-                                                    cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                    textDecoration: 'underline',
-                                                    fontSize: '0.9rem',
-                                                    fontWeight: '500',
-                                                    opacity: isSendingCode ? 0.5 : 1
-                                                }}
-                                            >
-                                                {isSendingCode ? 'Sending...' : 'Resend Code'}
-                                            </button>
+                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleResendCode}
+                                                    className="resend-button"
+                                                    disabled={isSendingCode}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: 'var(--primary)',
+                                                        cursor: isSendingCode ? 'not-allowed' : 'pointer',
+                                                        textDecoration: 'underline',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: '500',
+                                                        opacity: isSendingCode ? 0.5 : 1
+                                                    }}
+                                                >
+                                                    {isSendingCode ? 'Sending...' : 'Resend Code'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCodeSent(false);
+                                                        setVerificationCode('');
+                                                        setVerificationError(null);
+                                                        setSendCodeError(null);
+                                                    }}
+                                                    className="resend-button"
+                                                    disabled={isSendingCode || isVerifying}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: 'var(--text-light)',
+                                                        cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
+                                                        textDecoration: 'underline',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: '500',
+                                                        opacity: (isSendingCode || isVerifying) ? 0.5 : 1
+                                                    }}
+                                                >
+                                                    Change Method
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        ) : loginTab === 'login' ? (
+                            <div id="loginTab" className="tab-content active">
+                                <div className="form-group">
+                                    <label>Email / Account ID</label>
+                                    <input type="email" placeholder="Enter your email or account ID" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Password</label>
+                                    <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                                </div>
+                                <div className="checkbox-group">
+                                    <input type="checkbox" id="remember" />
+                                    <label htmlFor="remember">Remember me</label>
+                                </div>
+                                {loginError && (
+                                    <div style={{
+                                        color: 'red',
+                                        fontSize: '0.9rem',
+                                        marginBottom: '1rem',
+                                        padding: '0.5rem',
+                                        backgroundColor: '#ffe6e6',
+                                        borderRadius: '4px'
+                                    }}>
+                                        {loginError}
+                                    </div>
+                                )}
+                                <button
+                                    className="btn btn-primary"
+                                    style={{ width: '100%', justifyContent: 'center' }}
+                                    onClick={handleLogin}
+                                    disabled={isLoading}
+                                >
+                                    {isLoading ? 'Logging in...' : 'Login'}
+                                </button>
+                                <p style={{ textAlign: 'center', marginTop: '1rem' }}>
+                                    <a href="#" style={{ color: 'var(--primary)' }}>Forgot Password?</a>
+                                </p>
+                                <div className="divider">
+                                    <span>or continue with</span>
+                                </div>
+                                <div className="social-login">
+                                    <button className="social-btn">G</button>
+                                    <button className="social-btn">f</button>
+                                </div>
                             </div>
                         ) : (
                             <div id="registerTab" className="tab-content active" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
                                 <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Create a new account to get started</p>
 
-                                <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                                <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
                                         <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={{ borderColor: errors.firstName ? 'red' : '' }} />
@@ -736,15 +791,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <input type="text" placeholder="NIC or Passport Number" value={nic} onChange={handleNicChange} maxLength={12} style={{ borderColor: errors.nic ? 'red' : '' }} />
                                     {errors.nic && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.nic}</span>}
                                 </div>
-                                <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                                <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Date of Birth *</label>
-                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} />
+                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} disabled={!!parseNIC(nic)} />
                                         {errors.dob && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.dob}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Gender *</label>
-                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }}>
+                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }} disabled={!!parseNIC(nic)}>
                                             <option value="">Select Gender</option>
                                             <option value="Male">Male</option>
                                             <option value="Female">Female</option>
@@ -1098,24 +1153,49 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
                                                 Didn't receive the code?
                                             </p>
-                                            <button
-                                                type="button"
-                                                onClick={handleResendCode}
-                                                className="resend-button"
-                                                disabled={isSendingCode}
-                                                style={{
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    color: 'var(--primary)',
-                                                    cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                    textDecoration: 'underline',
-                                                    fontSize: '0.9rem',
-                                                    fontWeight: '500',
-                                                    opacity: isSendingCode ? 0.5 : 1
-                                                }}
-                                            >
-                                                {isSendingCode ? 'Sending...' : 'Resend Code'}
-                                            </button>
+                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleResendCode}
+                                                    className="resend-button"
+                                                    disabled={isSendingCode}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: 'var(--primary)',
+                                                        cursor: isSendingCode ? 'not-allowed' : 'pointer',
+                                                        textDecoration: 'underline',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: '500',
+                                                        opacity: isSendingCode ? 0.5 : 1
+                                                    }}
+                                                >
+                                                    {isSendingCode ? 'Sending...' : 'Resend Code'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setCodeSent(false);
+                                                        setVerificationCode('');
+                                                        setVerificationError(null);
+                                                        setSendCodeError(null);
+                                                    }}
+                                                    className="resend-button"
+                                                    disabled={isSendingCode || isVerifying}
+                                                    style={{
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        color: 'var(--text-light)',
+                                                        cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
+                                                        textDecoration: 'underline',
+                                                        fontSize: '0.9rem',
+                                                        fontWeight: '500',
+                                                        opacity: (isSendingCode || isVerifying) ? 0.5 : 1
+                                                    }}
+                                                >
+                                                    Change Method
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -1136,7 +1216,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                 </div>
 
-                                <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                                <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
                                         <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={{ borderColor: errors.firstName ? 'red' : '' }} />
@@ -1153,15 +1233,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <input type="text" placeholder="NIC or Passport Number" value={nic} onChange={handleNicChange} maxLength={12} style={{ borderColor: errors.nic ? 'red' : '' }} />
                                     {errors.nic && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.nic}</span>}
                                 </div>
-                                <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
+                                <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Date of Birth *</label>
-                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} />
+                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} disabled={!!parseNIC(nic)} />
                                         {errors.dob && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.dob}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Gender *</label>
-                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }}>
+                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }} disabled={!!parseNIC(nic)}>
                                             <option value="">Select Gender</option>
                                             <option value="Male">Male</option>
                                             <option value="Female">Female</option>

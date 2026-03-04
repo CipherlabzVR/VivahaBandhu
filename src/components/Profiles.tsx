@@ -17,15 +17,35 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const { user } = useAuth();
 
+    const [isMatched, setIsMatched] = useState(false);
+
     useEffect(() => {
-        const fetchRecentProfiles = async () => {
+        const fetchProfiles = async () => {
             try {
-                const res = await matrimonialService.getRecentProfiles(4);
-                if (res.statusCode === 200 && res.result) {
-                    setProfiles(res.result);
+                if (user?.id) {
+                    const res = await matrimonialService.getMatchedProfiles(Number(user.id), 4);
+                    if (res.statusCode === 200 && res.result) {
+                        const matched = res.result;
+                        if (Array.isArray(matched) && matched.length > 0) {
+                            setProfiles(matched);
+                            setIsMatched(true);
+                        } else {
+                            const fallback = await matrimonialService.getRecentProfiles(4);
+                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result);
+                            setIsMatched(false);
+                        }
+                    }
+                } else {
+                    const res = await matrimonialService.getRecentProfiles(4);
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
+                    setIsMatched(false);
                 }
             } catch (error) {
                 console.error("Failed to load profiles", error);
+                try {
+                    const res = await matrimonialService.getRecentProfiles(4);
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
+                } catch (e) { /* ignore */ }
             }
         };
 
@@ -34,7 +54,6 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 try {
                     const res = await matrimonialService.getUserInteractions(Number(user.id));
                     if (res.statusCode === 200 && res.result) {
-                        // Handle potential casing differences (PascalCase vs camelCase)
                         setInteractions({
                             Favorites: res.result.Favorites || res.result.favorites || [],
                             Shortlists: res.result.Shortlists || res.result.shortlists || []
@@ -46,13 +65,17 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
             }
         };
 
-        fetchRecentProfiles();
+        fetchProfiles();
         fetchInteractions();
     }, [user?.id]);
 
     const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
         if (!user) return alert('Please login to add favorites');
+        if (user.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
         try {
             const res = await matrimonialService.toggleFavorite(Number(user.id), profileId);
             if (res.statusCode === 200) {
@@ -74,6 +97,10 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     const handleToggleShortlist = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
         if (!user) return alert('Please login to shortlist profiles');
+        if (user.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
         try {
             const res = await matrimonialService.toggleShortlist(Number(user.id), profileId);
             if (res.statusCode === 200) {
@@ -107,7 +134,13 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                         : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
 
                     return (
-                        <div key={profile.id} onClick={() => { if (!isBlurred && onOpenProfileDetail) onOpenProfileDetail(profile); }} className={`bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative ${!isBlurred ? 'cursor-pointer' : ''}`}>
+                        <div key={profile.id} onClick={() => { 
+                            if (user?.isVerified === false) {
+                                window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                return;
+                            }
+                            if (!isBlurred && onOpenProfileDetail) onOpenProfileDetail(profile); 
+                        }} className={`bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative ${!isBlurred ? 'cursor-pointer' : ''}`}>
                             <span className="absolute top-4 right-4 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold z-10">{t('verified')}</span>
                             <div className="relative">
                                 <img src={profile.profilePhoto || placeholderImg} alt="Profile" className="w-full h-80 object-cover" />
@@ -130,7 +163,9 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                     </div>
                                 </div>
                                 <div className={`flex items-center justify-between pt-4 border-t border-gray-200 ${isBlurred ? 'blur-sm' : ''}`}>
-                                    <span className="text-primary font-semibold">New Match!</span>
+                                    <span className="text-primary font-semibold">
+                                        {isMatched && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
+                                    </span>
                                     <div className="flex gap-2">
                                         <button onClick={(e) => handleToggleFavorite(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Favorites || []).includes(profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
                                         <button onClick={(e) => handleToggleShortlist(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Shortlists || []).includes(profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>

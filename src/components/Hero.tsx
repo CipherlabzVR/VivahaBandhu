@@ -38,10 +38,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                 loop
                 playsInline
                 preload="auto"
-                className="absolute top-0 right-0 w-1/2 h-full object-cover opacity-90 z-0"
-                style={{
-                    clipPath: 'polygon(20% 0, 100% 0, 100% 100%, 0% 100%)'
-                }}
+                className="absolute top-0 right-0 w-full md:w-1/2 h-full object-cover opacity-30 md:opacity-90 z-0 hero-video-clip"
                 onLoadedData={(e) => {
                     const video = e.target as HTMLVideoElement;
                     video.play().catch(() => {
@@ -53,10 +50,10 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
             </video>
             
             {/* Glassmorphism overlay for white background area with blur */}
-            <div className="absolute top-0 left-0 w-1/2 h-full bg-white/50 backdrop-blur-2xl z-[1]"></div>
+            <div className="absolute top-0 left-0 w-full md:w-1/2 h-full bg-white/80 md:bg-white/50 backdrop-blur-sm md:backdrop-blur-2xl z-[1]"></div>
             
             {/* Animated Heart Decorations - Left Side (White Background Area) */}
-            <div className="absolute inset-0 z-[2] pointer-events-none overflow-hidden">
+            <div className="absolute inset-0 z-[2] pointer-events-none overflow-hidden hidden md:block">
                 {/* Left side hearts */}
                 <div className="absolute top-20 left-10 w-16 h-16 rounded-full flex items-center justify-center animate-float" style={{ animationDelay: '0s', animationDuration: '6s' }}>
                     <svg className="w-8 h-8 text-primary" fill="currentColor" viewBox="0 0 24 24">
@@ -145,7 +142,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                 <div className="bg-white/10 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-white/20 w-full mt-8">
                     <h3 className="text-xl font-playfair font-bold mb-4 text-text-dark text-center">{t('quickSearch')}</h3>
                     <div className="flex flex-wrap gap-4 items-end">
-                        <div className="flex-1 min-w-[150px]">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[150px]">
                             <CustomDropdown
                                 name="gender"
                                 value={search.gender}
@@ -157,7 +154,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 label={t('imLookingFor')}
                             />
                         </div>
-                        <div className="flex-1 min-w-[120px]">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[120px]">
                             <CustomDropdown
                                 name="ageFrom"
                                 value={search.ageFrom}
@@ -169,7 +166,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 label={t('ageFrom')}
                             />
                         </div>
-                        <div className="flex-1 min-w-[120px]">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[120px]">
                             <CustomDropdown
                                 name="ageTo"
                                 value={search.ageTo}
@@ -181,7 +178,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 label={t('ageTo')}
                             />
                         </div>
-                        <div className="flex-1 min-w-[150px]">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[150px]">
                             <CustomDropdown
                                 name="religion"
                                 value={search.religion}
@@ -198,7 +195,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 label={t('religion')}
                             />
                         </div>
-                        <div className="flex-1 min-w-[150px]">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[150px]">
                             <CustomDropdown
                                 name="district"
                                 value={search.district}
@@ -221,7 +218,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 label={t('district')}
                             />
                         </div>
-                        <div className="min-w-[150px]">
+                        <div className="w-full md:w-auto md:min-w-[150px]">
                             <button className="w-full px-8 py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg" onClick={handleSearch}>
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

@@ -7,11 +7,11 @@ import Modals from '../../components/Modals';
 import SearchSection from '../../components/SearchSection';
 
 export default function ProfilesPage() {
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number, profile?: any) => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) setSelectedProfile(profile);
@@ -25,9 +25,10 @@ export default function ProfilesPage() {
 
     return (
         <main>
-            <Header
-                onOpenLogin={() => openModal('login')}
-                onOpenRegister={() => openModal('register')}
+            <Header 
+                onOpenLogin={() => openModal('login')} 
+                onOpenRegister={() => openModal('register')} 
+                onOpenVerify={() => openModal('verify')}
             />
             <div className="pt-20">
                 <SearchSection

@@ -9,7 +9,7 @@ import { matrimonialService } from '../../services/matrimonialService';
 
 function SearchContent() {
     const searchParams = useSearchParams();
-    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | null>(null);
+    const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
@@ -49,7 +49,7 @@ function SearchContent() {
         fetchAndFilterProfiles();
     }, [searchParams]);
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog', blogId?: number, profile?: any) => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) setSelectedProfile(profile);
@@ -63,9 +63,10 @@ function SearchContent() {
 
     return (
         <>
-            <Header
-                onOpenLogin={() => openModal('login')}
-                onOpenRegister={() => openModal('register')}
+            <Header 
+                onOpenLogin={() => openModal('login')} 
+                onOpenRegister={() => openModal('register')} 
+                onOpenVerify={() => openModal('verify')}
             />
 
             <div style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px' }}>
@@ -127,7 +128,7 @@ function SearchContent() {
 function SearchFallback() {
     return (
         <>
-            <Header onOpenLogin={() => { }} onOpenRegister={() => { }} />
+            <Header onOpenLogin={() => { }} onOpenRegister={() => { }} onOpenVerify={() => { }} />
             <div style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px', textAlign: 'center', color: '#666' }}>
                 <h1>Search Results</h1>
                 <p>Loading...</p>

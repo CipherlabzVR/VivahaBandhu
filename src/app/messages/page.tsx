@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
+import * as signalR from '@microsoft/signalr';
 
 function MessagesContent() {
     const { user } = useAuth();
@@ -24,70 +25,132 @@ function MessagesContent() {
     const [remoteTyping, setRemoteTyping] = useState(false);
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const remoteTypingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Polling refs
     const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const inboxPollRef = useRef<NodeJS.Timeout | null>(null);
+
+    // SignalR Connection
+    const [connection, setConnection] = useState<signalR.HubConnection | null>(null);
     const selectedContactRef = useRef<any | null>(null);
 
     // Delete message state
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
 
-    // Keep selectedContactRef synced
+    // Use Refs for callbacks
     useEffect(() => {
         selectedContactRef.current = selectedContact;
     }, [selectedContact]);
 
-    // Close context menu on click anywhere
     useEffect(() => {
         const handler = () => setContextMenu(null);
         window.addEventListener('click', handler);
         return () => window.removeEventListener('click', handler);
     }, []);
 
-    // Auth check + inbox fetch
+    // 1. Initial Load & Setup SignalR connection
     useEffect(() => {
         if (!user) {
             router.push('/');
             return;
         }
+        if (user.isVerified === false) {
+            router.push('/');
+            return;
+        }
 
-        const fetchInbox = async () => {
-            setIsLoading(true);
+        refreshInbox();
+
+        const connectSignalR = async () => {
+            const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+            // The hub mapped to /chathub inside API folder path or root (e.g. https://.../chathub)
+            const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
+
+            const newConnection = new signalR.HubConnectionBuilder()
+                .withUrl(HUB_URL)
+                .withAutomaticReconnect()
+                .build();
+
             try {
-                const res = await matrimonialService.getInbox(Number(user.id));
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    setInbox(res.result || []);
+                await newConnection.start();
+                console.log("SignalR Connected!");
 
-                    if (urlUserId) {
-                        const contactId = Number(urlUserId);
-                        handleSelectContact(contactId);
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to load inbox", err);
-            } finally {
-                setIsLoading(false);
+                // Join personal matching group
+                await newConnection.invoke("JoinUserGroup", String(user.id));
+                setConnection(newConnection);
+            } catch (e) {
+                console.error("SignalR Connection Failed: ", e);
             }
         };
 
-        fetchInbox();
-
-        // Inbox polling every 8 sec
-        inboxPollRef.current = setInterval(async () => {
-            try {
-                const res = await matrimonialService.getInbox(Number(user.id));
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    setInbox(res.result || []);
-                }
-            } catch { }
-        }, 8000);
+        connectSignalR();
 
         return () => {
-            if (inboxPollRef.current) clearInterval(inboxPollRef.current);
+            if (connection) {
+                connection.stop();
+            }
         };
-    }, [user, router, urlUserId]);
+    }, [user, router]); // Run once
+
+    // 2. Register SignalR Events once connection is ready
+    useEffect(() => {
+        if (!connection) return;
+
+        // New Message Received
+        connection.on("ReceiveNewMessage", (message) => {
+            const activeContactId = selectedContactRef.current?.contactId;
+            // If message belongs to active chat, append it 
+            if (message.senderId === activeContactId || message.receiverId === activeContactId || message.senderId === Number(user?.id)) {
+                setMessages(prev => {
+                    if (!prev.find(m => m.id === message.id)) {
+                        return [...prev, message];
+                    }
+                    return prev;
+                });
+                scrollToBottom();
+            }
+            // Regardless of active chat, update inbox
+            refreshInbox();
+        });
+
+        // Message Deleted
+        connection.on("MessageDeleted", (deletedMessageId) => {
+            setMessages(prev => prev.filter(m => m.id !== deletedMessageId));
+            refreshInbox();
+        });
+
+        // Typing Indicator
+        connection.on("ReceiveTypingIndicator", (senderIdStr) => {
+            const activeContactId = selectedContactRef.current?.contactId;
+            if (String(activeContactId) === senderIdStr) {
+                setRemoteTyping(true);
+                if (remoteTypingTimeoutRef.current) clearTimeout(remoteTypingTimeoutRef.current);
+                remoteTypingTimeoutRef.current = setTimeout(() => {
+                    setRemoteTyping(false);
+                }, 3000);
+            }
+        });
+
+        // Unsubscribe all on cleanup to avoid duplicated events
+        return () => {
+            connection.off("ReceiveNewMessage");
+            connection.off("MessageDeleted");
+            connection.off("ReceiveTypingIndicator");
+        };
+    }, [connection, user]);
+
+    const refreshInbox = async () => {
+        if (!user) return;
+        try {
+            const res = await matrimonialService.getInbox(Number(user.id));
+            if (res.statusCode === 200 || res.statusCode === 1) {
+                setInbox(res.result || []);
+                if (urlUserId && !selectedContactRef.current) {
+                    handleSelectContact(Number(urlUserId));
+                }
+            }
+        } catch { } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleSelectContact = async (contactId: number) => {
         if (!user) return;
@@ -114,88 +177,25 @@ function MessagesContent() {
             }).catch(console.error);
         }
 
-        fetchMessages(contactId);
-        startMessagePolling(contactId);
-    };
-
-    const fetchMessages = async (contactId: number) => {
-        if (!user) return;
         try {
             const res = await matrimonialService.getConversation(Number(user.id), contactId);
             if (res.statusCode === 200 || res.statusCode === 1) {
                 setMessages(res.result || []);
+                scrollToBottom();
             }
         } catch (err) {
             console.error("Failed to fetch messages", err);
         }
     };
 
-    // Real-time message polling for the active chat
-    const startMessagePolling = useCallback((contactId: number) => {
-        // Clear existing poll
-        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-        pollIntervalRef.current = setInterval(async () => {
-            if (!user) return;
-            try {
-                const res = await matrimonialService.getConversation(Number(user.id), contactId);
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    setMessages(prev => {
-                        const newMsgs = res.result || [];
-                        // Only update if message count changed (avoid scroll jank)
-                        if (newMsgs.length !== prev.length || JSON.stringify(newMsgs.map((m: any) => m.id)) !== JSON.stringify(prev.map(m => m.id))) {
-                            return newMsgs;
-                        }
-                        return prev;
-                    });
-                }
-            } catch { }
-        }, 3000); // Poll every 3 seconds
-    }, [user]);
-
-    // Cleanup polling on unmount or contact change
-    useEffect(() => {
-        return () => {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-        };
-    }, []);
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
-
-    // Typing indicator handler
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setNewMessage(e.target.value);
-
-        // Set local typing state
-        if (!isTyping) {
-            setIsTyping(true);
-            // Broadcast typing event via localStorage (cross-tab simulation)
-            if (selectedContact && user) {
-                localStorage.setItem(`typing_${user.id}_to_${selectedContact.contactId}`, Date.now().toString());
-            }
-        }
-
-        // Reset typing timeout
-        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-        typingTimeoutRef.current = setTimeout(() => {
-            setIsTyping(false);
-            if (selectedContact && user) {
-                localStorage.removeItem(`typing_${user.id}_to_${selectedContact.contactId}`);
-            }
-        }, 2000);
-    };
-
-    // Check for remote typing indicator (poll localStorage)
+    // 3. Fallback Typing System via LocalStorage (if SignalR disconnected)
     useEffect(() => {
         if (!selectedContact || !user) return;
 
         const checkRemoteTyping = setInterval(() => {
+            // SignalR takes priority, only check localstorage fallback if not connected
+            if (connection?.state === signalR.HubConnectionState.Connected) return;
+
             const typingTs = localStorage.getItem(`typing_${selectedContact.contactId}_to_${user.id}`);
             if (typingTs) {
                 const diff = Date.now() - parseInt(typingTs);
@@ -206,8 +206,6 @@ function MessagesContent() {
                 } else {
                     setRemoteTyping(false);
                 }
-            } else {
-                setRemoteTyping(false);
             }
         }, 1000);
 
@@ -215,7 +213,70 @@ function MessagesContent() {
             clearInterval(checkRemoteTyping);
             setRemoteTyping(false);
         };
-    }, [selectedContact, user]);
+    }, [selectedContact, user, connection]);
+
+    // 4. Fallback Polling (if SignalR disconnected)
+    useEffect(() => {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+        pollIntervalRef.current = setInterval(async () => {
+            if (!user || !selectedContactRef.current) return;
+            // Only poll if SignalR is down/deploying
+            if (connection && connection.state === signalR.HubConnectionState.Connected) return;
+
+            try {
+                const res = await matrimonialService.getConversation(Number(user.id), selectedContactRef.current.contactId);
+                if (res.statusCode === 200 || res.statusCode === 1) {
+                    setMessages(prev => {
+                        const newMsgs = res.result || [];
+                        if (newMsgs.length !== prev.length || JSON.stringify(newMsgs.map((m: any) => m.id)) !== JSON.stringify(prev.map(m => m.id))) {
+                            return newMsgs;
+                        }
+                        return prev;
+                    });
+                }
+            } catch { }
+        }, 3000);
+
+        return () => {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        };
+    }, [user, connection]);
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    // Typing Indicator Trigger
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setNewMessage(e.target.value);
+
+        if (!isTyping) {
+            setIsTyping(true);
+
+            // Primary: SignalR
+            if (connection && connection.state === signalR.HubConnectionState.Connected && selectedContact && user) {
+                connection.invoke("SendTypingIndicator", String(user.id), String(selectedContact.contactId))
+                    .catch(console.error);
+            }
+            // Fallback: localStorage
+            else if (selectedContact && user) {
+                localStorage.setItem(`typing_${user.id}_to_${selectedContact.contactId}`, Date.now().toString());
+            }
+        }
+
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+            if (selectedContact && user) {
+                localStorage.removeItem(`typing_${user.id}_to_${selectedContact.contactId}`);
+            }
+        }, 2000);
+    };
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -224,29 +285,29 @@ function MessagesContent() {
         const content = newMessage.trim();
         setNewMessage('');
         setIsTyping(false);
-        if (selectedContact && user) {
-            localStorage.removeItem(`typing_${user.id}_to_${selectedContact.contactId}`);
-        }
 
         try {
-            const res = await matrimonialService.sendMessage(Number(user.id), selectedContact.contactId, content);
-            if (res.statusCode === 200 || res.statusCode === 1) {
-                // Optimistically add message
-                setMessages(prev => [...prev, {
-                    id: res.result?.id || Math.random(),
-                    senderId: Number(user.id),
-                    receiverId: selectedContact.contactId,
-                    content: content,
-                    sentAt: new Date().toISOString(),
-                    isRead: false
-                }]);
+            // Optimistically update UI so it feels instant
+            const tempId = Math.random();
+            const newMsgObj = {
+                id: tempId,
+                senderId: Number(user.id),
+                receiverId: selectedContact.contactId,
+                content: content,
+                sentAt: new Date().toISOString(),
+                isRead: false
+            };
+            setMessages(prev => [...prev, newMsgObj]);
+            scrollToBottom();
 
-                // Refresh inbox
-                matrimonialService.getInbox(Number(user.id)).then(inboxRes => {
-                    if (inboxRes.statusCode === 200 || inboxRes.statusCode === 1) {
-                        setInbox(inboxRes.result || []);
-                    }
-                }).catch(console.error);
+            const res = await matrimonialService.sendMessage(Number(user.id), selectedContact.contactId, content);
+
+            // Replace temporary ID if needed or let SignalR handle the sync
+            if (res.statusCode === 200 || res.statusCode === 1) {
+                refreshInbox();
+                if (res.result?.id) {
+                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: res.result.id } : m));
+                }
             }
         } catch (err) {
             console.error("Failed to send message", err);
@@ -254,20 +315,15 @@ function MessagesContent() {
         }
     };
 
-    // Delete message handler
     const handleDeleteMessage = async (msgId: number) => {
         if (!user) return;
         setDeletingMsgId(msgId);
         try {
             const res = await matrimonialService.deleteMessage(msgId, Number(user.id));
             if (res.statusCode === 200 || res.statusCode === 1) {
+                // Optimistically remove from UI
                 setMessages(prev => prev.filter(m => m.id !== msgId));
-                // Refresh inbox to update latest message
-                matrimonialService.getInbox(Number(user.id)).then(inboxRes => {
-                    if (inboxRes.statusCode === 200 || inboxRes.statusCode === 1) {
-                        setInbox(inboxRes.result || []);
-                    }
-                }).catch(console.error);
+                refreshInbox();
             }
         } catch (err) {
             console.error("Failed to delete message", err);
@@ -277,25 +333,18 @@ function MessagesContent() {
         }
     };
 
-    // Context menu for message actions
     const handleMessageRightClick = (e: React.MouseEvent, msg: any) => {
-        if (Number(msg.senderId) !== Number(user?.id)) return; // Only own messages
+        if (Number(msg.senderId) !== Number(user?.id)) return;
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ msgId: msg.id, x: e.clientX, y: e.clientY });
-    };
-
-    const handleMessageLongPress = (msg: any) => {
-        if (Number(msg.senderId) !== Number(user?.id)) return;
-        // For mobile: show context menu near center
-        setContextMenu({ msgId: msg.id, x: window.innerWidth / 2, y: window.innerHeight / 2 });
     };
 
     if (!user) return null;
 
     return (
         <main className="min-h-screen bg-cream flex flex-col font-source-sans">
-            <Header onOpenLogin={() => { }} onOpenRegister={() => { }} />
+            <Header onOpenLogin={() => { }} onOpenRegister={() => { }} onOpenVerify={() => { }} />
 
             <section className="flex-1 pt-[100px] pb-12 px-4 md:px-8 max-w-[1400px] mx-auto w-full flex flex-col">
                 <div className="flex-1 bg-white rounded-2xl md:rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gold/10 overflow-hidden flex flex-col md:flex-row min-h-[600px] md:h-[calc(100vh-150px)]">
@@ -363,12 +412,8 @@ function MessagesContent() {
                                 <div className="p-4 md:p-6 border-b border-gray-100 bg-white flex items-center sticky top-0 z-10 shadow-sm">
                                     <button
                                         className="md:hidden mr-4 w-8 h-8 rounded-full bg-cream flex items-center justify-center text-text-dark shadow-sm"
-                                        onClick={() => {
-                                            setSelectedContact(null);
-                                            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-                                        }}
+                                        onClick={() => setSelectedContact(null)}
                                         type="button"
-                                        aria-label="Back to contacts"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -495,7 +540,7 @@ function MessagesContent() {
                 </div>
             </section>
 
-            {/* Right-click context menu for delete (fallback) */}
+            {/* Right-click context menu for delete */}
             {contextMenu && (
                 <div
                     className="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 py-1.5 min-w-[160px] animate-in fade-in zoom-in-95"

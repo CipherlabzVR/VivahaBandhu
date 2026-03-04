@@ -53,7 +53,7 @@ export default function SuccessStoriesHero() {
             />
 
             {/* --- Right Side: Hero image --- */}
-            <div className="absolute right-0 top-0 h-full w-full lg:w-[65%] z-0 flex items-end justify-end pr-0 lg:pr-8 lg:pl-4 pb-8 lg:pb-12">
+            <div className="absolute right-0 top-0 h-full w-full lg:w-[65%] z-0 flex items-end justify-end pr-0 lg:pr-8 lg:pl-4 pb-8 lg:pb-12 opacity-30 lg:opacity-100">
                 <div className="relative w-full max-w-[860px] h-[95vh] max-h-[960px] min-h-[480px] mx-auto lg:mx-0 lg:mr-0 mb-[-10vh]">
                     <Image
                         src="/success.png"
