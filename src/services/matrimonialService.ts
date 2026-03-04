@@ -42,10 +42,40 @@ export interface MatrimonialLoginResponse {
         firstName: string;
         lastName: string;
         mobileNumber?: string;
+        phoneNumber?: string;
         username?: string;
         accessToken: string;
         status: number;
         userType?: number;
+
+        // Matrimonial extra fields (API can return different casing)
+        WhatsApp?: string;
+        whatsApp?: string;
+        whatsapp?: string;
+
+        nic?: string;
+        Nic?: string;
+        nicNumber?: string;
+        identityDocument?: string;
+        IdentityDocument?: string;
+
+        DateOfBirth?: string;
+        dateofBirth?: string;
+        dateOfBirth?: string;
+        dob?: string;
+
+        Gender?: string;
+        gender?: string;
+
+        AccountType?: string;
+        accountType?: string;
+        role?: string;
+
+        ProfilePhoto?: string;
+        profilePhoto?: string;
+
+        HoroscopeDocument?: string;
+        horoscopeDocument?: string;
     };
 }
 
