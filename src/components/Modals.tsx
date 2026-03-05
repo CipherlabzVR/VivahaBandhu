@@ -271,35 +271,47 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const parseNIC = (nicNumber: string) => {
-        let year = "", dayText = "", gender = "";
-        if (nicNumber.length === 10 && !isNaN(Number(nicNumber.substring(0, 9)))) {
-            year = "19" + nicNumber.substring(0, 2);
-            dayText = nicNumber.substring(2, 5);
-        } else if (nicNumber.length === 12 && !isNaN(Number(nicNumber.substring(0, 12)))) {
-            year = nicNumber.substring(0, 4);
-            dayText = nicNumber.substring(4, 7);
+        const normalizedNIC = nicNumber.trim().toUpperCase();
+        const currentYear = new Date().getFullYear();
+        let year = '';
+        let dayText = '';
+        let gender = '';
+
+        // Old NIC: 9 digits + V/X
+        if (/^\d{9}[VX]$/.test(normalizedNIC)) {
+            year = `19${normalizedNIC.substring(0, 2)}`;
+            dayText = normalizedNIC.substring(2, 5);
+        }
+        // New NIC: 12 digits, first 4 digits are year
+        else if (/^\d{12}$/.test(normalizedNIC)) {
+            const parsedYear = Number(normalizedNIC.substring(0, 4));
+            // Restrict to realistic years to avoid parsing passport/other IDs as NIC
+            if (parsedYear < 1900 || parsedYear > currentYear) return null;
+            year = normalizedNIC.substring(0, 4);
+            dayText = normalizedNIC.substring(4, 7);
         } else {
             return null;
         }
 
-        let dayOfYear = parseInt(dayText);
+        let dayOfYear = parseInt(dayText, 10);
+        if (Number.isNaN(dayOfYear)) return null;
+
         if (dayOfYear > 500) {
-            gender = "Female";
+            gender = 'Female';
             dayOfYear -= 500;
         } else {
-            gender = "Male";
+            gender = 'Male';
         }
 
-        // Validate dayOfYear to be within 1-366 range
         if (dayOfYear < 1 || dayOfYear > 366) return null;
 
-        // Correct way to calculate date from day of year in JS
-        // Using UTC to avoid timezone issues when converting to ISO string
-        const date = new Date(Date.UTC(Number(year), 0, 1)); // Start at Jan 1st of the year
-        date.setUTCDate(dayOfYear); // Add days (setUTCDate handles the rollover correctly)
-
-        // Format to YYYY-MM-DD for input type="date"
-        const formattedDate = date.toISOString().split('T')[0];
+        // Sri Lankan NIC always counts February as 29 days even in non-leap
+        // years, so use a fixed leap year for the month/day extraction.
+        const refDate = new Date(Date.UTC(2000, 0, 1));
+        refDate.setUTCDate(dayOfYear);
+        const month = String(refDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(refDate.getUTCDate()).padStart(2, '0');
+        const formattedDate = `${year}-${month}-${day}`;
         return { dob: formattedDate, gender };
     };
 
