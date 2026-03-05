@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 
 interface User {
     id: string;
@@ -48,33 +48,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
-    const login = (userData: User) => {
+    const login = useCallback((userData: User) => {
         setUser(userData);
         if (typeof window !== 'undefined') {
             localStorage.setItem('user', JSON.stringify(userData));
         }
-    };
+    }, []);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         setUser(null);
         if (typeof window !== 'undefined') {
             localStorage.removeItem('user');
             localStorage.removeItem('token');
         }
-    };
+    }, []);
 
-    const updateUser = (userData: Partial<User>) => {
-        if (user) {
-            const updatedUser = { ...user, ...userData };
-            setUser(updatedUser);
+    const updateUser = useCallback((userData: Partial<User>) => {
+        setUser(prev => {
+            if (!prev) return prev;
+            const updatedUser = { ...prev, ...userData };
             if (typeof window !== 'undefined') {
                 localStorage.setItem('user', JSON.stringify(updatedUser));
             }
-        }
-    };
+            return updatedUser;
+        });
+    }, []);
+
+    const value = useMemo(() => ({ user, login, logout, updateUser, loading }), [user, login, logout, updateUser, loading]);
 
     return (
-        <AuthContext.Provider value={{ user, login, logout, updateUser, loading }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

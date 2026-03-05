@@ -415,22 +415,64 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         try {
             const response = await matrimonialService.verifyCode(registeredUserId, verificationCode);
-            if (response.statusCode === 200) {
-                // Verification successful - login user and show welcome popup
-                const newUser = {
+            if (response.statusCode === 200 || response.statusCode === 1) {
+                // Verification successful.
+                // Ensure we have a token for authorized APIs (uploads, profile updates).
+                const existingToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+
+                const fallbackUser = user || undefined;
+                let userToLogin = {
                     id: registeredUserId.toString(),
-                    firstName,
-                    lastName,
-                    email,
-                    nic,
-                    dob,
-                    gender,
-                    phone,
-                    whatsapp: isWhatsAppSame ? phone : whatsapp,
-                    accountType: registerAccountType,
+                    firstName: firstName || fallbackUser?.firstName || '',
+                    lastName: lastName || fallbackUser?.lastName || '',
+                    email: email || fallbackUser?.email || '',
+                    nic: nic || fallbackUser?.nic,
+                    dob: dob || fallbackUser?.dob,
+                    gender: gender || fallbackUser?.gender,
+                    phone: phone || fallbackUser?.phone,
+                    whatsapp: (isWhatsAppSame ? phone : whatsapp) || fallbackUser?.whatsapp,
+                    accountType: registerAccountType || fallbackUser?.accountType,
+                    profilePhoto: fallbackUser?.profilePhoto,
+                    horoscopeDocument: fallbackUser?.horoscopeDocument,
+                    isVerified: true,
                 };
 
-                login(newUser);
+                if (!existingToken) {
+                    if (!email || !password) {
+                        setVerificationError('Account verified, but session is missing. Please login again to continue.');
+                        return;
+                    }
+
+                    const loginResponse = await matrimonialService.login({ email, password });
+                    const token = loginResponse?.result?.accessToken;
+                    const loginOk = (loginResponse.statusCode === 200 || loginResponse.statusCode === 1) && !!token;
+
+                    if (!loginOk) {
+                        setVerificationError(loginResponse?.message || 'Account verified, but login failed. Please login and continue.');
+                        return;
+                    }
+
+                    localStorage.setItem('token', token);
+
+                    const r = loginResponse.result;
+                    userToLogin = {
+                        id: (r.id ?? registeredUserId).toString(),
+                        firstName: r.firstName || userToLogin.firstName,
+                        lastName: r.lastName || userToLogin.lastName,
+                        email: r.email || r.username || userToLogin.email,
+                        phone: r.mobileNumber || r.phoneNumber || userToLogin.phone,
+                        whatsapp: r.WhatsApp || r.whatsApp || r.whatsapp || userToLogin.whatsapp,
+                        nic: r.nic || r.Nic || r.nicNumber || r.identityDocument || r.IdentityDocument || userToLogin.nic,
+                        dob: r.DateOfBirth || r.dateofBirth || r.dateOfBirth || r.dob || userToLogin.dob,
+                        gender: r.Gender || r.gender || userToLogin.gender,
+                        accountType: r.AccountType || r.accountType || r.role || userToLogin.accountType,
+                        profilePhoto: r.ProfilePhoto || r.profilePhoto || userToLogin.profilePhoto,
+                        horoscopeDocument: r.HoroscopeDocument || r.horoscopeDocument || userToLogin.horoscopeDocument,
+                        isVerified: r.status === 1 ? true : userToLogin.isVerified,
+                    };
+                }
+
+                login(userToLogin);
 
                 // Ensure firstName is set for welcome popup (use firstName from form if registeredFirstName is not set)
                 const firstNameToUse = registeredFirstName || firstName;

@@ -21,10 +21,12 @@ export default function ProfilePage() {
     useEffect(() => {
         if (!loading && !user) {
             router.push('/');
-        } else if (user && !profileFetched) {
+        } else if (user?.id && !profileFetched) {
             checkProfileCompletion();
         }
-    }, [user, loading, router, profileFetched]);
+    // Only react to user.id changes, not every user property change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, loading, profileFetched]);
 
     const checkProfileCompletion = async () => {
         try {
@@ -33,6 +35,10 @@ export default function ProfilePage() {
             if (!user?.id || !token) return;
 
             const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+            const withCacheBuster = (url: string) => {
+                const cb = `cb=${Date.now()}`;
+                return url.includes('?') ? `${url}&${cb}` : `${url}?${cb}`;
+            };
 
             // Fetch both profile data and user details in parallel
             const [profileResponse, userResponse] = await Promise.all([
@@ -86,8 +92,8 @@ export default function ProfilePage() {
                     }
                     
                     const profilePhoto = r.profilePhoto || r.ProfilePhoto;
-                    if (profilePhoto && profilePhoto.length > 0 && !profileUpdates.profilePhoto) {
-                        profileUpdates.profilePhoto = profilePhoto;
+                    if (!profileUpdates.profilePhoto && !user?.profilePhoto && profilePhoto && profilePhoto.length > 0) {
+                        profileUpdates.profilePhoto = withCacheBuster(profilePhoto);
                     }
                     
                     const gender = r.gender || r.Gender;
@@ -170,6 +176,7 @@ export default function ProfilePage() {
     };
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
 
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
@@ -495,7 +502,10 @@ export default function ProfilePage() {
                             <div className="detail-group">
                                 <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Horoscope</label>
                                 <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>
-                                    <a href={user.horoscopeDocument} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <button
+                                        onClick={() => setHoroscopePopupOpen(true)}
+                                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 500 }}
+                                    >
                                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                             <polyline points="14 2 14 8 20 8"></polyline>
@@ -504,7 +514,7 @@ export default function ProfilePage() {
                                             <polyline points="10 9 9 9 8 9"></polyline>
                                         </svg>
                                         View Horoscope
-                                    </a>
+                                    </button>
                                 </div>
                             </div>
                         )}
@@ -686,6 +696,27 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
+
+            {horoscopePopupOpen && user?.horoscopeDocument && (
+                <div
+                    onClick={() => setHoroscopePopupOpen(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                >
+                    <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+                        <button
+                            onClick={() => setHoroscopePopupOpen(false)}
+                            style={{ position: 'absolute', top: '-12px', right: '-12px', width: '32px', height: '32px', borderRadius: '50%', background: 'white', border: 'none', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 1 }}
+                        >
+                            ✕
+                        </button>
+                        <img
+                            src={user.horoscopeDocument}
+                            alt="Horoscope"
+                            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain', background: 'white' }}
+                        />
+                    </div>
+                </div>
+            )}
 
             <Footer />
 

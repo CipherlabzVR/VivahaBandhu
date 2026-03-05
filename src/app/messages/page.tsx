@@ -440,7 +440,7 @@ function MessagesContent() {
                                         const isMe = Number(msg.senderId) === Number(user.id);
                                         return (
                                             <div
-                                                key={msg.id || index}
+                                                key={`msg-${msg.id}-${index}`}
                                                 className={`flex flex-col max-w-[85%] md:max-w-[70%] group ${isMe ? 'self-end' : 'self-start'}`}
                                                 onContextMenu={(e) => handleMessageRightClick(e, msg)}
                                             >

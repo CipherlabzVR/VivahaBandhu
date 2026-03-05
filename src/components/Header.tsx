@@ -22,18 +22,29 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!user?.id || user.profilePhoto) return;
         const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
         if (!token) return;
+
+        let cancelled = false;
         fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then(res => res.ok ? res.json() : null)
             .then(data => {
-                if (data?.result?.profilePhoto) updateUser({ profilePhoto: data.result.profilePhoto });
-                // Also update isVerified if available from profile
+                if (cancelled) return;
+                const updates: Record<string, any> = {};
+                if (data?.result?.profilePhoto) {
+                    updates.profilePhoto = data.result.profilePhoto;
+                }
                 if (data?.result?.status !== undefined) {
-                    updateUser({ isVerified: data.result.status === 1 });
+                    updates.isVerified = data.result.status === 1;
+                }
+                if (Object.keys(updates).length > 0) {
+                    updateUser(updates);
                 }
             })
             .catch(() => {});
+
+        return () => { cancelled = true; };
+    // updateUser is stable (useCallback) so it won't cause re-triggers
     }, [user?.id, user?.profilePhoto, updateUser]);
 
     return (

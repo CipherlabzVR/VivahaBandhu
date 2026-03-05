@@ -7,12 +7,15 @@ import { useRouter } from 'next/navigation';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
 export default function ProfileCompletionForm({ onClose, onComplete }: { onClose?: () => void, onComplete?: () => void }) {
-    const { user } = useAuth();
+    const { user, updateUser } = useAuth();
     const router = useRouter();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
+    const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
+    const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
 
     const [formData, setFormData] = useState({
         // Personal
@@ -80,49 +83,50 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         remarks: ''
     });
 
-    // Populate initial data from user if available (e.g. DOB if stored in user)
+    // Only fetch once when the form mounts (not on every user state change).
+    const [initialFetchDone, setInitialFetchDone] = useState(false);
+
     useEffect(() => {
-        if (user) {
-            setFormData(prev => ({
-                ...prev,
-                dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : prev.dob,
-                gender: user.gender || prev.gender
-            }));
+        if (initialFetchDone) return;
+        if (!user?.id) return;
 
-            // Fetch existing profile if possible
-            fetchProfile();
-        }
-    }, [user]);
+        setFormData(prev => ({
+            ...prev,
+            dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : prev.dob,
+            gender: user.gender || prev.gender
+        }));
 
-    const fetchProfile = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            if (!user?.id || !token) return;
+        const fetchProfile = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) return;
 
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+                const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.result) {
+                        const profile = data.result;
+                        setFormData(prev => ({
+                            ...prev,
+                            ...profile,
+                            dob: profile.dateOfBirth ? new Date(profile.dateOfBirth).toISOString().split('T')[0] : prev.dob,
+                            partnerMinAge: profile.partnerMinAge || '',
+                            partnerMaxAge: profile.partnerMaxAge || ''
+                        }));
+                    }
                 }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data.result) {
-                    const profile = data.result;
-                    // Map backend fields to form fields
-                    setFormData(prev => ({
-                        ...prev,
-                        ...profile,
-                        dob: profile.dateOfBirth ? new Date(profile.dateOfBirth).toISOString().split('T')[0] : prev.dob,
-                        partnerMinAge: profile.partnerMinAge || '',
-                        partnerMaxAge: profile.partnerMaxAge || ''
-                    }));
-                }
+            } catch (error) {
+                console.error("Failed to fetch profile", error);
             }
-        } catch (error) {
-            console.error("Failed to fetch profile", error);
-        }
-    };
+        };
+
+        fetchProfile();
+        setInitialFetchDone(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, initialFetchDone]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -134,6 +138,19 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             const file = e.target.files[0];
             await uploadFile(file, fieldName);
         }
+        // Allow selecting the same file again to re-upload/replace.
+        e.target.value = '';
+    };
+
+    const withCacheBuster = (url: string) => {
+        const cb = `cb=${Date.now()}`;
+        return url.includes('?') ? `${url}&${cb}` : `${url}?${cb}`;
+    };
+
+    const previewSrc = (fieldName: string, url: string) => {
+        const buster = previewBusters[fieldName];
+        if (!url || !buster) return url;
+        return url.includes('?') ? `${url}&cb=${buster}` : `${url}?cb=${buster}`;
     };
 
     const uploadFile = async (file: File, fieldName: string) => {
@@ -142,9 +159,15 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
         try {
             const token = localStorage.getItem('token');
+            if (!token) {
+                setSubmitError('Please login again to upload documents.');
+                return;
+            }
             const data = new FormData();
-            data.append('File', file);
-            data.append('FileName', file.name);
+            const safeOriginalName = file.name.replace(/[^\w.\-()]+/g, '_');
+            const uniqueFileName = `${user?.id || 'user'}_${fieldName}_${Date.now()}_${safeOriginalName}`;
+            data.append('File', file, uniqueFileName);
+            data.append('FileName', uniqueFileName);
             data.append('storePath', 'Matrimonial/Profiles');
 
             const response = await fetch(`${API_BASE_URL}/AWS/DocumentUploadCommon`, {
@@ -160,8 +183,23 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 // Clean up any surrounding quotes
                 const cleanUrl = url.replace(/^"|"$/g, '');
                 setFormData(prev => ({ ...prev, [fieldName]: cleanUrl }));
+                setPreviewBusters(prev => ({ ...prev, [fieldName]: Date.now() }));
+
+                // Immediately reflect key uploads in the user context (header avatar / profile pic).
+                if (fieldName === 'profilePhoto') {
+                    updateUser({ profilePhoto: withCacheBuster(cleanUrl) });
+                }
+                if (fieldName === 'horoscopeDocument') {
+                    updateUser({ horoscopeDocument: cleanUrl });
+                }
             } else {
-                setSubmitError('Failed to upload image. Please try again.');
+                const errorText = await response.text().catch(() => '');
+                const statusHint = response.status === 401 ? ' (Unauthorized - please login again)' : '';
+                setSubmitError(
+                    errorText
+                        ? `Failed to upload file${statusHint}: ${errorText}`
+                        : `Failed to upload file${statusHint}. Please try again.`
+                );
             }
         } catch (error) {
             console.error('Upload error:', error);
@@ -215,8 +253,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         window.scrollTo(0, 0);
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const saveProfile = async () => {
+        // Prevent accidental auto-saves (e.g., file inputs triggering form submit in some browsers)
+        if (loading) return;
 
         // Check if uploads are pending
         if (Object.values(uploading).some(Boolean)) {
@@ -229,11 +268,16 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             return;
         }
 
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setSubmitError('Please login again to save your profile.');
+            return;
+        }
+
         setLoading(true);
         setSubmitError('');
 
         try {
-            const token = localStorage.getItem('token');
             const response = await fetch(`${API_BASE_URL}/Matrimonial/UpdateProfile`, {
                 method: 'POST',
                 headers: {
@@ -251,19 +295,30 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             });
 
             if (!response.ok) {
-                throw new Error('Failed to update profile');
+                const errorText = await response.text().catch(() => '');
+                throw new Error(errorText || 'Failed to update profile');
             }
 
             const result = await response.json();
             if (result.statusCode === 1 || result.statusCode === 200) { // Success
-                alert('Profile updated successfully!');
-                if (onComplete) onComplete();
-                if (onClose) onClose();
+                // Keep UI in sync without requiring a refresh.
+                if (formData.profilePhoto) {
+                    updateUser({ profilePhoto: withCacheBuster(formData.profilePhoto) });
+                }
+                if (formData.horoscopeDocument) {
+                    updateUser({ horoscopeDocument: formData.horoscopeDocument });
+                }
+                setSuccessMessage('Profile updated successfully!');
+                setTimeout(() => {
+                    setSuccessMessage('');
+                    if (onComplete) onComplete();
+                    if (onClose) onClose();
+                }, 2000);
             } else {
                 setSubmitError(result.message || 'Failed to update profile');
             }
         } catch (error: any) {
-            setSubmitError(error.message || 'An error occurred');
+            setSubmitError(error?.message || 'An error occurred');
         } finally {
             setLoading(false);
         }
@@ -286,7 +341,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 ))}
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={(e) => e.preventDefault()}>
+                {successMessage && <div style={{ color: '#2e7d32', marginBottom: '1rem', padding: '12px 16px', background: '#e8f5e9', borderRadius: '8px', fontWeight: 600, textAlign: 'center', fontSize: '1rem' }}>{successMessage}</div>}
                 {submitError && <div style={{ color: 'red', marginBottom: '1rem', padding: '10px', background: '#ffebee', borderRadius: '4px' }}>{submitError}</div>}
 
                 {step === 1 && (
@@ -466,9 +522,21 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                     {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                     {formData.horoscopeDocument && (
                                         <div style={{ marginTop: '0.5rem' }}>
-                                            <a href={formData.horoscopeDocument} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline' }}>
-                                                View Uploaded Horoscope
-                                            </a>
+                                            <img
+                                                src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
+                                                alt="Horoscope"
+                                                onClick={() => setHoroscopePopupOpen(true)}
+                                                style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
+                                            />
+                                            <div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHoroscopePopupOpen(true)}
+                                                    style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.25rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
+                                                >
+                                                    View Full Image
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -662,7 +730,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.profilePhoto && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={formData.profilePhoto} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
                                     </div>
                                 )}
                             </div>
@@ -678,7 +746,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload1'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload1 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={formData.upload1} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
                                     </div>
                                 )}
                             </div>
@@ -694,7 +762,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload2'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload2 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={formData.upload2} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
                                     </div>
                                 )}
                             </div>
@@ -710,7 +778,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload3'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload3 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={formData.upload3} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
                                     </div>
                                 )}
                             </div>
@@ -726,7 +794,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     {step < 6 ? (
                         <button type="button" className="btn btn-primary" onClick={handleNext}>Next</button>
                     ) : (
-                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                        <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
                             {loading ? 'Saving...' : 'Save Profile'}
                         </button>
                     )}
@@ -769,6 +837,28 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     color: var(--primary);
                 }
             `}</style>
+
+            {horoscopePopupOpen && formData.horoscopeDocument && (
+                <div
+                    onClick={() => setHoroscopePopupOpen(false)}
+                    style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+                >
+                    <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
+                        <button
+                            type="button"
+                            onClick={() => setHoroscopePopupOpen(false)}
+                            style={{ position: 'absolute', top: '-12px', right: '-12px', width: '32px', height: '32px', borderRadius: '50%', background: 'white', border: 'none', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 1 }}
+                        >
+                            ✕
+                        </button>
+                        <img
+                            src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
+                            alt="Horoscope"
+                            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain', background: 'white' }}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
