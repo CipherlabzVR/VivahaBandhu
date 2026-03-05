@@ -596,6 +596,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     <input
                                                         key={index}
                                                         type="text"
+                                                        inputMode="numeric"
                                                         className="code-digit"
                                                         maxLength={1}
                                                         value={verificationCode[index] || ''}
@@ -608,10 +609,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                 setVerificationCode(updatedCode);
                                                                 setVerificationError(null);
 
-                                                                // Auto-focus next input
-                                                                if (index < 5 && value) {
-                                                                    const nextInput = document.querySelector(`.code-digit:nth-child(${index + 2})`) as HTMLInputElement;
-                                                                    nextInput?.focus();
+                                                                if (index < 5) {
+                                                                    const wrapper = e.target.closest('.code-input-wrapper');
+                                                                    const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                    inputs?.[index + 1]?.focus();
                                                                 }
                                                             }
                                                         }}
@@ -621,16 +622,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             if (pastedData.length > 0) {
                                                                 setVerificationCode(pastedData);
                                                                 setVerificationError(null);
-                                                                // Focus the last filled input or the first empty one
                                                                 const focusIndex = Math.min(pastedData.length - 1, 5);
-                                                                const nextInput = document.querySelector(`.code-digit:nth-child(${focusIndex + 1})`) as HTMLInputElement;
-                                                                nextInput?.focus();
+                                                                const wrapper = e.currentTarget.closest('.code-input-wrapper');
+                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                inputs?.[focusIndex]?.focus();
                                                             }
                                                         }}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
-                                                                const prevInput = document.querySelector(`.code-digit:nth-child(${index})`) as HTMLInputElement;
-                                                                prevInput?.focus();
+                                                                const wrapper = (e.target as HTMLElement).closest('.code-input-wrapper');
+                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                inputs?.[index - 1]?.focus();
                                                             }
                                                         }}
                                                         style={{
@@ -1071,6 +1073,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     <input
                                                         key={index}
                                                         type="text"
+                                                        inputMode="numeric"
                                                         className="code-digit"
                                                         maxLength={1}
                                                         value={verificationCode[index] || ''}
@@ -1083,10 +1086,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                 setVerificationCode(updatedCode);
                                                                 setVerificationError(null);
 
-                                                                // Auto-focus next input
-                                                                if (index < 5 && value) {
-                                                                    const nextInput = document.querySelector(`.code-digit:nth-child(${index + 2})`) as HTMLInputElement;
-                                                                    nextInput?.focus();
+                                                                if (index < 5) {
+                                                                    const wrapper = e.target.closest('.code-input-wrapper');
+                                                                    const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                    inputs?.[index + 1]?.focus();
                                                                 }
                                                             }
                                                         }}
@@ -1096,16 +1099,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             if (pastedData.length > 0) {
                                                                 setVerificationCode(pastedData);
                                                                 setVerificationError(null);
-                                                                // Focus the last filled input or the first empty one
                                                                 const focusIndex = Math.min(pastedData.length - 1, 5);
-                                                                const nextInput = document.querySelector(`.code-digit:nth-child(${focusIndex + 1})`) as HTMLInputElement;
-                                                                nextInput?.focus();
+                                                                const wrapper = e.currentTarget.closest('.code-input-wrapper');
+                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                inputs?.[focusIndex]?.focus();
                                                             }
                                                         }}
                                                         onKeyDown={(e) => {
                                                             if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
-                                                                const prevInput = document.querySelector(`.code-digit:nth-child(${index})`) as HTMLInputElement;
-                                                                prevInput?.focus();
+                                                                const wrapper = (e.target as HTMLElement).closest('.code-input-wrapper');
+                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                                                inputs?.[index - 1]?.focus();
                                                             }
                                                         }}
                                                         style={{
