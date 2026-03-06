@@ -16,6 +16,17 @@ interface ModalsProps {
     selectedProfile?: any | null;
 }
 
+const toDateOnly = (val: string | undefined | null): string => {
+    if (!val) return '';
+    const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (leadingDate) return leadingDate[1];
+    try {
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return '';
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    } catch { return ''; }
+};
+
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user } = useAuth();
     const router = useRouter();
@@ -141,8 +152,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setRegisterError(null);
 
         try {
-            // Format date of birth to ISO string
-            const dateOfBirth = new Date(dob).toISOString();
+            // Send date as YYYY-MM-DDT00:00:00 without timezone to avoid browser timezone shifts.
+            const dateOfBirth = dob.length === 10 ? `${dob}T00:00:00` : dob;
 
             // Call the API
             const response = await matrimonialService.register({
@@ -238,7 +249,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     phone: response.result.mobileNumber || response.result.phoneNumber || '',
                     whatsapp: response.result.WhatsApp || response.result.whatsApp || response.result.whatsapp || '',
                     nic: response.result.nic || response.result.Nic || response.result.nicNumber || response.result.identityDocument || response.result.IdentityDocument || '',
-                    dob: response.result.DateOfBirth || response.result.dateofBirth || response.result.dateOfBirth || response.result.dob || '',
+                    dob: toDateOnly(response.result.DateOfBirth || response.result.dateofBirth || response.result.dateOfBirth || response.result.dob),
                     gender: response.result.Gender || response.result.gender || '',
                     accountType: response.result.AccountType || response.result.accountType || response.result.role || 'Free Member',
                     profilePhoto: response.result.ProfilePhoto || response.result.profilePhoto || '',
@@ -463,7 +474,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         phone: r.mobileNumber || r.phoneNumber || userToLogin.phone,
                         whatsapp: r.WhatsApp || r.whatsApp || r.whatsapp || userToLogin.whatsapp,
                         nic: r.nic || r.Nic || r.nicNumber || r.identityDocument || r.IdentityDocument || userToLogin.nic,
-                        dob: r.DateOfBirth || r.dateofBirth || r.dateOfBirth || r.dob || userToLogin.dob,
+                        dob: toDateOnly(r.DateOfBirth || r.dateofBirth || r.dateOfBirth || r.dob) || userToLogin.dob,
                         gender: r.Gender || r.gender || userToLogin.gender,
                         accountType: r.AccountType || r.accountType || r.role || userToLogin.accountType,
                         profilePhoto: r.ProfilePhoto || r.profilePhoto || userToLogin.profilePhoto,

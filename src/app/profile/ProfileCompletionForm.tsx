@@ -86,13 +86,24 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
     // Only fetch once when the form mounts (not on every user state change).
     const [initialFetchDone, setInitialFetchDone] = useState(false);
 
+    const safeDate = (val: string | undefined | null): string => {
+        if (!val) return '';
+        const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (leadingDate) return leadingDate[1];
+        try {
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return '';
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        } catch { return ''; }
+    };
+
     useEffect(() => {
         if (initialFetchDone) return;
         if (!user?.id) return;
 
         setFormData(prev => ({
             ...prev,
-            dob: user.dob ? new Date(user.dob).toISOString().split('T')[0] : prev.dob,
+            dob: safeDate(user.dob) || prev.dob,
             gender: user.gender || prev.gender
         }));
 
@@ -112,7 +123,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                         setFormData(prev => ({
                             ...prev,
                             ...profile,
-                            dob: profile.dateOfBirth ? new Date(profile.dateOfBirth).toISOString().split('T')[0] : prev.dob,
+                            dob: safeDate(profile.dateOfBirth) || prev.dob,
                             partnerMinAge: profile.partnerMinAge || '',
                             partnerMaxAge: profile.partnerMaxAge || ''
                         }));
@@ -290,7 +301,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     height: parseFloat(formData.height) || 0,
                     partnerMinAge: parseInt(formData.partnerMinAge) || 18,
                     partnerMaxAge: parseInt(formData.partnerMaxAge) || 60,
-                    dateOfBirth: formData.dob || null
+                    dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
                 })
             });
 

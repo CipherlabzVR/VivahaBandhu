@@ -6,6 +6,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useAuth } from '../../context/AuthContext';
 import Modals from '../../components/Modals';
+import { matrimonialService } from '../../services/matrimonialService';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
@@ -40,6 +41,17 @@ export default function ProfilePage() {
                 return url.includes('?') ? `${url}&${cb}` : `${url}?${cb}`;
             };
 
+            const toDateOnly = (val: string | undefined | null): string => {
+                if (!val) return '';
+                const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (leadingDate) return leadingDate[1];
+                try {
+                    const d = new Date(val);
+                    if (isNaN(d.getTime())) return '';
+                    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+                } catch { return ''; }
+            };
+
             // Fetch both profile data and user details in parallel
             const [profileResponse, userResponse] = await Promise.all([
                 fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}`, {
@@ -67,7 +79,7 @@ export default function ProfilePage() {
                         profileUpdates.whatsapp = u.address.substring('WHATSAPP:'.length);
                     }
                     if (u.dateofBirth || u.dateOfBirth) {
-                        profileUpdates.dob = u.dateofBirth || u.dateOfBirth;
+                        profileUpdates.dob = toDateOnly(u.dateofBirth || u.dateOfBirth);
                     }
                     if (u.profilePhoto && u.profilePhoto.length > 0) {
                         profileUpdates.profilePhoto = u.profilePhoto;
@@ -103,7 +115,7 @@ export default function ProfilePage() {
                     
                     const dob = r.dateOfBirth || r.DateOfBirth || r.dateofBirth;
                     if (dob && !profileUpdates.dob) {
-                        profileUpdates.dob = dob;
+                        profileUpdates.dob = toDateOnly(dob);
                     }
 
                     const whatsapp = r.whatsApp || r.WhatsApp || r.whatsapp;
@@ -179,6 +191,8 @@ export default function ProfilePage() {
     const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
 
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
+    const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
+    const [loadingSavedProfiles, setLoadingSavedProfiles] = useState(false);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
     const [subAccountForm, setSubAccountForm] = useState({
         firstName: '',
@@ -200,6 +214,68 @@ export default function ProfilePage() {
             fetchSubAccounts();
         }
     }, [user]);
+
+    useEffect(() => {
+        const fetchSavedProfiles = async () => {
+            if (!user?.id) {
+                setSavedProfiles([]);
+                return;
+            }
+
+            setLoadingSavedProfiles(true);
+            try {
+                const interactionsRes = await matrimonialService.getUserInteractions(Number(user.id));
+                const rawFavorites = interactionsRes?.result?.Favorites || interactionsRes?.result?.favorites || [];
+                const rawShortlists = interactionsRes?.result?.Shortlists || interactionsRes?.result?.shortlists || [];
+                const mergedSaved = [...(Array.isArray(rawFavorites) ? rawFavorites : []), ...(Array.isArray(rawShortlists) ? rawShortlists : [])];
+
+                const favoriteIds = Array.isArray(mergedSaved)
+                    ? mergedSaved
+                        .map((x: any) => (typeof x === 'number' ? x : x?.favoriteProfileId ?? x?.shortlistedProfileId ?? x?.profileId ?? x?.id))
+                        .filter((x: any) => Number.isFinite(Number(x)))
+                        .map((x: any) => Number(x))
+                    : [];
+
+                if (favoriteIds.length === 0) {
+                    setSavedProfiles([]);
+                    return;
+                }
+
+                const uniqueIds = Array.from(new Set(favoriteIds));
+                const details = await Promise.all(
+                    uniqueIds.map(async (profileId) => {
+                        try {
+                            const profileRes = await matrimonialService.getProfile(profileId);
+                            if (profileRes?.statusCode === 200 && profileRes?.result) {
+                                const p = profileRes.result;
+                                return {
+                                    id: p.UserId || p.userId || profileId,
+                                    firstName: p.FirstName || p.firstName || 'User',
+                                    lastName: p.LastName || p.lastName || '',
+                                    age: p.Age || p.age || 0,
+                                    cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
+                                    profilePhoto: p.ProfilePhoto || p.profilePhoto || p.ProfilePhotoFromProfile || p.profilePhotoFromProfile || '',
+                                    phoneNumber: p.PhoneNumber || p.phoneNumber || '',
+                                };
+                            }
+                        } catch {
+                            // Ignore one-off profile fetch failures.
+                        }
+                        return null;
+                    })
+                );
+
+                setSavedProfiles(details.filter(Boolean));
+            } catch (error) {
+                console.error("Failed to fetch saved profiles", error);
+                setSavedProfiles([]);
+            } finally {
+                setLoadingSavedProfiles(false);
+            }
+        };
+
+        fetchSavedProfiles();
+    }, [user?.id]);
 
     const fetchSubAccounts = async () => {
         try {
@@ -232,7 +308,7 @@ export default function ProfilePage() {
                 },
                 body: JSON.stringify({
                     ...subAccountForm,
-                    dateOfBirth: new Date(subAccountForm.dob).toISOString(),
+                    dateOfBirth: subAccountForm.dob.length === 10 ? `${subAccountForm.dob}T00:00:00` : subAccountForm.dob,
                     parentUserId: Number(user?.id)
                 })
             });
@@ -284,13 +360,24 @@ export default function ProfilePage() {
         accountType: ''
     });
 
+    const formatDateForInput = (val: string | undefined): string => {
+        if (!val) return '';
+        const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (leadingDate) return leadingDate[1];
+        try {
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return '';
+            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        } catch { return ''; }
+    };
+
     useEffect(() => {
         if (user) {
             setEditForm({
                 firstName: user.firstName || '',
                 lastName: user.lastName || '',
                 nic: user.nic || '',
-                dob: user.dob || '',
+                dob: formatDateForInput(user.dob),
                 gender: user.gender || '',
                 phone: user.phone || '',
                 whatsapp: user.whatsapp || '',
@@ -372,18 +459,57 @@ export default function ProfilePage() {
                                 <h2>Edit Basic Details</h2>
                             </div>
                             <div className="modal-body">
-                                <form onSubmit={(e) => {
+                                <form onSubmit={async (e) => {
                                     e.preventDefault();
-                                    updateUser({
-                                        firstName: editForm.firstName,
-                                        lastName: editForm.lastName,
-                                        nic: editForm.nic,
-                                        dob: editForm.dob,
-                                        gender: editForm.gender,
-                                        phone: editForm.phone,
-                                        whatsapp: editForm.whatsapp,
-                                    });
-                                    setIsEditModalOpen(false);
+                                    try {
+                                        const token = localStorage.getItem('token');
+                                        if (!token || !user?.id) {
+                                            throw new Error('Please login again to save changes');
+                                        }
+
+                                        // Fetch existing profile first, then patch only basic details so we don't wipe other fields.
+                                        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+                                        const profileRes = await fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}`, {
+                                            headers: { 'Authorization': `Bearer ${token}` }
+                                        });
+                                        const profileJson = profileRes.ok ? await profileRes.json() : null;
+                                        const existing = profileJson?.result || {};
+
+                                        const updatePayload = {
+                                            ...existing,
+                                            userId: Number(user.id),
+                                            gender: editForm.gender || existing.gender || existing.Gender || '',
+                                            dateOfBirth: editForm.dob ? `${editForm.dob}T00:00:00` : null,
+                                        };
+
+                                        const updateRes = await fetch(`${apiBase}/Matrimonial/UpdateProfile`, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                                'Authorization': `Bearer ${token}`
+                                            },
+                                            body: JSON.stringify(updatePayload)
+                                        });
+
+                                        if (!updateRes.ok) {
+                                            const errText = await updateRes.text().catch(() => '');
+                                            throw new Error(errText || 'Failed to update profile');
+                                        }
+
+                                        updateUser({
+                                            firstName: editForm.firstName,
+                                            lastName: editForm.lastName,
+                                            nic: editForm.nic,
+                                            dob: editForm.dob,
+                                            gender: editForm.gender,
+                                            phone: editForm.phone,
+                                            whatsapp: editForm.whatsapp,
+                                        });
+                                        setProfileFetched(false);
+                                        setIsEditModalOpen(false);
+                                    } catch (error) {
+                                        alert(error instanceof Error ? error.message : 'Failed to save changes');
+                                    }
                                 }}>
                                     <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
                                         <div className="form-group" style={{ flex: 1 }}>
@@ -488,7 +614,15 @@ export default function ProfilePage() {
                         </div>
                         <div className="detail-group">
                             <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Date of Birth</label>
-                            <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>{user.dob ? new Date(user.dob).toLocaleDateString() : '-'}</div>
+                            <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>{user.dob ? (() => {
+                                const parts = user.dob!.split('-');
+                                if (parts.length === 3) {
+                                    const [y, m, d] = parts;
+                                    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                                    return `${months[parseInt(m, 10) - 1]} ${parseInt(d, 10)}, ${y}`;
+                                }
+                                return user.dob;
+                            })() : '-'}</div>
                         </div>
                         <div className="detail-group">
                             <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Gender</label>
@@ -691,8 +825,41 @@ export default function ProfilePage() {
                     </div>
                     <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
                         <h3>Saved Profiles</h3>
-                        <p style={{ color: '#666', marginTop: '1rem' }}>You haven't saved any profiles yet.</p>
-                        <button className="btn btn-outline" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }} onClick={() => router.push('/#profiles')}>Browse Profiles</button>
+                        {loadingSavedProfiles ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>Loading saved profiles...</p>
+                        ) : savedProfiles.length > 0 ? (
+                            <>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
+                                    {savedProfiles.slice(0, 4).map((p) => (
+                                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px' }}>
+                                            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
+                                                {p.profilePhoto ? (
+                                                    <img src={p.profilePhoto} alt={`${p.firstName} ${p.lastName}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
+                                                        {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
+                                                <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button className="btn btn-outline" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }} onClick={() => router.push('/profiles')}>
+                                    Browse More Profiles
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <p style={{ color: '#666', marginTop: '1rem' }}>You haven't saved any profiles yet.</p>
+                                <button className="btn btn-outline" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }} onClick={() => router.push('/profiles')}>
+                                    Browse Profiles
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

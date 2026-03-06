@@ -27,6 +27,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     });
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [actionToast, setActionToast] = useState('');
 
     const fetchProfiles = async () => {
         setLoading(true);
@@ -122,6 +123,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             : [...currentFavorites, profileId]
                     };
                 });
+                setActionToast('Interest updated successfully');
+                setTimeout(() => setActionToast(''), 2000);
             }
         } catch (error) {
             console.error("Error toggling favorite", error);
@@ -147,6 +150,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             : [...currentShortlists, profileId]
                     };
                 });
+                setActionToast('Saved profiles updated successfully');
+                setTimeout(() => setActionToast(''), 2000);
             }
         } catch (error) {
             console.error("Error toggling shortlist", error);
@@ -323,8 +328,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                                 {preferredSearch && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                             </span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
-                                                <button onClick={(e) => handleToggleFavorite(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Favorites || []).includes(profile.id) ? '#ff5a5f' : '#fce4e4', color: (interactions.Favorites || []).includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
-                                                <button onClick={(e) => handleToggleShortlist(e, profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Shortlists || []).includes(profile.id) ? '#ffb400' : '#fdf8e4', color: (interactions.Shortlists || []).includes(profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
+                                                <button onClick={(e) => handleToggleFavorite(e, profile.userId || profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Favorites || []).includes(profile.userId || profile.id) ? '#ff5a5f' : '#fce4e4', color: (interactions.Favorites || []).includes(profile.userId || profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
+                                                <button onClick={(e) => handleToggleShortlist(e, profile.userId || profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Shortlists || []).includes(profile.userId || profile.id) ? '#ffb400' : '#fdf8e4', color: (interactions.Shortlists || []).includes(profile.userId || profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
                                             </div>
                                         </div>
                                     </div>
@@ -368,6 +373,12 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     )}
                 </div>
             </div>
+
+            {actionToast && (
+                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                    {actionToast}
+                </div>
+            )}
         </section>
     );
 }

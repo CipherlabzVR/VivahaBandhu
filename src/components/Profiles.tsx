@@ -16,6 +16,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const { user } = useAuth();
+    const [actionToast, setActionToast] = useState('');
 
     const [isMatched, setIsMatched] = useState(false);
 
@@ -81,6 +82,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
             if (res.statusCode === 200) {
                 setInteractions(prev => {
                     const currentFavorites = prev.Favorites || [];
+                    const isAdding = !currentFavorites.includes(profileId);
                     return {
                         ...prev,
                         Favorites: currentFavorites.includes(profileId)
@@ -88,6 +90,8 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                             : [...currentFavorites, profileId]
                     };
                 });
+                setActionToast('Interest updated successfully');
+                setTimeout(() => setActionToast(''), 2000);
             }
         } catch (error) {
             console.error("Error toggling favorite", error);
@@ -113,6 +117,8 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                             : [...currentShortlists, profileId]
                     };
                 });
+                setActionToast('Saved profiles updated successfully');
+                setTimeout(() => setActionToast(''), 2000);
             }
         } catch (error) {
             console.error("Error toggling shortlist", error);
@@ -167,8 +173,8 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                         {isMatched && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                     </span>
                                     <div className="flex gap-2">
-                                        <button onClick={(e) => handleToggleFavorite(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Favorites || []).includes(profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
-                                        <button onClick={(e) => handleToggleShortlist(e, profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Shortlists || []).includes(profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>
+                                        <button onClick={(e) => handleToggleFavorite(e, profile.userId || profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Favorites || []).includes(profile.userId || profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
+                                        <button onClick={(e) => handleToggleShortlist(e, profile.userId || profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Shortlists || []).includes(profile.userId || profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>
                                     </div>
                                 </div>
                                 {isBlurred && (
@@ -193,6 +199,12 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
             <div className="text-center mt-12">
                 <Link href="/profiles" className="inline-block px-8 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors">{t('viewAllProfiles')}</Link>
             </div>
+
+            {actionToast && (
+                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                    {actionToast}
+                </div>
+            )}
         </section>
     );
 }
