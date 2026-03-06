@@ -34,6 +34,9 @@ function MessagesContent() {
     // Delete message state
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
+    const [chatEnabled, setChatEnabled] = useState(true);
+    const [chatStatusToast, setChatStatusToast] = useState('');
+    const [contactPresence, setContactPresence] = useState<{ isOnline: boolean; lastSeen: string | null }>({ isOnline: false, lastSeen: null });
 
     // Use Refs for callbacks
     useEffect(() => {
@@ -45,6 +48,23 @@ function MessagesContent() {
         window.addEventListener('click', handler);
         return () => window.removeEventListener('click', handler);
     }, []);
+
+    useEffect(() => {
+        if (!user?.id || typeof window === 'undefined') return;
+        const stored = localStorage.getItem(`chat_enabled_${user.id}`);
+        if (stored !== null) {
+            setChatEnabled(stored === 'true');
+        }
+    }, [user?.id]);
+
+    const handleToggleChatEnabled = () => {
+        if (!user?.id || typeof window === 'undefined') return;
+        const next = !chatEnabled;
+        setChatEnabled(next);
+        localStorage.setItem(`chat_enabled_${user.id}`, String(next));
+        setChatStatusToast(next ? 'Chat enabled successfully' : 'Chat disabled successfully');
+        setTimeout(() => setChatStatusToast(''), 1800);
+    };
 
     // 1. Initial Load & Setup SignalR connection
     useEffect(() => {
@@ -129,13 +149,52 @@ function MessagesContent() {
             }
         });
 
+        // Presence updates
+        connection.on("ReceivePresenceUpdate", (presence) => {
+            const activeContactId = selectedContactRef.current?.contactId;
+            if (String(activeContactId) === String(presence?.userId)) {
+                setContactPresence({
+                    isOnline: !!presence?.isOnline,
+                    lastSeen: presence?.lastSeen || null
+                });
+            }
+        });
+
         // Unsubscribe all on cleanup to avoid duplicated events
         return () => {
             connection.off("ReceiveNewMessage");
             connection.off("MessageDeleted");
             connection.off("ReceiveTypingIndicator");
+            connection.off("ReceivePresenceUpdate");
         };
     }, [connection, user]);
+
+    useEffect(() => {
+        const fetchPresence = async () => {
+            if (!connection || !selectedContact) {
+                setContactPresence({ isOnline: false, lastSeen: null });
+                return;
+            }
+            try {
+                const presence = await connection.invoke("GetPresence", String(selectedContact.contactId));
+                setContactPresence({
+                    isOnline: !!presence?.isOnline,
+                    lastSeen: presence?.lastSeen || null
+                });
+            } catch {
+                setContactPresence({ isOnline: false, lastSeen: null });
+            }
+        };
+
+        fetchPresence();
+    }, [connection, selectedContact?.contactId]);
+
+    const formatLastSeen = (lastSeen: string | null) => {
+        if (!lastSeen) return 'Offline';
+        const d = new Date(lastSeen);
+        if (isNaN(d.getTime())) return 'Offline';
+        return `Last seen ${d.toLocaleString()}`;
+    };
 
     const refreshInbox = async () => {
         if (!user) return;
@@ -253,6 +312,7 @@ function MessagesContent() {
 
     // Typing Indicator Trigger
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!chatEnabled) return;
         setNewMessage(e.target.value);
 
         if (!isTyping) {
@@ -280,6 +340,7 @@ function MessagesContent() {
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!chatEnabled) return;
         if (!newMessage.trim() || !user || !selectedContact) return;
 
         const content = newMessage.trim();
@@ -352,8 +413,20 @@ function MessagesContent() {
                     {/* Inbox Sidebar List */}
                     <div className={`w-full md:w-[380px] flex-col border-r border-gray-100 bg-[#fdfaf7] ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
                         <div className="p-6 border-b border-gold/10 bg-white">
-                            <h2 className="text-2xl font-playfair font-bold text-text-dark">Messages</h2>
-                            <p className="text-sm text-text-light mt-1">Connect with your matches</p>
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h2 className="text-2xl font-playfair font-bold text-text-dark">Messages</h2>
+                                    <p className="text-sm text-text-light mt-1">Connect with your matches</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleToggleChatEnabled}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${chatEnabled ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
+                                    title="Enable or disable chatting"
+                                >
+                                    Chat: {chatEnabled ? 'On' : 'Off'}
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
@@ -428,8 +501,12 @@ function MessagesContent() {
                                     </div>
                                     <div className="flex flex-col">
                                         <h3 className="font-playfair text-xl md:text-2xl font-semibold m-0 leading-tight">{selectedContact.firstName} {selectedContact.lastName}</h3>
-                                        {remoteTyping && (
+                                        {remoteTyping ? (
                                             <span className="text-xs text-primary font-medium animate-pulse mt-0.5">typing...</span>
+                                        ) : (
+                                            <span className={`text-xs mt-0.5 ${contactPresence.isOnline ? 'text-green-600 font-medium' : 'text-text-light'}`}>
+                                                {contactPresence.isOnline ? 'Online' : formatLastSeen(contactPresence.lastSeen)}
+                                            </span>
                                         )}
                                     </div>
                                 </div>
@@ -504,6 +581,11 @@ function MessagesContent() {
 
                                 {/* Message Input */}
                                 <div className="p-4 md:p-6 bg-white border-t border-gray-100">
+                                    {!chatEnabled && (
+                                        <div className="mb-3 px-4 py-2 rounded-xl bg-red-50 text-red-700 text-sm border border-red-100">
+                                            Chat is currently disabled. Turn it on to send messages.
+                                        </div>
+                                    )}
                                     <form onSubmit={handleSendMessage} className="flex gap-3 bg-[#fdfaf7] border border-gold/20 p-2 rounded-full shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
                                         <input
                                             type="text"
@@ -512,10 +594,11 @@ function MessagesContent() {
                                             placeholder="Write your message..."
                                             className="flex-1 bg-transparent px-4 outline-none text-text-dark placeholder:text-text-light/50"
                                             autoComplete="off"
+                                            disabled={!chatEnabled}
                                         />
                                         <button
                                             type="submit"
-                                            disabled={!newMessage.trim()}
+                                            disabled={!newMessage.trim() || !chatEnabled}
                                             className="bg-primary hover:bg-gold text-white border-none rounded-full w-10 h-10 md:w-12 md:h-12 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 ml-1">
@@ -557,6 +640,12 @@ function MessagesContent() {
                         </svg>
                         {deletingMsgId === contextMenu.msgId ? 'Deleting...' : 'Delete Message'}
                     </button>
+                </div>
+            )}
+
+            {chatStatusToast && (
+                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2200, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                    {chatStatusToast}
                 </div>
             )}
         </main>

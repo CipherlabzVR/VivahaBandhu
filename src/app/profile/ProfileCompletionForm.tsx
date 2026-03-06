@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
+import { Country, City } from 'country-state-city';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -86,6 +87,66 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
     // Only fetch once when the form mounts (not on every user state change).
     const [initialFetchDone, setInitialFetchDone] = useState(false);
 
+    const countryOptions = useMemo(
+        () => Country.getAllCountries().map((c) => ({ name: c.name, isoCode: c.isoCode })),
+        []
+    );
+
+    const countryIsoByName = useMemo(() => {
+        const map = new Map<string, string>();
+        countryOptions.forEach((c) => map.set(c.name, c.isoCode));
+        // Backward compatibility for previously saved short names
+        map.set('UK', 'GB');
+        map.set('USA', 'US');
+        return map;
+    }, [countryOptions]);
+
+    const getCitiesForCountry = (countryName: string) => {
+        const isoCode = countryIsoByName.get(countryName);
+        if (!isoCode) return [];
+        const cities = City.getCitiesOfCountry(isoCode) || [];
+        return Array.from(new Set(cities.map((c) => c.name))).sort((a, b) => a.localeCompare(b));
+    };
+
+    const residenceCities = useMemo(
+        () => getCitiesForCountry(formData.countryOfResidence),
+        [formData.countryOfResidence, countryIsoByName]
+    );
+
+    const sriLankanReligions = [
+        'Buddhism',
+        'Hinduism',
+        'Islam',
+        'Christianity',
+        'Catholic',
+        'Other',
+    ];
+
+    const sriLankanEthnicities = [
+        'Sinhalese',
+        'Sri Lankan Tamil',
+        'Indian Tamil',
+        'Sri Lankan Moor',
+        'Burgher',
+        'Malay',
+        'Vedda',
+        'Other',
+    ];
+
+    const sriLankanCastes = [
+        'Govigama',
+        'Karava',
+        'Salagama',
+        'Durava',
+        'Bathgama',
+        'Deva',
+        'Radala',
+        'Vellalar',
+        'Karaiyar',
+        'Nalavar',
+        'Other',
+    ];
+
     const safeDate = (val: string | undefined | null): string => {
         if (!val) return '';
         const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -138,6 +199,15 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         setInitialFetchDone(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, initialFetchDone]);
+
+    useEffect(() => {
+        // Clear city when country changes and selected city is not in that country's city list.
+        if (!formData.countryOfResidence || !formData.cityOfResidence) return;
+        if (residenceCities.length === 0) return;
+        if (!residenceCities.includes(formData.cityOfResidence)) {
+            setFormData((prev) => ({ ...prev, cityOfResidence: '' }));
+        }
+    }, [formData.countryOfResidence, residenceCities, formData.cityOfResidence]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -252,15 +322,81 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         return true;
     };
 
-    const handleNext = () => {
-        if (validateStep(step)) {
-            setStep(prev => prev + 1);
-            window.scrollTo(0, 0);
+    const buildProfilePayload = () => ({
+        userId: user?.id,
+        ...formData,
+        height: parseFloat(formData.height) || 0,
+        partnerMinAge: parseInt(formData.partnerMinAge) || 18,
+        partnerMaxAge: parseInt(formData.partnerMaxAge) || 60,
+        dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
+    });
+
+    const saveDraft = async () => {
+        if (!user) {
+            setSubmitError('User not authenticated');
+            return false;
         }
+
+        const token = localStorage.getItem('token');
+        if (!token) {
+            setSubmitError('Please login again to save your progress.');
+            return false;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/UpdateProfile`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(buildProfilePayload())
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '');
+                throw new Error(errorText || 'Failed to save progress');
+            }
+
+            const result = await response.json();
+            if (result.statusCode === 1 || result.statusCode === 200) {
+                setSubmitError('');
+                return true;
+            }
+
+            setSubmitError(result.message || 'Failed to save progress');
+            return false;
+        } catch (error: any) {
+            setSubmitError(error?.message || 'Failed to save progress');
+            return false;
+        }
+    };
+
+    const handleNext = async () => {
+        if (!validateStep(step)) return;
+        const saved = await saveDraft();
+        if (!saved) return;
+
+        setStep(prev => prev + 1);
+        window.scrollTo(0, 0);
     };
 
     const handlePrev = () => {
         setStep(prev => prev - 1);
+        window.scrollTo(0, 0);
+    };
+
+    const handleStepClick = async (targetStep: number) => {
+        if (targetStep === step) return;
+
+        // Going forward requires current-step validation and auto-save.
+        if (targetStep > step) {
+            if (!validateStep(step)) return;
+            const saved = await saveDraft();
+            if (!saved) return;
+        }
+
+        setStep(targetStep);
         window.scrollTo(0, 0);
     };
 
@@ -295,14 +431,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    userId: user.id,
-                    ...formData,
-                    height: parseFloat(formData.height) || 0,
-                    partnerMinAge: parseInt(formData.partnerMinAge) || 18,
-                    partnerMaxAge: parseInt(formData.partnerMaxAge) || 60,
-                    dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
-                })
+                body: JSON.stringify(buildProfilePayload())
             });
 
             if (!response.ok) {
@@ -339,16 +468,27 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         <div className="profile-completion-form">
             <div className="steps-indicator" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}>
                 {[1, 2, 3, 4, 5, 6].map(i => (
-                    <div key={i} style={{
-                        width: '30px', height: '30px',
-                        borderRadius: '50%',
-                        background: step >= i ? 'var(--primary)' : '#ddd',
-                        color: 'white',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontWeight: 'bold'
-                    }}>
+                    <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleStepClick(i)}
+                        style={{
+                            width: '30px',
+                            height: '30px',
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: step >= i ? 'var(--primary)' : '#ddd',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 'bold',
+                            cursor: 'pointer'
+                        }}
+                        title={`Go to step ${i}`}
+                    >
                         {i}
-                    </div>
+                    </button>
                 ))}
             </div>
 
@@ -388,11 +528,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Religion*</label>
                                 <select name="religion" value={formData.religion} onChange={handleChange} required>
                                     <option value="">Select Religion</option>
-                                    <option value="Buddhism">Buddhism</option>
-                                    <option value="Christianity">Christianity</option>
-                                    <option value="Hinduism">Hinduism</option>
-                                    <option value="Islam">Islam</option>
-                                    <option value="Other">Other</option>
+                                    {sriLankanReligions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -438,30 +576,36 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Country of Origin*</label>
                                 <select name="countryOfOrigin" value={formData.countryOfOrigin} onChange={handleChange} required>
                                     <option value="">Select Country</option>
-                                    <option value="Sri Lanka">Sri Lanka</option>
-                                    <option value="India">India</option>
-                                    <option value="UK">UK</option>
-                                    <option value="USA">USA</option>
-                                    <option value="Australia">Australia</option>
-                                    <option value="Canada">Canada</option>
-                                    {/* Add more countries */}
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Country of Residence*</label>
                                 <select name="countryOfResidence" value={formData.countryOfResidence} onChange={handleChange} required>
                                     <option value="">Select Country</option>
-                                    <option value="Sri Lanka">Sri Lanka</option>
-                                    <option value="India">India</option>
-                                    <option value="UK">UK</option>
-                                    <option value="USA">USA</option>
-                                    <option value="Australia">Australia</option>
-                                    <option value="Canada">Canada</option>
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>City of Residence*</label>
-                                <input type="text" name="cityOfResidence" value={formData.cityOfResidence} onChange={handleChange} required />
+                                <input
+                                    type="text"
+                                    name="cityOfResidence"
+                                    value={formData.cityOfResidence}
+                                    onChange={handleChange}
+                                    list="country-residence-cities"
+                                    placeholder={formData.countryOfResidence ? 'Select or type city' : 'Select country first'}
+                                    required
+                                />
+                                <datalist id="country-residence-cities">
+                                    {residenceCities.map((city) => (
+                                        <option key={city} value={city} />
+                                    ))}
+                                </datalist>
                             </div>
                             <div className="form-group">
                                 <label>Residency Status*</label>
@@ -570,9 +714,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Country of Residence*</label>
                                 <select name="fatherCountryOfResidence" value={formData.fatherCountryOfResidence} onChange={handleChange} required>
                                     <option value="">Select Country</option>
-                                    <option value="Sri Lanka">Sri Lanka</option>
-                                    <option value="India">India</option>
-                                    <option value="Other">Other</option>
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -581,20 +725,30 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             </div>
                             <div className="form-group">
                                 <label>Ethnicity*</label>
-                                <input type="text" name="fatherEthnicity" value={formData.fatherEthnicity} onChange={handleChange} required />
+                                <select name="fatherEthnicity" value={formData.fatherEthnicity} onChange={handleChange} required>
+                                    <option value="">Select Ethnicity</option>
+                                    {sriLankanEthnicities.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label>Religion*</label>
                                 <select name="fatherReligion" value={formData.fatherReligion} onChange={handleChange} required>
                                     <option value="">Select</option>
-                                    <option value="Buddhism">Buddhism</option>
-                                    <option value="Christianity">Christianity</option>
-                                    <option value="Other">Other</option>
+                                    {sriLankanReligions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Caste</label>
-                                <input type="text" name="fatherCaste" value={formData.fatherCaste} onChange={handleChange} />
+                                <select name="fatherCaste" value={formData.fatherCaste} onChange={handleChange}>
+                                    <option value="">Select Caste</option>
+                                    {sriLankanCastes.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label>Remarks</label>
@@ -612,9 +766,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Country of Residence*</label>
                                 <select name="motherCountryOfResidence" value={formData.motherCountryOfResidence} onChange={handleChange} required>
                                     <option value="">Select Country</option>
-                                    <option value="Sri Lanka">Sri Lanka</option>
-                                    <option value="India">India</option>
-                                    <option value="Other">Other</option>
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -623,20 +777,30 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             </div>
                             <div className="form-group">
                                 <label>Ethnicity*</label>
-                                <input type="text" name="motherEthnicity" value={formData.motherEthnicity} onChange={handleChange} required />
+                                <select name="motherEthnicity" value={formData.motherEthnicity} onChange={handleChange} required>
+                                    <option value="">Select Ethnicity</option>
+                                    {sriLankanEthnicities.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label>Religion*</label>
                                 <select name="motherReligion" value={formData.motherReligion} onChange={handleChange} required>
                                     <option value="">Select</option>
-                                    <option value="Buddhism">Buddhism</option>
-                                    <option value="Christianity">Christianity</option>
-                                    <option value="Other">Other</option>
+                                    {sriLankanReligions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Caste</label>
-                                <input type="text" name="motherCaste" value={formData.motherCaste} onChange={handleChange} />
+                                <select name="motherCaste" value={formData.motherCaste} onChange={handleChange}>
+                                    <option value="">Select Caste</option>
+                                    {sriLankanCastes.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="form-group">
                                 <label>Remarks</label>
@@ -692,19 +856,41 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
                             <div className="form-group">
                                 <label>Religion (Preferred)</label>
-                                <input type="text" name="partnerReligion" value={formData.partnerReligion} onChange={handleChange} placeholder="e.g. Buddhism, Christianity" />
+                                <select name="partnerReligion" value={formData.partnerReligion} onChange={handleChange}>
+                                    <option value="">Any</option>
+                                    {sriLankanReligions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div className="form-group">
                                 <label>Ethnicity (Preferred)</label>
-                                <input type="text" name="partnerEthnicity" value={formData.partnerEthnicity} onChange={handleChange} placeholder="e.g. Sinhalese" />
+                                <select name="partnerEthnicity" value={formData.partnerEthnicity} onChange={handleChange}>
+                                    <option value="">Any</option>
+                                    {sriLankanEthnicities.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div className="form-group">
                                 <label>Country of Origin</label>
                                 <select name="partnerCountryOfOrigin" value={formData.partnerCountryOfOrigin} onChange={handleChange}>
                                     <option value="">Anyway</option>
-                                    <option value="Sri Lanka">Sri Lanka</option>
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Country of Residence</label>
+                                <select name="partnerCountryOfResidence" value={formData.partnerCountryOfResidence} onChange={handleChange}>
+                                    <option value="">Anywhere</option>
+                                    {countryOptions.map((country) => (
+                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
+                                    ))}
                                 </select>
                             </div>
 
