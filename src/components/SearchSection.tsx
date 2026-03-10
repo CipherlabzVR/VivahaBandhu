@@ -23,7 +23,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         maritalStatus: '',
         sortBy: 'latest',
         pageNumber: 1,
-        pageSize: 20
+        pageSize: 99
     });
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -100,7 +100,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             maritalStatus: '',
             sortBy: 'latest',
             pageNumber: 1,
-            pageSize: 20
+            pageSize: 99
         });
     };
 
@@ -177,7 +177,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 <aside className="filters-sidebar" style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
                     <div className="filters-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                         <h3 style={{ margin: 0 }}>Filters</h3>
-                        <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: '#9b2335', cursor: 'pointer' }}>Clear Filters</button>
+                        <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: '#F97316', cursor: 'pointer' }}>Clear Filters</button>
                     </div>
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
@@ -252,7 +252,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 <div className="search-results">
                     <div className="results-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
                         <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? '#9b2335' : '#333' }}>Preferred Search</span>
+                            <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? '#F97316' : '#333' }}>Preferred Search</span>
                             <label className="toggle-switch" style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
                                 <input 
                                     type="checkbox" 
@@ -267,15 +267,15 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     }}
                                     style={{ opacity: 0, width: 0, height: 0 }} 
                                 />
-                                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: preferredSearch ? '#9b2335' : '#ccc', borderRadius: '24px', transition: 'background-color 0.3s' }}>
+                                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: preferredSearch ? '#F97316' : '#ccc', borderRadius: '24px', transition: 'background-color 0.3s' }}>
                                     <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: preferredSearch ? '22px' : '3px', bottom: '3px', backgroundColor: 'white', borderRadius: '50%', transition: 'left 0.3s' }}></span>
                                 </span>
                             </label>
                         </div>
                         <p className="results-count" style={{ margin: 0, color: '#666' }}>
-                            {preferredSearch 
-                                ? `Showing ${profiles.length} matched profiles (of ${totalCount} total)`
-                                : `Showing ${profiles.length} profiles`}
+                            {totalCount > 0
+                                ? `Showing ${(filters.pageNumber - 1) * filters.pageSize + 1}–${Math.min(filters.pageNumber * filters.pageSize, totalCount)} of ${totalCount} profiles`
+                                : 'Showing 0 profiles'}
                         </p>
                     </div>
                     
@@ -302,7 +302,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     }
                                     onOpenProfileDetail(profile);
                                 }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={{ borderRadius: '20px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', cursor: 'pointer' }}>
-                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#9b2335', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
                                     <div style={{ position: 'relative', height: '300px' }}>
                                         <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', padding: '20px 15px', color: 'white' }}>
@@ -324,7 +324,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                             </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '15px', borderTop: '1px solid #eee' }}>
-                                            <span style={{ color: '#9b2335', fontWeight: 600 }}>
+                                            <span style={{ color: '#F97316', fontWeight: 600 }}>
                                                 {preferredSearch && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                             </span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
@@ -350,27 +350,69 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         </div>
                     )}
 
-                    {!loading && totalCount > filters.pageSize && (
-                        <div className="pagination" style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '40px' }}>
-                            <button 
-                                onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber - 1 }))}
-                                disabled={filters.pageNumber === 1} 
-                                className="page-btn prev" 
-                                style={{ padding: '8px 16px', border: '1px solid #eee', borderRadius: '8px', background: 'white', color: filters.pageNumber === 1 ? '#ccc' : '#333', cursor: filters.pageNumber === 1 ? 'not-allowed' : 'pointer' }}>
-                                &lt; Prev
-                            </button>
-                            <button className="page-btn active" style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#9b2335', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                {filters.pageNumber}
-                            </button>
-                            <button 
-                                onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber + 1 }))}
-                                disabled={filters.pageNumber * filters.pageSize >= totalCount}
-                                className="page-btn next" 
-                                style={{ padding: '8px 16px', border: '1px solid #eee', borderRadius: '8px', background: 'white', color: filters.pageNumber * filters.pageSize >= totalCount ? '#ccc' : '#333', cursor: filters.pageNumber * filters.pageSize >= totalCount ? 'not-allowed' : 'pointer' }}>
-                                Next &gt;
-                            </button>
-                        </div>
-                    )}
+                    {!loading && totalCount > filters.pageSize && (() => {
+                        const totalPages = Math.ceil(totalCount / filters.pageSize);
+                        const currentPage = filters.pageNumber;
+
+                        const getPageNumbers = () => {
+                            const pages: (number | 'ellipsis-start' | 'ellipsis-end')[] = [];
+                            if (totalPages <= 7) {
+                                for (let i = 1; i <= totalPages; i++) pages.push(i);
+                            } else {
+                                pages.push(1);
+                                if (currentPage > 3) pages.push('ellipsis-start');
+                                const start = Math.max(2, currentPage - 1);
+                                const end = Math.min(totalPages - 1, currentPage + 1);
+                                for (let i = start; i <= end; i++) pages.push(i);
+                                if (currentPage < totalPages - 2) pages.push('ellipsis-end');
+                                pages.push(totalPages);
+                            }
+                            return pages;
+                        };
+
+                        const pageStyle = (isActive: boolean, isDisabled?: boolean): React.CSSProperties => ({
+                            minWidth: '40px', height: '40px', borderRadius: '8px',
+                            border: isActive ? 'none' : '1px solid #eee',
+                            background: isActive ? '#F97316' : 'white',
+                            color: isDisabled ? '#ccc' : isActive ? 'white' : '#333',
+                            cursor: isDisabled ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: isActive ? 600 : 400, fontSize: '0.9rem',
+                            padding: '0 8px',
+                        });
+
+                        return (
+                            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', marginTop: '40px', flexWrap: 'wrap' }}>
+                                <button
+                                    onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber - 1 }))}
+                                    disabled={currentPage === 1}
+                                    style={pageStyle(false, currentPage === 1)}
+                                >
+                                    &lt; Prev
+                                </button>
+                                {getPageNumbers().map((page) =>
+                                    typeof page === 'string' ? (
+                                        <span key={page} style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>...</span>
+                                    ) : (
+                                        <button
+                                            key={page}
+                                            onClick={() => setFilters(prev => ({ ...prev, pageNumber: page }))}
+                                            style={pageStyle(page === currentPage)}
+                                        >
+                                            {page}
+                                        </button>
+                                    )
+                                )}
+                                <button
+                                    onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber + 1 }))}
+                                    disabled={currentPage >= totalPages}
+                                    style={pageStyle(false, currentPage >= totalPages)}
+                                >
+                                    Next &gt;
+                                </button>
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
 

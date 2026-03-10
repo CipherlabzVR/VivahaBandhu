@@ -7,6 +7,10 @@ import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
 import * as signalR from '@microsoft/signalr';
 
+const isNegotiationStoppedError = (error: unknown) =>
+    error instanceof Error &&
+    error.message.toLowerCase().includes('stopped during negotiation');
+
 function MessagesContent() {
     const { user } = useAuth();
     const router = useRouter();
@@ -79,6 +83,8 @@ function MessagesContent() {
 
         refreshInbox();
 
+        let disposed = false;
+
         const connectSignalR = async () => {
             const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
             // The hub mapped to /chathub inside API folder path or root (e.g. https://.../chathub)
@@ -91,24 +97,31 @@ function MessagesContent() {
 
             try {
                 await newConnection.start();
+                if (disposed) {
+                    await newConnection.stop();
+                    return;
+                }
                 console.log("SignalR Connected!");
 
                 // Join personal matching group
                 await newConnection.invoke("JoinUserGroup", String(user.id));
                 setConnection(newConnection);
             } catch (e) {
-                console.error("SignalR Connection Failed: ", e);
+                if (!isNegotiationStoppedError(e)) {
+                    console.error("SignalR Connection Failed: ", e);
+                }
             }
         };
 
         connectSignalR();
 
         return () => {
+            disposed = true;
             if (connection) {
                 connection.stop();
             }
         };
-    }, [user, router]); // Run once
+    }, [user?.id, router]); // Run once per user
 
     // 2. Register SignalR Events once connection is ready
     useEffect(() => {

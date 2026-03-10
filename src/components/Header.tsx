@@ -6,6 +6,10 @@ import { useState, useEffect } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { matrimonialService } from '../services/matrimonialService';
 
+const isNegotiationStoppedError = (error: unknown) =>
+    error instanceof Error &&
+    error.message.toLowerCase().includes('stopped during negotiation');
+
 interface HeaderProps {
     onOpenLogin: () => void;
     onOpenRegister: () => void;
@@ -101,17 +105,27 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
     useEffect(() => {
         if (!user?.id) return;
+        let disposed = false;
+        let retryTimeout: ReturnType<typeof setTimeout>;
         const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
         const connection = new signalR.HubConnectionBuilder()
             .withUrl(HUB_URL)
             .withAutomaticReconnect()
             .build();
 
-        const setup = async () => {
+        const startConnection = async (attempt = 0) => {
+            if (disposed) return;
             try {
                 await connection.start();
+                if (disposed) {
+                    await connection.stop();
+                    return;
+                }
                 await connection.invoke('JoinUserGroup', String(user.id));
-            } catch {
+            } catch (error) {
+                if (disposed || isNegotiationStoppedError(error)) return;
+                const delay = Math.min(5000 * 2 ** attempt, 30_000);
+                retryTimeout = setTimeout(() => startConnection(attempt + 1), delay);
                 return;
             }
 
@@ -132,9 +146,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             });
         };
 
-        setup();
+        startConnection();
 
         return () => {
+            disposed = true;
+            clearTimeout(retryTimeout);
             connection.off('ReceiveInterestNotification');
             connection.stop();
         };
