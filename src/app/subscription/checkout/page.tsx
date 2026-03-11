@@ -1,15 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 
 export default function SubscriptionCheckoutPage() {
-    const params = useSearchParams();
     const router = useRouter();
     const { user } = useAuth();
-    const amount = params.get('amount') || '2000';
+    const [amount, setAmount] = useState('2000');
 
     const [cardNumber, setCardNumber] = useState('');
     const [cardHolder, setCardHolder] = useState('');
@@ -18,6 +17,15 @@ export default function SubscriptionCheckoutPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const url = new URL(window.location.href);
+        const queryAmount = url.searchParams.get('amount');
+        if (queryAmount) {
+            setAmount(queryAmount);
+        }
+    }, []);
 
     const formatCardNumber = (value: string) => {
         const digits = value.replace(/\D/g, '').slice(0, 16);
