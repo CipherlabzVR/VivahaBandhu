@@ -40,8 +40,8 @@ export default function LoadingScreen() {
       className="fixed inset-0 z-[9999] flex items-center justify-center"
       aria-hidden="true"
     >
-      {/* Transparent blur background */}
-      <div className="absolute inset-0 bg-white/20 backdrop-blur-xl" />
+      {/* Fully transparent background */}
+      <div className="absolute inset-0 bg-transparent" />
 
       {/* Glowing orange line-drawn heart */}
       <div className="relative z-10 flex flex-col items-center gap-6">

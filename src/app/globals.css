@@ -94,6 +94,15 @@
     }
 }
 
+@keyframes fadeInSoft {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 0.12;
+    }
+}
+
 @keyframes slideUp {
     from {
         transform: translateY(50px);
@@ -137,6 +146,33 @@
     }
 }
 
+@keyframes treeGrow {
+    0% {
+        opacity: 0;
+        transform: scaleY(0.1) scaleX(0.85);
+    }
+    60% {
+        opacity: 0.7;
+        transform: scaleY(1.04) scaleX(1.02);
+    }
+    100% {
+        opacity: 1;
+        transform: scaleY(1) scaleX(1);
+    }
+}
+
+@keyframes treeSway {
+    0%, 100% {
+        transform: rotate(0deg);
+    }
+    30% {
+        transform: rotate(1.2deg);
+    }
+    70% {
+        transform: rotate(-1deg);
+    }
+}
+
 @layer utilities {
     .hero-video-clip {
         clip-path: polygon(0 0, 100% 0, 100% 100%, 0% 100%);
@@ -148,6 +184,32 @@
     }
     .animate-float {
         animation: float 6s ease-in-out infinite;
+    }
+
+    .pricing-tree {
+        position: absolute;
+        bottom: 0;
+        width: 340px;
+        height: 92%;
+        pointer-events: none;
+        transform-origin: bottom center;
+        filter: brightness(0) invert(1);
+        opacity: 0.22;
+        z-index: 2;
+    }
+
+    .pricing-tree-left {
+        left: -60px;
+        animation: treeGrow 1.6s cubic-bezier(0.23, 1, 0.32, 1) both,
+                   treeSway 9s ease-in-out 1.6s infinite;
+    }
+
+    .pricing-tree-right {
+        right: -60px;
+        transform-origin: bottom center;
+        transform: scaleX(-1);
+        animation: treeGrow 1.6s cubic-bezier(0.23, 1, 0.32, 1) 0.3s both,
+                   treeSway 9s ease-in-out 1.9s infinite;
     }
 }
 

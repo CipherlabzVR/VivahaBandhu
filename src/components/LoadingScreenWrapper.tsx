@@ -50,11 +50,9 @@ export default function LoadingScreenWrapper({
 
   return (
     <>
-      {/* Homepage: hidden until loading screen is gone, then fade in */}
+      {/* Keep homepage visible behind transparent loader */}
       <div
-        className={`min-h-full transition-opacity duration-700 ease-out ${
-          showOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
+        className="min-h-full transition-opacity duration-700 ease-out opacity-100"
       >
         {children}
       </div>

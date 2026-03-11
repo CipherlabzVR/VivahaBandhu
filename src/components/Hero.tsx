@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import CustomDropdown from './CustomDropdown';
@@ -13,6 +13,7 @@ interface HeroProps {
 export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
     const router = useRouter();
     const { language, t } = useLanguage();
+    const heroVideoRef = useRef<HTMLVideoElement | null>(null);
     const [search, setSearch] = useState({
         gender: 'Bride',
         ageFrom: '20',
@@ -20,6 +21,44 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
         religion: 'Any',
         district: 'Any'
     });
+
+
+    useEffect(() => {
+        let retryTimer: ReturnType<typeof setInterval> | null = null;
+        let retryCount = 0;
+
+        const ensurePlay = () => {
+            const video = heroVideoRef.current;
+            if (!video) return;
+            video.muted = true;
+            video.defaultMuted = true;
+            video.play().catch(() => {
+                // Retry shortly; loading-screen fade can delay paint/ready timing.
+            });
+        };
+
+        ensurePlay();
+        retryTimer = setInterval(() => {
+            retryCount += 1;
+            ensurePlay();
+            if (retryCount >= 8 && retryTimer) {
+                clearInterval(retryTimer);
+            }
+        }, 400);
+
+        const onVisibilityChange = () => {
+            if (!document.hidden) ensurePlay();
+        };
+
+        window.addEventListener('focus', ensurePlay);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
+        return () => {
+            if (retryTimer) clearInterval(retryTimer);
+            window.removeEventListener('focus', ensurePlay);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        };
+    }, []);
 
     const handleChange = (name: string, value: string) => {
         setSearch({ ...search, [name]: value });
@@ -33,6 +72,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
     return (
         <section className="relative min-h-screen bg-cream overflow-hidden pt-20">
             <video
+                ref={heroVideoRef}
                 autoPlay
                 muted
                 loop
@@ -46,7 +86,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                     });
                 }}
             >
-                <source src="/hero.mp4" type="video/mp4" />
+                <source src="/hero2.mp4" type="video/mp4" />
             </video>
             
             {/* Glassmorphism overlay for white background area with blur */}
@@ -88,7 +128,7 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                     </svg>
                 </div>
             </div>
-            
+
             <div className={`relative z-10 max-w-[1400px] mx-auto px-4 py-20 flex flex-col min-h-[calc(100vh-80px)] ${language === 'si' ? 'font-sinhala' : ''}`} style={{ position: 'relative', zIndex: 10 }}>
                 <div className="text-text-dark flex-1 flex flex-col justify-center">
                     <h1 className={`mb-6 leading-tight text-text-dark ${

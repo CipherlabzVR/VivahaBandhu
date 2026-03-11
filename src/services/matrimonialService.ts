@@ -79,6 +79,29 @@ export interface MatrimonialLoginResponse {
     };
 }
 
+export interface RecoveryAccount {
+    userId: number;
+    fullName: string;
+    email?: string | null;
+    phoneNumber?: string | null;
+    whatsApp?: string | null;
+    verifiedBy?: 'Email' | 'Phone' | 'WhatsApp' | string;
+}
+
+export interface ForgotPasswordInitiateRequest {
+    userId?: number;
+    email?: string;
+    phoneNumber?: string;
+    whatsApp?: string;
+}
+
+export interface ForgotPasswordResetRequest {
+    userId: number;
+    code: string;
+    newPassword: string;
+    confirmPassword: string;
+}
+
 export const matrimonialService = {
     /**
      * Register a new matrimonial user
@@ -226,6 +249,78 @@ export const matrimonialService = {
         }
     },
 
+    async searchRecoveryAccounts(name: string): Promise<{ statusCode: number; message: string; result: RecoveryAccount[] }> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SearchRecoveryAccounts`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to search accounts: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while searching accounts');
+        }
+    },
+
+    async initiateForgotPassword(data: ForgotPasswordInitiateRequest): Promise<{ statusCode: number; message: string; result?: { userId: number; sentVia: string } }> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/InitiateForgotPassword`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to start forgot password: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while starting forgot password');
+        }
+    },
+
+    async resetForgotPasswordWithCode(data: ForgotPasswordResetRequest): Promise<{ statusCode: number; message: string }> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ResetForgotPasswordWithCode`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to reset password: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while resetting password');
+        }
+    },
+
     /**
      * Get recent registered profiles
      */
@@ -307,9 +402,15 @@ export const matrimonialService = {
     /**
      * Get detailed profile by user ID
      */
-    async getProfile(userId: number): Promise<any> {
+    async getProfile(userId: number, requesterUserId?: number, applyViewLimit: boolean = false): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${userId}`, {
+            const query = new URLSearchParams({
+                userId: String(userId),
+                ...(requesterUserId ? { requesterUserId: String(requesterUserId) } : {}),
+                applyViewLimit: String(applyViewLimit),
+            });
+
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?${query.toString()}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -464,6 +565,32 @@ export const matrimonialService = {
                 }
             });
             if (!response.ok) throw new Error('Failed to fetch sub-accounts');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async activateMockSubscription(userId: number, mockReference: string): Promise<any> {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ActivateMockSubscription`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                },
+                body: JSON.stringify({
+                    userId,
+                    mockReference
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to activate mock subscription');
+            }
+
             return await response.json();
         } catch (error) {
             throw error;

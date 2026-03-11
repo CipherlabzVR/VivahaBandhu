@@ -110,6 +110,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
         const connection = new signalR.HubConnectionBuilder()
             .withUrl(HUB_URL)
+            .configureLogging(signalR.LogLevel.None)
             .withAutomaticReconnect()
             .build();
 
@@ -123,7 +124,10 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 }
                 await connection.invoke('JoinUserGroup', String(user.id));
             } catch (error) {
-                if (disposed || isNegotiationStoppedError(error)) return;
+                if (disposed) return;
+                if (!isNegotiationStoppedError(error)) {
+                    console.error('Header SignalR connection failed:', error);
+                }
                 const delay = Math.min(5000 * 2 ** attempt, 30_000);
                 retryTimeout = setTimeout(() => startConnection(attempt + 1), delay);
                 return;

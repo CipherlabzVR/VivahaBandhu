@@ -84,14 +84,17 @@ function MessagesContent() {
         refreshInbox();
 
         let disposed = false;
+        let retryTimeout: ReturnType<typeof setTimeout>;
+        let activeConnection: signalR.HubConnection | null = null;
 
-        const connectSignalR = async () => {
+        const connectSignalR = async (attempt = 0) => {
             const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
             // The hub mapped to /chathub inside API folder path or root (e.g. https://.../chathub)
             const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
 
             const newConnection = new signalR.HubConnectionBuilder()
                 .withUrl(HUB_URL)
+                .configureLogging(signalR.LogLevel.None)
                 .withAutomaticReconnect()
                 .build();
 
@@ -105,11 +108,15 @@ function MessagesContent() {
 
                 // Join personal matching group
                 await newConnection.invoke("JoinUserGroup", String(user.id));
+                activeConnection = newConnection;
                 setConnection(newConnection);
             } catch (e) {
+                if (disposed) return;
                 if (!isNegotiationStoppedError(e)) {
                     console.error("SignalR Connection Failed: ", e);
                 }
+                const delay = Math.min(5000 * 2 ** attempt, 30000);
+                retryTimeout = setTimeout(() => connectSignalR(attempt + 1), delay);
             }
         };
 
@@ -117,8 +124,9 @@ function MessagesContent() {
 
         return () => {
             disposed = true;
-            if (connection) {
-                connection.stop();
+            clearTimeout(retryTimeout);
+            if (activeConnection) {
+                activeConnection.stop();
             }
         };
     }, [user?.id, router]); // Run once per user
@@ -357,12 +365,12 @@ function MessagesContent() {
         if (!newMessage.trim() || !user || !selectedContact) return;
 
         const content = newMessage.trim();
+        const tempId = Math.random();
         setNewMessage('');
         setIsTyping(false);
 
         try {
             // Optimistically update UI so it feels instant
-            const tempId = Math.random();
             const newMsgObj = {
                 id: tempId,
                 senderId: Number(user.id),
@@ -386,6 +394,11 @@ function MessagesContent() {
         } catch (err) {
             console.error("Failed to send message", err);
             setNewMessage(content);
+            setMessages(prev => prev.filter(m => m.id !== tempId));
+            if (err instanceof Error && err.message) {
+                setChatStatusToast(err.message);
+                setTimeout(() => setChatStatusToast(''), 2200);
+            }
         }
     };
 

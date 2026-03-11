@@ -3,7 +3,7 @@
 import { useState, useEffect, MouseEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { matrimonialService } from '../services/matrimonialService';
+import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
 import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
 
@@ -33,20 +33,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
     const [profileTab, setProfileTab] = useState('about');
     const [registerAccountType, setRegisterAccountType] = useState('Self');
-    const [subscriptionOption, setSubscriptionOption] = useState('3 Months');
+    const [subscriptionOption, setSubscriptionOption] = useState('Free');
 
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+    const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
+    const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
 
     useEffect(() => {
         if (initialSelectedProfile) {
             setSelectedProfile(initialSelectedProfile);
+            setProfileAccessMessage(null);
+            setIsProfileLockedByDailyLimit(false);
             if (activeModal === 'profile' && initialSelectedProfile.userId) {
                 const fetchDetailedProfile = async () => {
                     setIsLoadingProfile(true);
                     try {
-                        const res = await matrimonialService.getProfile(initialSelectedProfile.userId);
+                        const res = await matrimonialService.getProfile(
+                            initialSelectedProfile.userId,
+                            user?.id ? Number(user.id) : undefined,
+                            true
+                        );
                         if (res.statusCode === 200 && res.result) {
+                            setIsProfileLockedByDailyLimit(false);
                             setSelectedProfile((prev: any) => ({
                                 ...prev,
                                 ...res.result,
@@ -60,9 +69,20 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 drinking: res.result.drinkingHabits || prev?.drinking,
                                 partnerPreferences: res.result.partnerAdditionalRequirements || prev?.partnerPreferences,
                             }));
+                        } else if (res?.message) {
+                            setProfileAccessMessage(res.message);
+                            if (String(res.message).toLowerCase().includes('daily profile view limit reached')) {
+                                setIsProfileLockedByDailyLimit(true);
+                            }
                         }
                     } catch (error) {
                         console.error("Failed to load detailed profile", error);
+                        if (error instanceof Error && error.message) {
+                            setProfileAccessMessage(error.message);
+                            if (error.message.toLowerCase().includes('daily profile view limit reached')) {
+                                setIsProfileLockedByDailyLimit(true);
+                            }
+                        }
                     } finally {
                         setIsLoadingProfile(false);
                     }
@@ -71,8 +91,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             }
         } else {
             setSelectedProfile(null);
+            setProfileAccessMessage(null);
+            setIsProfileLockedByDailyLimit(false);
         }
-    }, [activeModal, initialSelectedProfile]);
+    }, [activeModal, initialSelectedProfile, user?.id]);
     const [isWhatsAppSame, setIsWhatsAppSame] = useState(false);
     const [nic, setNic] = useState('');
     const [dob, setDob] = useState('');
@@ -91,6 +113,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginError, setLoginError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [showForgotPassword, setShowForgotPassword] = useState(false);
+    const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
+    const [forgotContactEmail, setForgotContactEmail] = useState('');
+    const [forgotContactPhone, setForgotContactPhone] = useState('');
+    const [forgotContactWhatsApp, setForgotContactWhatsApp] = useState('');
+    const [forgotSearchName, setForgotSearchName] = useState('');
+    const [forgotSearchResults, setForgotSearchResults] = useState<RecoveryAccount[]>([]);
+    const [forgotSelectedAccount, setForgotSelectedAccount] = useState<RecoveryAccount | null>(null);
+    const [forgotRecoveryUserId, setForgotRecoveryUserId] = useState<number | null>(null);
+    const [forgotSentVia, setForgotSentVia] = useState('');
+    const [forgotCode, setForgotCode] = useState('');
+    const [forgotNewPassword, setForgotNewPassword] = useState('');
+    const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+    const [forgotError, setForgotError] = useState<string | null>(null);
+    const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+    const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
+    const [forgotStep, setForgotStep] = useState<'entry' | 'verify'>('entry');
     const [profilePhotoBase64, setProfilePhotoBase64] = useState('');
     const [photoPreview, setPhotoPreview] = useState('');
 
@@ -281,6 +320,170 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     };
 
+    const resetForgotPasswordState = () => {
+        setShowForgotPassword(false);
+        setForgotMode('contact');
+        setForgotContactEmail('');
+        setForgotContactPhone('');
+        setForgotContactWhatsApp('');
+        setForgotSearchName('');
+        setForgotSearchResults([]);
+        setForgotSelectedAccount(null);
+        setForgotRecoveryUserId(null);
+        setForgotSentVia('');
+        setForgotCode('');
+        setForgotNewPassword('');
+        setForgotConfirmPassword('');
+        setForgotError(null);
+        setForgotSuccess(null);
+        setForgotStep('entry');
+        setIsForgotSubmitting(false);
+    };
+
+    const handleSearchRecoveryAccounts = async () => {
+        if (forgotSearchName.trim().length < 2) {
+            setForgotError('Please type at least 2 characters to search by name.');
+            return;
+        }
+
+        setIsForgotSubmitting(true);
+        setForgotError(null);
+        setForgotSuccess(null);
+        setForgotSelectedAccount(null);
+
+        try {
+            const response = await matrimonialService.searchRecoveryAccounts(forgotSearchName.trim());
+            const accounts = Array.isArray(response?.result) ? response.result : [];
+            setForgotSearchResults(accounts);
+
+            if (accounts.length === 0) {
+                setForgotError('No matching account found. Try a different name.');
+            }
+        } catch (error) {
+            setForgotError(error instanceof Error ? error.message : 'Failed to search accounts.');
+            setForgotSearchResults([]);
+        } finally {
+            setIsForgotSubmitting(false);
+        }
+    };
+
+    const handleInitiateForgotByContact = async () => {
+        const payload = {
+            email: forgotContactEmail.trim() || undefined,
+            phoneNumber: forgotContactPhone.trim() || undefined,
+            whatsApp: forgotContactWhatsApp.trim() || undefined,
+        };
+
+        if (!payload.email && !payload.phoneNumber && !payload.whatsApp) {
+            setForgotError('Enter your registered email, phone number, or WhatsApp number to continue.');
+            return;
+        }
+
+        setIsForgotSubmitting(true);
+        setForgotError(null);
+        setForgotSuccess(null);
+
+        try {
+            const response = await matrimonialService.initiateForgotPassword(payload);
+            const userId = response?.result?.userId;
+            const sentVia = response?.result?.sentVia || 'Email';
+
+            if (!userId) {
+                setForgotError(response.message || 'Could not start password recovery.');
+                return;
+            }
+
+            setForgotRecoveryUserId(Number(userId));
+            setForgotSentVia(sentVia);
+            setForgotStep('verify');
+            setForgotSuccess(`A verification code was sent via ${sentVia}.`);
+            alert(`A verification code has been sent via ${sentVia}.`);
+        } catch (error) {
+            setForgotError(error instanceof Error ? error.message : 'Could not verify your account details.');
+            alert(error instanceof Error ? error.message : 'Could not verify your account details.');
+        } finally {
+            setIsForgotSubmitting(false);
+        }
+    };
+
+    const handleInitiateForgotBySelectedAccount = async (account: RecoveryAccount) => {
+        setIsForgotSubmitting(true);
+        setForgotError(null);
+        setForgotSuccess(null);
+        setForgotSelectedAccount(account);
+
+        try {
+            const response = await matrimonialService.initiateForgotPassword({ userId: account.userId });
+            const userId = response?.result?.userId;
+            const sentVia = response?.result?.sentVia || account.verifiedBy || 'Email';
+
+            if (!userId) {
+                setForgotError(response.message || 'Could not start password recovery.');
+                return;
+            }
+
+            setForgotRecoveryUserId(Number(userId));
+            setForgotSentVia(String(sentVia));
+            setForgotStep('verify');
+            setForgotSuccess(`A verification code was sent via ${sentVia}.`);
+            alert(`Code sent via ${sentVia} to the selected account.`);
+        } catch (error) {
+            setForgotError(error instanceof Error ? error.message : 'Could not send verification code.');
+            alert(error instanceof Error ? error.message : 'Could not send verification code.');
+        } finally {
+            setIsForgotSubmitting(false);
+        }
+    };
+
+    const handleForgotPasswordReset = async () => {
+        if (!forgotRecoveryUserId) {
+            setForgotError('Recovery session is missing. Please restart forgot password.');
+            return;
+        }
+
+        if (!forgotCode || forgotCode.length !== 6) {
+            setForgotError('Enter the 6-digit verification code.');
+            return;
+        }
+
+        if (!forgotNewPassword || forgotNewPassword.length < 6) {
+            setForgotError('New password must be at least 6 characters.');
+            return;
+        }
+
+        if (forgotNewPassword !== forgotConfirmPassword) {
+            setForgotError('Confirm password does not match.');
+            return;
+        }
+
+        setIsForgotSubmitting(true);
+        setForgotError(null);
+        setForgotSuccess(null);
+
+        try {
+            const response = await matrimonialService.resetForgotPasswordWithCode({
+                userId: forgotRecoveryUserId,
+                code: forgotCode,
+                newPassword: forgotNewPassword,
+                confirmPassword: forgotConfirmPassword,
+            });
+
+            if (response.statusCode === 200 || response.statusCode === 1) {
+                setForgotSuccess(response.message || 'Password reset successfully.');
+                alert('Password reset successfully. Please login with your new password.');
+                resetForgotPasswordState();
+                setLoginTab('login');
+            } else {
+                setForgotError(response.message || 'Failed to reset password.');
+            }
+        } catch (error) {
+            setForgotError(error instanceof Error ? error.message : 'Failed to reset password.');
+            alert(error instanceof Error ? error.message : 'Failed to reset password.');
+        } finally {
+            setIsForgotSubmitting(false);
+        }
+    };
+
     const parseNIC = (nicNumber: string) => {
         const normalizedNIC = nicNumber.trim().toUpperCase();
         const currentYear = new Date().getFullYear();
@@ -363,6 +566,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         // Don't reset welcome popup state if it should be shown
         // Only reset if welcome popup is not active
         if (!showWelcomePopup) {
+            resetForgotPasswordState();
             setShowVerification(false);
             setRegisteredUserId(null);
             setVerificationMethod('');
@@ -540,8 +744,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     <div className="modal-body">
                         {activeModal !== 'verify' && !showVerification && (
                             <div className="login-tabs">
-                                <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => setLoginTab('login')}>Login</button>
-                                <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => setLoginTab('register')}>Register</button>
+                                <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => { setLoginTab('login'); setShowForgotPassword(false); }}>Login</button>
+                                <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => { setLoginTab('register'); setShowForgotPassword(false); }}>Register</button>
                             </div>
                         )}
 
@@ -794,48 +998,242 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             </div>
                         ) : loginTab === 'login' ? (
                             <div id="loginTab" className="tab-content active">
-                                <div className="form-group">
-                                    <label>Email / Account ID</label>
-                                    <input type="email" placeholder="Enter your email or account ID" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
-                                </div>
-                                <div className="form-group">
-                                    <label>Password</label>
-                                    <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
-                                </div>
-                                <div className="checkbox-group">
-                                    <input type="checkbox" id="remember" />
-                                    <label htmlFor="remember">Remember me</label>
-                                </div>
-                                {loginError && (
-                                    <div style={{
-                                        color: 'red',
-                                        fontSize: '0.9rem',
-                                        marginBottom: '1rem',
-                                        padding: '0.5rem',
-                                        backgroundColor: '#ffe6e6',
-                                        borderRadius: '4px'
-                                    }}>
-                                        {loginError}
+                                {showForgotPassword ? (
+                                    <div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                            <h3 style={{ margin: 0 }}>Forgot Password</h3>
+                                            <button
+                                                type="button"
+                                                onClick={resetForgotPasswordState}
+                                                style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                            >
+                                                Back to Login
+                                            </button>
+                                        </div>
+
+                                        {forgotStep === 'entry' ? (
+                                            <>
+                                                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                                                    <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                                        <input
+                                                            type="radio"
+                                                            checked={forgotMode === 'contact'}
+                                                            onChange={() => {
+                                                                setForgotMode('contact');
+                                                                setForgotError(null);
+                                                                setForgotSuccess(null);
+                                                            }}
+                                                        />
+                                                        Use registered contact
+                                                    </label>
+                                                    <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                                        <input
+                                                            type="radio"
+                                                            checked={forgotMode === 'search'}
+                                                            onChange={() => {
+                                                                setForgotMode('search');
+                                                                setForgotError(null);
+                                                                setForgotSuccess(null);
+                                                            }}
+                                                        />
+                                                        Search by name
+                                                    </label>
+                                                </div>
+
+                                                {forgotMode === 'contact' ? (
+                                                    <>
+                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                                                            Enter the same email, phone number, or WhatsApp used during registration.
+                                                            If details are wrong, recovery cannot continue.
+                                                        </p>
+                                                        <div className="form-group">
+                                                            <label>Registered Email</label>
+                                                            <input type="email" value={forgotContactEmail} onChange={(e) => setForgotContactEmail(e.target.value)} placeholder="your@email.com" />
+                                                        </div>
+                                                        <div className="form-group">
+                                                            <label>Registered Phone Number</label>
+                                                            <input type="text" value={forgotContactPhone} onChange={(e) => setForgotContactPhone(e.target.value)} placeholder="07XXXXXXXX" />
+                                                        </div>
+                                                        <div className="form-group">
+                                                            <label>Registered WhatsApp Number</label>
+                                                            <input type="text" value={forgotContactWhatsApp} onChange={(e) => setForgotContactWhatsApp(e.target.value)} placeholder="07XXXXXXXX" />
+                                                        </div>
+                                                        <button
+                                                            className="btn btn-primary"
+                                                            style={{ width: '100%', justifyContent: 'center' }}
+                                                            onClick={handleInitiateForgotByContact}
+                                                            disabled={isForgotSubmitting}
+                                                        >
+                                                            {isForgotSubmitting ? 'Validating...' : 'Send Recovery Code'}
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                                                            Search your account by name, choose your profile, and we will send the code automatically to your verified method.
+                                                        </p>
+                                                        <div className="form-group">
+                                                            <label>Type your name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={forgotSearchName}
+                                                                onChange={(e) => setForgotSearchName(e.target.value)}
+                                                                placeholder="First name or full name"
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            className="btn btn-primary"
+                                                            style={{ width: '100%', justifyContent: 'center', marginBottom: '1rem' }}
+                                                            onClick={handleSearchRecoveryAccounts}
+                                                            disabled={isForgotSubmitting}
+                                                        >
+                                                            {isForgotSubmitting ? 'Searching...' : 'Search Account'}
+                                                        </button>
+
+                                                        {forgotSearchResults.length > 0 && (
+                                                            <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px', padding: '0.5rem' }}>
+                                                                {forgotSearchResults.map((account) => (
+                                                                    <div key={account.userId} style={{ borderBottom: '1px solid #f0f0f0', padding: '0.6rem 0' }}>
+                                                                        <div style={{ fontWeight: 600 }}>{account.fullName}</div>
+                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                                                                            {account.email || account.phoneNumber || account.whatsApp || 'No contact details'}
+                                                                        </div>
+                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '0.2rem' }}>
+                                                                            Verified by: {account.verifiedBy || 'Email'}
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleInitiateForgotBySelectedAccount(account)}
+                                                                            disabled={isForgotSubmitting}
+                                                                            className="btn btn-outline"
+                                                                            style={{ marginTop: '0.5rem', padding: '0.4rem 0.8rem' }}
+                                                                        >
+                                                                            Use this account
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
+                                                    Enter the 6-digit code sent via <strong>{forgotSentVia}</strong>, then set your new password.
+                                                </p>
+                                                {forgotSelectedAccount && (
+                                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
+                                                        Account: <strong>{forgotSelectedAccount.fullName}</strong>
+                                                    </div>
+                                                )}
+                                                <div className="form-group">
+                                                    <label>Verification Code</label>
+                                                    <input
+                                                        type="text"
+                                                        maxLength={6}
+                                                        value={forgotCode}
+                                                        onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, ''))}
+                                                        placeholder="6-digit code"
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label>New Password</label>
+                                                    <input
+                                                        type="password"
+                                                        value={forgotNewPassword}
+                                                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                                                        placeholder="New password"
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label>Confirm Password</label>
+                                                    <input
+                                                        type="password"
+                                                        value={forgotConfirmPassword}
+                                                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                                                        placeholder="Confirm password"
+                                                    />
+                                                </div>
+                                                <button
+                                                    className="btn btn-primary"
+                                                    style={{ width: '100%', justifyContent: 'center' }}
+                                                    onClick={handleForgotPasswordReset}
+                                                    disabled={isForgotSubmitting}
+                                                >
+                                                    {isForgotSubmitting ? 'Resetting...' : 'Reset Password'}
+                                                </button>
+                                            </>
+                                        )}
+
+                                        {forgotError && (
+                                            <div style={{ color: '#b91c1c', backgroundColor: '#fee2e2', borderRadius: '6px', padding: '0.6rem', marginTop: '1rem', fontSize: '0.9rem' }}>
+                                                {forgotError}
+                                            </div>
+                                        )}
+                                        {forgotSuccess && (
+                                            <div style={{ color: '#166534', backgroundColor: '#dcfce7', borderRadius: '6px', padding: '0.6rem', marginTop: '1rem', fontSize: '0.9rem' }}>
+                                                {forgotSuccess}
+                                            </div>
+                                        )}
                                     </div>
+                                ) : (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Email / Account ID</label>
+                                            <input type="email" placeholder="Enter your email or account ID" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                                        </div>
+                                        <div className="form-group">
+                                            <label>Password</label>
+                                            <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                                        </div>
+                                        <div className="checkbox-group">
+                                            <input type="checkbox" id="remember" />
+                                            <label htmlFor="remember">Remember me</label>
+                                        </div>
+                                        {loginError && (
+                                            <div style={{
+                                                color: 'red',
+                                                fontSize: '0.9rem',
+                                                marginBottom: '1rem',
+                                                padding: '0.5rem',
+                                                backgroundColor: '#ffe6e6',
+                                                borderRadius: '4px'
+                                            }}>
+                                                {loginError}
+                                            </div>
+                                        )}
+                                        <button
+                                            className="btn btn-primary"
+                                            style={{ width: '100%', justifyContent: 'center' }}
+                                            onClick={handleLogin}
+                                            disabled={isLoading}
+                                        >
+                                            {isLoading ? 'Logging in...' : 'Login'}
+                                        </button>
+                                        <p style={{ textAlign: 'center', marginTop: '1rem' }}>
+                                            <a
+                                                href="#"
+                                                style={{ color: 'var(--primary)' }}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setShowForgotPassword(true);
+                                                    setForgotError(null);
+                                                    setForgotSuccess(null);
+                                                }}
+                                            >
+                                                Forgot Password?
+                                            </a>
+                                        </p>
+                                        <div className="divider">
+                                            <span>or continue with</span>
+                                        </div>
+                                        <div className="social-login">
+                                            <button className="social-btn">G</button>
+                                            <button className="social-btn">f</button>
+                                        </div>
+                                    </>
                                 )}
-                                <button
-                                    className="btn btn-primary"
-                                    style={{ width: '100%', justifyContent: 'center' }}
-                                    onClick={handleLogin}
-                                    disabled={isLoading}
-                                >
-                                    {isLoading ? 'Logging in...' : 'Login'}
-                                </button>
-                                <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-                                    <a href="#" style={{ color: 'var(--primary)' }}>Forgot Password?</a>
-                                </p>
-                                <div className="divider">
-                                    <span>or continue with</span>
-                                </div>
-                                <div className="social-login">
-                                    <button className="social-btn">G</button>
-                                    <button className="social-btn">f</button>
-                                </div>
                             </div>
                         ) : (
                             <div id="registerTab" className="tab-content active" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
@@ -1429,39 +1827,49 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
-                        <h2>Upgrade to Premium</h2>
-                        <p>Unlock all features and find your perfect match faster</p>
+                        <h2>Choose Subscription Plan</h2>
+                        <p>Both plans now include the same full feature set</p>
                     </div>
                     <div className="modal-body">
                         <div className="subscription-comparison">
-                            <div className={`sub-option ${subscriptionOption === '1 Month' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('1 Month')}>
-                                <h4>1 Month</h4>
-                                <div className="price">LKR 1,200<span>/mo</span></div>
-                                <p>Basic access</p>
+                            <div className={`sub-option ${subscriptionOption === 'Free' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('Free')}>
+                                <h4>Free</h4>
+                                <div className="price">LKR 0<span>/mo</span></div>
+                                <p>10 profile views/day</p>
                             </div>
-                            <div className={`sub-option recommended ${subscriptionOption === '3 Months' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('3 Months')}>
-                                <h4>3 Months</h4>
-                                <div className="price">LKR 833<span>/mo</span></div>
-                                <p>Save 30% • Most popular</p>
-                            </div>
-                            <div className={`sub-option ${subscriptionOption === '6 Months' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('6 Months')}>
-                                <h4>6 Months</h4>
-                                <div className="price">LKR 650<span>/mo</span></div>
-                                <p>Save 45%</p>
+                            <div className={`sub-option ${subscriptionOption === 'Premium' ? 'selected recommended' : ''}`} onClick={() => setSubscriptionOption('Premium')}>
+                                <h4>Premium</h4>
+                                <div className="price">LKR 2,000<span>/mo</span></div>
+                                <p>Unlimited access + chat</p>
                             </div>
                         </div>
 
                         <div className="features-unlocked">
-                            <h4>🔓 Features You&apos;ll Unlock</h4>
+                            <h4>{subscriptionOption === 'Free' ? '📋 Free Plan Includes' : '🔓 Premium Unlocks'}</h4>
                             <div className="unlock-grid">
-                                <div className="unlock-item"><span>✓</span> View unlimited profiles</div>
-                                <div className="unlock-item"><span>✓</span> See contact details</div>
-                                <div className="unlock-item"><span>✓</span> Send interest requests</div>
-                                <div className="unlock-item"><span>✓</span> Chat with matches</div>
-                                <div className="unlock-item"><span>✓</span> Advanced filters</div>
-                                <div className="unlock-item"><span>✓</span> See who viewed you</div>
-                                <div className="unlock-item"><span>✓</span> Profile highlights</div>
-                                <div className="unlock-item"><span>✓</span> Priority support</div>
+                                {subscriptionOption === 'Free' ? (
+                                    <>
+                                        <div className="unlock-item"><span>✓</span> Create Profile</div>
+                                        <div className="unlock-item"><span>✓</span> Add Photos</div>
+                                        <div className="unlock-item"><span>✓</span> Search Profiles</div>
+                                        <div className="unlock-item"><span>✓</span> Send Interest</div>
+                                        <div className="unlock-item"><span>✓</span> View 10 Profiles / Day</div>
+                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> View Contact Info</div>
+                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Direct Chat</div>
+                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Unlimited Profile Views</div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="unlock-item"><span>✓</span> Unlimited Profile Views</div>
+                                        <div className="unlock-item"><span>✓</span> View Contact Info</div>
+                                        <div className="unlock-item"><span>✓</span> Direct Chat</div>
+                                        <div className="unlock-item"><span>✓</span> Create Profile</div>
+                                        <div className="unlock-item"><span>✓</span> Add Photos</div>
+                                        <div className="unlock-item"><span>✓</span> Search Profiles</div>
+                                        <div className="unlock-item"><span>✓</span> Send Interest</div>
+                                        <div className="unlock-item"><span>✓</span> Priority Support</div>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -1470,12 +1878,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 className="btn btn-primary"
                                 style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
                                 onClick={() => {
-                                    // Simulate upgrade success
                                     onClose();
-                                    router.push('/search');
+                                    if (subscriptionOption === 'Free') {
+                                        router.push('/search');
+                                        return;
+                                    }
+                                    router.push('/subscription/checkout?plan=premium&amount=2000');
                                 }}
                             >
-                                Continue to Payment
+                                {subscriptionOption === 'Free' ? 'Continue with Free Plan' : 'Continue to Payment'}
                             </button>
                             <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
                                 🔒 Secure payment • Cancel anytime
@@ -1521,6 +1932,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     if (!user) {
                                                         onSwitch('login');
                                                     } else {
+                                                        const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
+                                                        if (!canMessage) {
+                                                            setProfileAccessMessage('Messaging needs an active subscription.');
+                                                            return;
+                                                        }
                                                         onClose();
                                                         router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
                                                     }
@@ -1529,62 +1945,69 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             </>
                                         )}
                                     </div>
+                                    {profileAccessMessage && (
+                                        <div style={{ marginTop: '0.75rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.6rem 0.8rem', fontSize: '0.9rem', fontWeight: 500 }}>
+                                            {profileAccessMessage}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Profile Tabs */}
-                            <div className="profile-detail-tabs">
-                                <button className={`profile-tab ${profileTab === 'about' ? 'active' : ''}`} onClick={() => setProfileTab('about')}>About</button>
-                                <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
-                                <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
-                                <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
-                            </div>
+                            {!isProfileLockedByDailyLimit && (
+                                <>
+                                    {/* Profile Tabs */}
+                                    <div className="profile-detail-tabs">
+                                        <button className={`profile-tab ${profileTab === 'about' ? 'active' : ''}`} onClick={() => setProfileTab('about')}>About</button>
+                                        <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
+                                        <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
+                                        <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
+                                    </div>
 
-                            {/* About Tab */}
-                            {profileTab === 'about' && (
-                                <div className="profile-tab-content active">
-                                    <div className="profile-section">
-                                        <h3>Basic Information</h3>
-                                        <div className="info-grid">
-                                            <div className="info-item"><label>Full Name</label><span>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</span></div>
-                                            <div className="info-item"><label>Age</label><span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Marital Status</label><span>{selectedProfile.maritalStatus || 'Not Specified'}</span></div>
+                                    {/* About Tab */}
+                                    {profileTab === 'about' && (
+                                        <div className="profile-tab-content active">
+                                            <div className="profile-section">
+                                                <h3>Basic Information</h3>
+                                                <div className="info-grid">
+                                                    <div className="info-item"><label>Full Name</label><span>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</span></div>
+                                                    <div className="info-item"><label>Age</label><span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Marital Status</label><span>{selectedProfile.maritalStatus || 'Not Specified'}</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="profile-section">
+                                                <h3>Religion & Ethnicity</h3>
+                                                <div className="info-grid">
+                                                    <div className="info-item"><label>Religion</label><span>{selectedProfile.religion || 'Not Specified'}</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="profile-section">
+                                                <h3>Education & Profession</h3>
+                                                <div className="info-grid">
+                                                    <div className="info-item"><label>Education</label><span>{selectedProfile.educationLevel || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Profession</label><span>{selectedProfile.occupation || 'Not Specified'}</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="profile-section">
+                                                <h3>Location</h3>
+                                                <div className="info-grid">
+                                                    <div className="info-item"><label>Country of Origin</label><span>{selectedProfile.countryOfOrigin || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Country of Residence</label><span>{selectedProfile.countryOfResidence || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>City of Residence</label><span>{selectedProfile.cityOfResidence || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Residency Status</label><span>{selectedProfile.residencyStatus || 'Not Specified'}</span></div>
+                                                </div>
+                                            </div>
+                                            <div className="profile-section">
+                                                <h3>About Me</h3>
+                                                <p className="about-text">{selectedProfile.aboutMe || 'This user has not provided an about me section yet.'}</p>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="profile-section">
-                                        <h3>Religion & Ethnicity</h3>
-                                        <div className="info-grid">
-                                            <div className="info-item"><label>Religion</label><span>{selectedProfile.religion || 'Not Specified'}</span></div>
-                                        </div>
-                                    </div>
-                                    <div className="profile-section">
-                                        <h3>Education & Profession</h3>
-                                        <div className="info-grid">
-                                            <div className="info-item"><label>Education</label><span>{selectedProfile.educationLevel || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Profession</label><span>{selectedProfile.occupation || 'Not Specified'}</span></div>
-                                        </div>
-                                    </div>
-                                    <div className="profile-section">
-                                        <h3>Location</h3>
-                                        <div className="info-grid">
-                                            <div className="info-item"><label>Country of Origin</label><span>{selectedProfile.countryOfOrigin || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Country of Residence</label><span>{selectedProfile.countryOfResidence || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>City of Residence</label><span>{selectedProfile.cityOfResidence || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Residency Status</label><span>{selectedProfile.residencyStatus || 'Not Specified'}</span></div>
-                                        </div>
-                                    </div>
-                                    <div className="profile-section">
-                                        <h3>About Me</h3>
-                                        <p className="about-text">{selectedProfile.aboutMe || 'This user has not provided an about me section yet.'}</p>
-                                    </div>
-                                </div>
-                            )}
+                                    )}
 
-                            {/* Family Tab */}
-                            {profileTab === 'family' && (
+                                    {/* Family Tab */}
+                                    {profileTab === 'family' && (
                                 <div className="profile-tab-content active">
                                     <div className="profile-section">
                                         <h3>Family Information</h3>
@@ -1600,8 +2023,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                            {/* Lifestyle Tab */}
-                            {profileTab === 'lifestyle' && (
+                                    {/* Lifestyle Tab */}
+                                    {profileTab === 'lifestyle' && (
                                 <div className="profile-tab-content active">
                                     <div className="profile-section">
                                         <h3>Habits & Hobbies</h3>
@@ -1618,8 +2041,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                            {/* Partner Tab */}
-                            {profileTab === 'partner' && (
+                                    {/* Partner Tab */}
+                                    {profileTab === 'partner' && (
                                 <div className="profile-tab-content active">
                                     <div className="profile-section">
                                         <h3>Basic Preferences</h3>
@@ -1637,25 +2060,53 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                            {/* Contact Section - Blur Logic */}
-                            <div className="contact-section blurred-section">
-                                <div className="contact-blur-overlay">
-                                    <span>🔒</span>
-                                    <h4>Upgrade to View Contact Details</h4>
-                                    <p>Subscribe to premium to view phone numbers and connect directly</p>
-                                    <button className="btn btn-primary" onClick={() => onSwitch('subscription')}>Upgrade Now</button>
-                                </div>
-                                <div className="contact-info-hidden">
-                                    <div className="contact-item">
-                                        <span>📱</span>
-                                        <div><label>Mobile</label><span>+94 XX XXX XXXX</span></div>
+                                    {/* Contact Section - Subscription gated */}
+                                    {selectedProfile?.canViewContact || selectedProfile?.CanViewContact ? (
+                                <div className="contact-section">
+                                    <div className="contact-info-hidden" style={{ filter: 'none' }}>
+                                        <div className="contact-item">
+                                            <span>📱</span>
+                                            <div><label>Mobile</label><span>{selectedProfile.phoneNumber || selectedProfile.PhoneNumber || 'Not available'}</span></div>
+                                        </div>
+                                        <div className="contact-item">
+                                            <span>💬</span>
+                                            <div><label>WhatsApp</label><span>{selectedProfile.whatsApp || selectedProfile.WhatsApp || 'Not available'}</span></div>
+                                        </div>
+                                        <div className="contact-item">
+                                            <span>📧</span>
+                                            <div><label>Email</label><span>{selectedProfile.email || selectedProfile.Email || 'Not available'}</span></div>
+                                        </div>
                                     </div>
-                                    <div className="contact-item">
-                                        <span>📧</span>
-                                        <div><label>Email</label><span>use***@gmail.com</span></div>
+                                </div>
+                                    ) : (
+                                <div className="contact-section blurred-section">
+                                    <div className="contact-blur-overlay">
+                                        <span>🔒</span>
+                                        <h4>Upgrade to View Contact Details</h4>
+                                        <p>Subscribe to unlock contact details and unlimited messaging.</p>
+                                        <button className="btn btn-primary" onClick={() => onSwitch('subscription')}>Upgrade Now</button>
+                                    </div>
+                                    <div className="contact-info-hidden">
+                                        <div className="contact-item">
+                                            <span>📱</span>
+                                            <div><label>Mobile</label><span>{selectedProfile.phoneNumber || selectedProfile.PhoneNumber || '+94 XX XXX XXXX'}</span></div>
+                                        </div>
+                                        <div className="contact-item">
+                                            <span>📧</span>
+                                            <div><label>Email</label><span>{selectedProfile.email || selectedProfile.Email || 'us***@gmail.com'}</span></div>
+                                        </div>
+                                        <div className="contact-item">
+                                            <span>🔢</span>
+                                            <div>
+                                                <label>Daily profile views left</label>
+                                                <span>{selectedProfile.remainingDailyProfileViews ?? selectedProfile.RemainingDailyProfileViews ?? 0}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                                    )}
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
