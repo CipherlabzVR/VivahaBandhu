@@ -595,6 +595,34 @@ export const matrimonialService = {
         } catch (error) {
             throw error;
         }
+    },
+
+    async submitBankTransfer(userId: number, amount: number, paySlipBase64: string, remarks?: string): Promise<any> {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SubmitBankTransfer`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                },
+                body: JSON.stringify({
+                    userId,
+                    amount,
+                    paySlipBase64,
+                    remarks
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to submit bank transfer');
+            }
+
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
     }
 };
 

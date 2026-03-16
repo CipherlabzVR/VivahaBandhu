@@ -15,6 +15,7 @@ interface User {
     accountType?: string;
     profilePhoto?: string;
     isVerified?: boolean;
+    isSubscribed?: boolean;
     horoscopeDocument?: string;
 }
 

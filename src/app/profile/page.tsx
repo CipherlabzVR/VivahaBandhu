@@ -54,7 +54,7 @@ export default function ProfilePage() {
 
             // Fetch both profile data and user details in parallel
             const [profileResponse, userResponse] = await Promise.all([
-                fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}`, {
+                fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}&requesterUserId=${user.id}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
                 fetch(`${apiBase}/User/GetUserDetailByEmail?email=${encodeURIComponent(user.email)}`, {
@@ -99,8 +99,9 @@ export default function ProfilePage() {
                 if (data.result) {
                     const r = data.result;
 
-                    if (r.status !== undefined && profileUpdates.isVerified === undefined) {
-                        profileUpdates.isVerified = r.status === 1;
+                    const rStatus = r.status ?? r.Status;
+                    if (rStatus !== undefined && profileUpdates.isVerified === undefined) {
+                        profileUpdates.isVerified = rStatus === 1;
                     }
                     
                     const profilePhoto = r.profilePhoto || r.ProfilePhoto;
@@ -142,15 +143,22 @@ export default function ProfilePage() {
                     if (horoscopeDocument && horoscopeDocument.length > 0) {
                         profileUpdates.horoscopeDocument = horoscopeDocument;
                     }
+
+                    const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
+                    profileUpdates.isSubscribed = subscribed;
                     
                     // Update user context with all available data
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
                     }
                     
-                    if (r.status === 0) {
+                    const profileGender = r.gender || r.Gender || '';
+                    const profileReligion = r.religion || r.Religion || '';
+                    const profileStatus = r.status ?? r.Status;
+
+                    if (profileStatus === 0) {
                         setProfileCompleted(false);
-                    } else if (r.gender && r.religion) {
+                    } else if (profileGender.length > 0 && profileReligion.length > 0) {
                         setProfileCompleted(true);
                     } else {
                         setProfileCompleted(false);
@@ -574,10 +582,19 @@ export default function ProfilePage() {
                         <div>
                             <h2 style={{ marginBottom: '0.5rem', fontSize: '1.8rem' }}>{user.firstName} {user.lastName}</h2>
                             <p style={{ color: '#666', marginBottom: '0.5rem' }}>{user.email}</p>
-                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <span className="badge" style={{ background: '#eef2ff', color: 'var(--primary)', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                     {user.accountType || 'Free Member'}
                                 </span>
+                                {user.isSubscribed ? (
+                                    <span className="badge" style={{ background: '#047857', color: '#fff', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>
+                                        ✓ Premium Subscribed
+                                    </span>
+                                ) : (
+                                    <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
+                                        Free Plan
+                                    </span>
+                                )}
                                 {profileCompleted ? (
                                     <span className="badge" style={{ background: '#e6fffa', color: '#047857', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                         Profile Verified

@@ -180,13 +180,58 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 if (response.ok) {
                     const data = await response.json();
                     if (data.result) {
-                        const profile = data.result;
+                        const p = data.result;
+                        const v = (key: string) => p[key] || p[key.charAt(0).toUpperCase() + key.slice(1)] || '';
                         setFormData(prev => ({
                             ...prev,
-                            ...profile,
-                            dob: safeDate(profile.dateOfBirth) || prev.dob,
-                            partnerMinAge: profile.partnerMinAge || '',
-                            partnerMaxAge: profile.partnerMaxAge || ''
+                            gender: v('gender') || prev.gender,
+                            dob: safeDate(p.dateOfBirth || p.DateOfBirth) || prev.dob,
+                            height: p.height || p.Height || prev.height,
+                            complexion: v('complexion') || prev.complexion,
+                            religion: v('religion') || prev.religion,
+                            maritalStatus: v('maritalStatus') || prev.maritalStatus,
+                            qualificationLevel: v('qualificationLevel') || prev.qualificationLevel,
+                            occupation: v('occupation') || prev.occupation,
+                            countryOfOrigin: v('countryOfOrigin') || prev.countryOfOrigin,
+                            countryOfResidence: v('countryOfResidence') || prev.countryOfResidence,
+                            cityOfResidence: v('cityOfResidence') || prev.cityOfResidence,
+                            residencyStatus: v('residencyStatus') || prev.residencyStatus,
+                            hobbies: v('hobbies') || prev.hobbies,
+                            drinkingHabits: v('drinkingHabits') || prev.drinkingHabits,
+                            eatingHabits: v('eatingHabits') || prev.eatingHabits,
+                            smokingHabits: v('smokingHabits') || prev.smokingHabits,
+                            horoscope: v('horoscope') || prev.horoscope,
+                            horoscopeDocument: v('horoscopeDocument') || prev.horoscopeDocument,
+                            fatherName: v('fatherName') || prev.fatherName,
+                            fatherCountryOfResidence: v('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
+                            fatherOccupation: v('fatherOccupation') || prev.fatherOccupation,
+                            fatherEthnicity: v('fatherEthnicity') || prev.fatherEthnicity,
+                            fatherReligion: v('fatherReligion') || prev.fatherReligion,
+                            fatherCaste: v('fatherCaste') || prev.fatherCaste,
+                            fatherRemarks: v('fatherRemarks') || prev.fatherRemarks,
+                            motherName: v('motherName') || prev.motherName,
+                            motherCountryOfResidence: v('motherCountryOfResidence') || prev.motherCountryOfResidence,
+                            motherOccupation: v('motherOccupation') || prev.motherOccupation,
+                            motherEthnicity: v('motherEthnicity') || prev.motherEthnicity,
+                            motherReligion: v('motherReligion') || prev.motherReligion,
+                            motherCaste: v('motherCaste') || prev.motherCaste,
+                            motherRemarks: v('motherRemarks') || prev.motherRemarks,
+                            partnerMinAge: p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge,
+                            partnerMaxAge: p.partnerMaxAge || p.PartnerMaxAge || prev.partnerMaxAge,
+                            partnerEatingHabits: v('partnerEatingHabits') || prev.partnerEatingHabits,
+                            partnerDrinkingHabits: v('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
+                            partnerSmokingHabits: v('partnerSmokingHabits') || prev.partnerSmokingHabits,
+                            partnerQualificationLevel: v('partnerQualificationLevel') || prev.partnerQualificationLevel,
+                            partnerReligion: v('partnerReligion') || prev.partnerReligion,
+                            partnerEthnicity: v('partnerEthnicity') || prev.partnerEthnicity,
+                            partnerCountryOfOrigin: v('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
+                            partnerCountryOfResidence: v('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
+                            partnerAdditionalRequirements: v('partnerAdditionalRequirements') || prev.partnerAdditionalRequirements,
+                            upload1: v('upload1') || prev.upload1,
+                            upload2: v('upload2') || prev.upload2,
+                            upload3: v('upload3') || prev.upload3,
+                            profilePhoto: p.profilePhotoFromProfile || p.ProfilePhotoFromProfile || v('profilePhoto') || prev.profilePhoto,
+                            remarks: v('remarks') || prev.remarks,
                         }));
                     }
                 }
