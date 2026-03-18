@@ -597,6 +597,31 @@ export const matrimonialService = {
         }
     },
 
+    /**
+     * Get matrimonial dashboard statistics
+     */
+    async getDashboardStats(): Promise<any> {
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetMatrimonialDashboardStats`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to fetch dashboard stats');
+            }
+
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async submitBankTransfer(userId: number, amount: number, paySlipBase64: string, remarks?: string): Promise<any> {
         try {
             const token = localStorage.getItem('token');

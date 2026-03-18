@@ -4,6 +4,18 @@ import { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+const DEFAULT_IMAGES = [
+    'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=300&fit=crop',
+    'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400&h=300&fit=crop',
+    'https://images.unsplash.com/photo-1529634801-b469c85b2bcc?w=400&h=300&fit=crop',
+];
+const FALLBACK_KEYS = [
+    { couple: 'story1Couple' as const, quote: 'story1Quote' as const },
+    { couple: 'story2Couple' as const, quote: 'story2Quote' as const },
+    { couple: 'story3Couple' as const, quote: 'story3Quote' as const },
+] as const;
+
 const HEART_PATH =
     'M 5 25 ' +
     'C 15 45, 45 50, 60 35 ' +
@@ -13,16 +25,39 @@ const HEART_PATH =
 
 const HIDDEN_LENGTH = 320;
 
-const STORY_KEYS = [
-    { couple: 'story1Couple' as const, quote: 'story1Quote' as const, image: 'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=300&fit=crop' },
-    { couple: 'story2Couple' as const, quote: 'story2Quote' as const, image: 'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400&h=300&fit=crop' },
-    { couple: 'story3Couple' as const, quote: 'story3Quote' as const, image: 'https://images.unsplash.com/photo-1529634801-b469c85b2bcc?w=400&h=300&fit=crop' },
-] as const;
+interface StoryItem {
+    id: number;
+    coupleName: string;
+    coupleNameSi: string;
+    quote: string;
+    quoteSi: string;
+    imageUrl: string;
+}
 
 export default function SuccessStories() {
     const pathRef = useRef<SVGPathElement>(null);
     const [pathLength, setPathLength] = useState<number | null>(null);
+    const [stories, setStories] = useState<StoryItem[]>([]);
+    const [useFallback, setUseFallback] = useState(false);
     const { t, language } = useLanguage();
+
+    useEffect(() => {
+        const fetchStories = async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/Matrimonial/GetSuccessStoriesForWebsite`);
+                const data = await res.json();
+                if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
+                    setStories(data.result);
+                    setUseFallback(false);
+                } else {
+                    setUseFallback(true);
+                }
+            } catch {
+                setUseFallback(true);
+            }
+        };
+        fetchStories();
+    }, []);
 
     useEffect(() => {
         const path = pathRef.current;
@@ -94,31 +129,63 @@ export default function SuccessStories() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-10">
-                    {STORY_KEYS.map(({ couple, quote, image }) => (
-                        <article
-                            key={couple}
-                            className="relative bg-slate-50 border border-orange-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl hover:border-orange-300/60 transition-all duration-300 flex flex-col"
-                        >
-                            <div className="relative w-full aspect-[4/3] bg-slate-200">
-                                <Image
-                                    src={image}
-                                    alt={t(couple)}
-                                    fill
-                                    className="object-cover"
-                                    sizes="(max-width: 768px) 100vw, 33vw"
-                                />
-                            </div>
-                            <div className="relative p-6 md:p-8 flex flex-col flex-1">
-                                <div className="absolute top-6 right-8 text-orange-400/40 text-4xl font-serif leading-none" aria-hidden>{'"'}</div>
-                                <p className="text-slate-600 text-base md:text-lg leading-relaxed flex-1 pr-8 mb-6">
-                                    {t(quote)}
-                                </p>
-                                <p className="text-orange-500 font-semibold text-lg font-playfair">
-                                    — {t(couple)}
-                                </p>
-                            </div>
-                        </article>
-                    ))}
+                    {useFallback
+                        ? FALLBACK_KEYS.map(({ couple, quote }, i) => (
+                            <article
+                                key={couple}
+                                className="relative bg-slate-50 border border-orange-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl hover:border-orange-300/60 transition-all duration-300 flex flex-col"
+                            >
+                                <div className="relative w-full aspect-[4/3] bg-slate-200">
+                                    <Image
+                                        src={DEFAULT_IMAGES[i] || DEFAULT_IMAGES[0]}
+                                        alt={t(couple)}
+                                        fill
+                                        className="object-cover"
+                                        sizes="(max-width: 768px) 100vw, 33vw"
+                                    />
+                                </div>
+                                <div className="relative p-6 md:p-8 flex flex-col flex-1">
+                                    <div className="absolute top-6 right-8 text-orange-400/40 text-4xl font-serif leading-none" aria-hidden>{'"'}</div>
+                                    <p className="text-slate-600 text-base md:text-lg leading-relaxed flex-1 pr-8 mb-6">
+                                        {t(quote)}
+                                    </p>
+                                    <p className="text-orange-500 font-semibold text-lg font-playfair">
+                                        — {t(couple)}
+                                    </p>
+                                </div>
+                            </article>
+                        ))
+                        : stories.map((story, i) => {
+                            const name = language === 'si' && story.coupleNameSi ? story.coupleNameSi : story.coupleName;
+                            const quoteText = language === 'si' && story.quoteSi ? story.quoteSi : story.quote;
+                            const imgSrc = story.imageUrl || DEFAULT_IMAGES[i] || DEFAULT_IMAGES[0];
+                            return (
+                                <article
+                                    key={story.id}
+                                    className="relative bg-slate-50 border border-orange-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl hover:border-orange-300/60 transition-all duration-300 flex flex-col"
+                                >
+                                    <div className="relative w-full aspect-[4/3] bg-slate-200">
+                                        <Image
+                                            src={imgSrc}
+                                            alt={name}
+                                            fill
+                                            className="object-cover"
+                                            sizes="(max-width: 768px) 100vw, 33vw"
+                                            unoptimized={imgSrc.startsWith('http') && !imgSrc.includes('unsplash')}
+                                        />
+                                    </div>
+                                    <div className="relative p-6 md:p-8 flex flex-col flex-1">
+                                        <div className="absolute top-6 right-8 text-orange-400/40 text-4xl font-serif leading-none" aria-hidden>{'"'}</div>
+                                        <p className="text-slate-600 text-base md:text-lg leading-relaxed flex-1 pr-8 mb-6">
+                                            {quoteText}
+                                        </p>
+                                        <p className="text-orange-500 font-semibold text-lg font-playfair">
+                                            — {name}
+                                        </p>
+                                    </div>
+                                </article>
+                            );
+                        })}
                 </div>
             </div>
         </section>
