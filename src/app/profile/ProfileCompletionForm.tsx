@@ -1,11 +1,251 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Country, City } from 'country-state-city';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+
+type CountryOption = { name: string; isoCode: string };
+
+/** Comma-separated country names; avoids global .form-group input { width:100% } breaking checkbox layout */
+function CountryMultiSelect({
+    idPrefix,
+    label,
+    value,
+    onChange,
+    countries,
+    hint,
+}: {
+    idPrefix: string;
+    label: ReactNode;
+    value: string;
+    onChange: (commaJoined: string) => void;
+    countries: CountryOption[];
+    hint?: string;
+}) {
+    const selected = useMemo(
+        () => value.split(',').map((s) => s.trim()).filter(Boolean),
+        [value]
+    );
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+                setOpen(false);
+                setSearch('');
+            }
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
+    const toggle = (countryName: string) => {
+        const cur = value.split(',').map((s) => s.trim()).filter(Boolean);
+        const next = cur.includes(countryName) ? cur.filter((c) => c !== countryName) : [...cur, countryName];
+        onChange(next.join(', '));
+    };
+
+    const filtered = useMemo(() => {
+        const t = search.toLowerCase().trim();
+        return countries.filter((c) => !t || c.name.toLowerCase().includes(t));
+    }, [countries, search]);
+
+    return (
+        <div className="country-multi-select" ref={wrapRef} style={{ position: 'relative' }}>
+            <label>
+                {label}
+                {hint ? <span className="country-multi-hint"> {hint}</span> : null}
+            </label>
+            <div
+                className="country-multi-trigger"
+                onClick={() => setOpen((o) => !o)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setOpen((o) => !o);
+                    }
+                }}
+            >
+                {selected.length > 0 ? (
+                    selected.map((c) => (
+                        <span key={c} className="country-multi-chip">
+                            {c}
+                            <button
+                                type="button"
+                                className="country-multi-chip-remove"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggle(c);
+                                }}
+                                aria-label={`Remove ${c}`}
+                            >
+                                ×
+                            </button>
+                        </span>
+                    ))
+                ) : (
+                    <span className="country-multi-placeholder">Select countries</span>
+                )}
+            </div>
+            {open && (
+                <div className="country-multi-panel">
+                    <div className="country-multi-search-wrap">
+                        <input
+                            type="text"
+                            className="country-multi-search"
+                            placeholder="Search countries..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                    <div className="country-multi-list">
+                        {filtered.map((country) => {
+                            const cid = `${idPrefix}-${country.isoCode}`;
+                            const isOn = selected.includes(country.name);
+                            return (
+                                <label
+                                    key={country.isoCode}
+                                    htmlFor={cid}
+                                    className={`country-multi-row ${isOn ? 'selected' : ''}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <input
+                                        id={cid}
+                                        type="checkbox"
+                                        className="country-multi-checkbox"
+                                        checked={isOn}
+                                        onChange={() => toggle(country.name)}
+                                    />
+                                    <span className="country-multi-text">{country.name}</span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <style jsx>{`
+                .country-multi-select :global(.country-multi-checkbox) {
+                    width: 1rem !important;
+                    min-width: 1rem !important;
+                    max-width: 1rem !important;
+                    height: 1rem !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    flex-shrink: 0;
+                    align-self: center;
+                }
+                .country-multi-select :global(label.country-multi-row) {
+                    display: flex !important;
+                    flex-direction: row !important;
+                    align-items: center !important;
+                    gap: 0.6rem !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 0.45rem 0.65rem !important;
+                    cursor: pointer;
+                    border-radius: 4px;
+                    font-weight: 400;
+                }
+                .country-multi-select :global(label.country-multi-row):hover {
+                    background: #f7f7fb;
+                }
+                .country-multi-select :global(label.country-multi-row.selected) {
+                    background: #f0f4ff;
+                }
+                .country-multi-select :global(.country-multi-text) {
+                    flex: 1;
+                    min-width: 0;
+                    line-height: 1.35;
+                    text-align: left;
+                }
+                .country-multi-hint {
+                    font-size: 0.8rem;
+                    color: #888;
+                    font-weight: 400;
+                }
+                .country-multi-trigger {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 0.5rem 0.75rem;
+                    min-height: 42px;
+                    cursor: pointer;
+                    background: #fff;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.35rem;
+                    align-items: center;
+                }
+                .country-multi-placeholder {
+                    color: #999;
+                    font-size: 0.95rem;
+                }
+                .country-multi-chip {
+                    background: #eef2ff;
+                    color: var(--primary);
+                    padding: 0.2rem 0.45rem 0.2rem 0.6rem;
+                    border-radius: 12px;
+                    font-size: 0.85rem;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.25rem;
+                }
+                .country-multi-chip-remove {
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-weight: 700;
+                    font-size: 1rem;
+                    line-height: 1;
+                    padding: 0 0.15rem;
+                    color: inherit;
+                }
+                .country-multi-panel {
+                    position: absolute;
+                    top: calc(100% + 4px);
+                    left: 0;
+                    right: 0;
+                    z-index: 100;
+                    background: #fff;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+                    display: flex;
+                    flex-direction: column;
+                    max-height: 280px;
+                    overflow: hidden;
+                }
+                .country-multi-search-wrap {
+                    padding: 0.5rem;
+                    flex-shrink: 0;
+                    border-bottom: 1px solid #eee;
+                    background: #fff;
+                }
+                .country-multi-search {
+                    width: 100%;
+                    padding: 0.45rem 0.6rem;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    font-size: 0.9rem;
+                }
+                .country-multi-list {
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    max-height: 220px;
+                    padding: 0.25rem 0;
+                }
+            `}</style>
+        </div>
+    );
+}
 
 export default function ProfileCompletionForm({ onClose, onComplete }: { onClose?: () => void, onComplete?: () => void }) {
     const { user, updateUser } = useAuth();
@@ -108,9 +348,17 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         return Array.from(new Set(cities.map((c) => c.name))).sort((a, b) => a.localeCompare(b));
     };
 
+    const selectedResidenceCountries = useMemo(
+        () => formData.countryOfResidence.split(',').map(s => s.trim()).filter(Boolean),
+        [formData.countryOfResidence]
+    );
+
     const residenceCities = useMemo(
-        () => getCitiesForCountry(formData.countryOfResidence),
-        [formData.countryOfResidence, countryIsoByName]
+        () => {
+            const allCities = selectedResidenceCountries.flatMap(c => getCitiesForCountry(c));
+            return Array.from(new Set(allCities)).sort((a, b) => a.localeCompare(b));
+        },
+        [selectedResidenceCountries, countryIsoByName]
     );
 
     const sriLankanReligions = [
@@ -344,7 +592,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             }
         }
         if (currentStep === 2) {
-            if (!formData.qualificationLevel || !formData.countryOfOrigin || !formData.countryOfResidence || !formData.cityOfResidence || !formData.residencyStatus) {
+            const userCountries = formData.countryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
+            if (!formData.qualificationLevel || !formData.countryOfOrigin || userCountries.length === 0 || !formData.cityOfResidence || !formData.residencyStatus) {
                 setSubmitError('Please fill in all mandatory fields (*)');
                 return false;
             }
@@ -356,8 +605,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             }
         }
         if (currentStep === 4) {
-            if (!formData.fatherCountryOfResidence || !formData.fatherEthnicity || !formData.fatherReligion ||
-                !formData.motherCountryOfResidence || !formData.motherEthnicity || !formData.motherReligion) {
+            const fatherCountries = formData.fatherCountryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
+            const motherCountries = formData.motherCountryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
+            if (fatherCountries.length === 0 || !formData.fatherEthnicity || !formData.fatherReligion ||
+                motherCountries.length === 0 || !formData.motherEthnicity || !formData.motherReligion) {
                 setSubmitError('Please fill in all mandatory fields for parents (*)');
                 return false;
             }
@@ -627,13 +878,14 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 </select>
                             </div>
                             <div className="form-group">
-                                <label>Country of Residence*</label>
-                                <select name="countryOfResidence" value={formData.countryOfResidence} onChange={handleChange} required>
-                                    <option value="">Select Country</option>
-                                    {countryOptions.map((country) => (
-                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
-                                    ))}
-                                </select>
+                                <CountryMultiSelect
+                                    idPrefix="user-residence"
+                                    label={<>Country of Residence*</>}
+                                    hint="(select one or more)"
+                                    value={formData.countryOfResidence}
+                                    onChange={(v) => setFormData((prev) => ({ ...prev, countryOfResidence: v }))}
+                                    countries={countryOptions}
+                                />
                             </div>
                             <div className="form-group">
                                 <label>City of Residence*</label>
@@ -643,7 +895,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                     value={formData.cityOfResidence}
                                     onChange={handleChange}
                                     list="country-residence-cities"
-                                    placeholder={formData.countryOfResidence ? 'Select or type city' : 'Select country first'}
+                                    placeholder={selectedResidenceCountries.length > 0 ? 'Select or type city' : 'Select country first'}
                                     required
                                 />
                                 <datalist id="country-residence-cities">
@@ -756,13 +1008,14 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <input type="text" name="fatherName" value={formData.fatherName} onChange={handleChange} placeholder="Full Name" />
                             </div>
                             <div className="form-group">
-                                <label>Country of Residence*</label>
-                                <select name="fatherCountryOfResidence" value={formData.fatherCountryOfResidence} onChange={handleChange} required>
-                                    <option value="">Select Country</option>
-                                    {countryOptions.map((country) => (
-                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
-                                    ))}
-                                </select>
+                                <CountryMultiSelect
+                                    idPrefix="father-residence"
+                                    label={<>Country of Residence*</>}
+                                    hint="(select one or more)"
+                                    value={formData.fatherCountryOfResidence}
+                                    onChange={(v) => setFormData((prev) => ({ ...prev, fatherCountryOfResidence: v }))}
+                                    countries={countryOptions}
+                                />
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>
@@ -808,13 +1061,14 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <input type="text" name="motherName" value={formData.motherName} onChange={handleChange} placeholder="Full Name" />
                             </div>
                             <div className="form-group">
-                                <label>Country of Residence*</label>
-                                <select name="motherCountryOfResidence" value={formData.motherCountryOfResidence} onChange={handleChange} required>
-                                    <option value="">Select Country</option>
-                                    {countryOptions.map((country) => (
-                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
-                                    ))}
-                                </select>
+                                <CountryMultiSelect
+                                    idPrefix="mother-residence"
+                                    label={<>Country of Residence*</>}
+                                    hint="(select one or more)"
+                                    value={formData.motherCountryOfResidence}
+                                    onChange={(v) => setFormData((prev) => ({ ...prev, motherCountryOfResidence: v }))}
+                                    countries={countryOptions}
+                                />
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>

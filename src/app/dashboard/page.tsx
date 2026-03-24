@@ -163,7 +163,7 @@ export default function DashboardPage() {
 
     return (
         <>
-            <Header onOpenLogin={() => {}} onOpenRegister={() => {}} />
+            <Header onOpenLogin={() => { }} onOpenRegister={() => { }} />
             <main className="dashboard-page">
                 {/* Background decorative elements */}
                 <div className="dashboard-bg-gradient" />

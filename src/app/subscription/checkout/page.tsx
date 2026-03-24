@@ -4,13 +4,14 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
+import { PREMIUM_SUBSCRIPTION_LKR } from '../../../constants/subscription';
 
 type PaymentMethod = 'card' | 'bank';
 
 export default function SubscriptionCheckoutPage() {
     const router = useRouter();
     const { user } = useAuth();
-    const [amount, setAmount] = useState('2000');
+    const [amount, setAmount] = useState(String(PREMIUM_SUBSCRIPTION_LKR));
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
 
     const [cardNumber, setCardNumber] = useState('');

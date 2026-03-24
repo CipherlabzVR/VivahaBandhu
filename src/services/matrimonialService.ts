@@ -622,6 +622,22 @@ export const matrimonialService = {
         }
     },
 
+    /** Active membership packages for pricing page (no auth). */
+    async getPublicPackages(): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPublicPackages`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!response.ok) {
+                return { statusCode: response.status, result: [] };
+            }
+            return await response.json();
+        } catch {
+            return { statusCode: 0, result: [] };
+        }
+    },
+
     async submitBankTransfer(userId: number, amount: number, paySlipBase64: string, remarks?: string): Promise<any> {
         try {
             const token = localStorage.getItem('token');

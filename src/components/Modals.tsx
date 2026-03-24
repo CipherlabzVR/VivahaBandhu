@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, MouseEvent } from 'react';
+import { useState, useEffect, MouseEvent, useMemo, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
+import { PREMIUM_SUBSCRIPTION_LKR } from '../constants/subscription';
 import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
 
@@ -27,9 +28,266 @@ const toDateOnly = (val: string | undefined | null): string => {
     } catch { return ''; }
 };
 
+/** Aligns with typical ASP.NET Identity PasswordOptions (length, upper, lower, digit, special). */
+function checkPasswordPolicy(password: string) {
+    return {
+        minLength: password.length >= 6,
+        hasUpper: /[A-Z]/.test(password),
+        hasLower: /[a-z]/.test(password),
+        hasDigit: /\d/.test(password),
+        hasSpecial: /[^A-Za-z0-9]/.test(password),
+    };
+}
+
+function passwordPassesPolicy(password: string): boolean {
+    const c = checkPasswordPolicy(password);
+    return c.minLength && c.hasUpper && c.hasLower && c.hasDigit && c.hasSpecial;
+}
+
+type PwdChecks = ReturnType<typeof checkPasswordPolicy>;
+
+function RegisterPasswordFields({
+    idPrefix,
+    password,
+    confirmPassword,
+    onPasswordChange,
+    onConfirmChange,
+    errors,
+    pwdChecks,
+    showPassword,
+    onToggleShowPassword,
+    showConfirmPassword,
+    onToggleShowConfirmPassword,
+}: {
+    idPrefix: string;
+    password: string;
+    confirmPassword: string;
+    onPasswordChange: (v: string) => void;
+    onConfirmChange: (v: string) => void;
+    errors: { [key: string]: string };
+    pwdChecks: PwdChecks;
+    showPassword: boolean;
+    onToggleShowPassword: () => void;
+    showConfirmPassword: boolean;
+    onToggleShowConfirmPassword: () => void;
+}) {
+    const ruleRow = (ok: boolean, text: string) => (
+        <li style={{ display: 'flex', alignItems: 'flex-start', gap: '0.35rem', marginBottom: '0.2rem', fontSize: '0.8rem', color: ok ? '#047857' : '#6b7280' }}>
+            <span style={{ flexShrink: 0 }}>{ok ? '✓' : '○'}</span>
+            <span>{text}</span>
+        </li>
+    );
+
+    const toggleBtnStyle: CSSProperties = {
+        position: 'absolute',
+        right: '10px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        border: 'none',
+        background: 'transparent',
+        cursor: 'pointer',
+        padding: '4px',
+        fontSize: '1rem',
+        lineHeight: 1,
+        color: 'var(--text-light)',
+    };
+
+    return (
+        <>
+            <div className="form-group">
+                <label htmlFor={`${idPrefix}-password`}>Password *</label>
+                <div style={{ position: 'relative' }}>
+                    <input
+                        id={`${idPrefix}-password`}
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Create a strong password"
+                        value={password}
+                        onChange={(e) => onPasswordChange(e.target.value)}
+                        style={{ borderColor: errors.password ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                        autoComplete="new-password"
+                    />
+                    <button
+                        type="button"
+                        style={toggleBtnStyle}
+                        onClick={onToggleShowPassword}
+                        tabIndex={-1}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                        {showPassword ? '🙈' : '👁'}
+                    </button>
+                </div>
+                <ul style={{ listStyle: 'none', padding: '0.5rem 0 0', margin: 0, borderTop: '1px solid #eee', marginTop: '0.35rem' }}>
+                    {ruleRow(pwdChecks.minLength, 'At least 6 characters')}
+                    {ruleRow(pwdChecks.hasUpper, 'One uppercase letter (A–Z)')}
+                    {ruleRow(pwdChecks.hasLower, 'One lowercase letter (a–z)')}
+                    {ruleRow(pwdChecks.hasDigit, 'One number (0–9)')}
+                    {ruleRow(pwdChecks.hasSpecial, 'One special character (e.g. !@#$%)')}
+                </ul>
+                {errors.password && <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.35rem' }}>{errors.password}</span>}
+            </div>
+            <div className="form-group">
+                <label htmlFor={`${idPrefix}-confirm`}>Confirm Password *</label>
+                <div style={{ position: 'relative' }}>
+                    <input
+                        id={`${idPrefix}-confirm`}
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        placeholder="Re-enter your password"
+                        value={confirmPassword}
+                        onChange={(e) => onConfirmChange(e.target.value)}
+                        style={{ borderColor: errors.confirmPassword ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                        autoComplete="new-password"
+                    />
+                    <button
+                        type="button"
+                        style={toggleBtnStyle}
+                        onClick={onToggleShowConfirmPassword}
+                        tabIndex={-1}
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                    >
+                        {showConfirmPassword ? '🙈' : '👁'}
+                    </button>
+                </div>
+                {errors.confirmPassword && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.confirmPassword}</span>}
+            </div>
+        </>
+    );
+}
+
+const EMPTY_VERIFY_DIGITS = (): string[] => ['', '', '', '', '', ''];
+
+function normalizeVerifyDigits(prev: string[]): string[] {
+    return Array.from({ length: 6 }, (_, i) => {
+        const c = (prev[i] ?? '').replace(/\D/g, '');
+        return c.slice(-1) || '';
+    });
+}
+
+function VerificationCodeInputs({
+    digits,
+    setDigits,
+    verificationError,
+    isVerifying,
+    onClearError,
+}: {
+    digits: string[];
+    setDigits: Dispatch<SetStateAction<string[]>>;
+    verificationError: string | null;
+    isVerifying: boolean;
+    onClearError: () => void;
+}) {
+    const cell = (i: number) => digits[i] ?? '';
+
+    const setDigit = (index: number, raw: string) => {
+        const v = raw.replace(/\D/g, '').slice(-1) || '';
+        setDigits((prev) => {
+            const next = normalizeVerifyDigits(prev);
+            next[index] = v;
+            return next;
+        });
+        onClearError();
+    };
+
+    return (
+        <div className="code-input-wrapper">
+            {[0, 1, 2, 3, 4, 5].map((index) => (
+                <input
+                    key={index}
+                    type="text"
+                    inputMode="numeric"
+                    className="code-digit"
+                    maxLength={1}
+                    value={cell(index)}
+                    onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '');
+                        if (raw === '') {
+                            setDigit(index, '');
+                            return;
+                        }
+                        setDigit(index, raw);
+                        if (index < 5) {
+                            const wrapper = e.target.closest('.code-input-wrapper');
+                            const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                            inputs?.[index + 1]?.focus();
+                        }
+                    }}
+                    onPaste={(e) => {
+                        e.preventDefault();
+                        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                        if (!pasted) return;
+                        const chars = pasted.split('');
+                        setDigits(Array.from({ length: 6 }, (_, i) => chars[i] || ''));
+                        onClearError();
+                        const focusIndex = Math.min(pasted.length - 1, 5);
+                        const wrapper = e.currentTarget.closest('.code-input-wrapper');
+                        const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                        inputs?.[focusIndex]?.focus();
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Backspace') {
+                            if (cell(index)) {
+                                e.preventDefault();
+                                setDigit(index, '');
+                            } else if (index > 0) {
+                                e.preventDefault();
+                                setDigit(index - 1, '');
+                                const wrapper = (e.target as HTMLElement).closest('.code-input-wrapper');
+                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
+                                inputs?.[index - 1]?.focus();
+                            }
+                        }
+                    }}
+                    style={{
+                        borderColor: verificationError ? '#ef4444' : (cell(index) ? 'var(--primary)' : 'var(--cream-dark)'),
+                    }}
+                    disabled={isVerifying}
+                />
+            ))}
+        </div>
+    );
+}
+
+/** Human-readable birthday for profile detail (API: dateOfBirth / DateOfBirth). */
+const formatBirthdayDisplay = (val: string | undefined | null): string => {
+    const iso = toDateOnly(val);
+    if (!iso) return '';
+    const parts = iso.split('-').map(Number);
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return '';
+    const [y, m, d] = parts;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[m - 1]} ${d}, ${y}`;
+};
+
+/** Comma-separated countries (multi PR) shown as chips when more than one. */
+function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNode {
+    const raw = (value || '').trim();
+    if (!raw) return <>Not Specified</>;
+    const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return <>Not Specified</>;
+    if (parts.length === 1) return <>{parts[0]}</>;
+    return (
+        <span style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+            {parts.map((c) => (
+                <span
+                    key={c}
+                    style={{
+                        background: '#eef2ff',
+                        color: 'var(--primary)',
+                        padding: '0.2rem 0.7rem',
+                        borderRadius: '12px',
+                        fontSize: '0.85rem',
+                    }}
+                >
+                    {c}
+                </span>
+            ))}
+        </span>
+    );
+}
+
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user } = useAuth();
     const router = useRouter();
+    const pathname = usePathname();
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
     const [profileTab, setProfileTab] = useState('about');
     const [registerAccountType, setRegisterAccountType] = useState('Self');
@@ -62,6 +320,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 firstName: prev?.firstName || res.result.firstName,
                                 lastName: prev?.lastName || res.result.lastName,
                                 profilePhoto: prev?.profilePhoto || res.result.profilePhoto,
+                                dateOfBirth: res.result.dateOfBirth ?? res.result.DateOfBirth ?? prev?.dateOfBirth,
                                 educationLevel: res.result.qualificationLevel || prev?.educationLevel,
                                 aboutMe: res.result.remarks || prev?.aboutMe,
                                 diet: res.result.eatingHabits || prev?.diet,
@@ -105,6 +364,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [whatsapp, setWhatsapp] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+    const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [loginTermsAccepted, setLoginTermsAccepted] = useState(false);
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -137,7 +399,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [showVerification, setShowVerification] = useState(false);
     const [registeredUserId, setRegisteredUserId] = useState<number | null>(null);
     const [verificationMethod, setVerificationMethod] = useState<string>('');
-    const [verificationCode, setVerificationCode] = useState('');
+    const [verificationDigits, setVerificationDigits] = useState<string[]>(EMPTY_VERIFY_DIGITS);
+    const verificationCode = useMemo(() => verificationDigits.join(''), [verificationDigits]);
+    const verificationComplete = useMemo(
+        () => verificationDigits.length === 6 && verificationDigits.every((d) => /^\d$/.test(d)),
+        [verificationDigits]
+    );
     const [verificationError, setVerificationError] = useState<string | null>(null);
     const [sendCodeError, setSendCodeError] = useState<string | null>(null);
     const [isSendingCode, setIsSendingCode] = useState(false);
@@ -162,6 +429,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     }, [activeModal, user]);
 
+    const pwdChecks = useMemo(() => checkPasswordPolicy(password), [password]);
+
     const validateForm = () => {
         const newErrors: { [key: string]: string } = {};
         if (!firstName) newErrors.firstName = 'First Name is required';
@@ -176,7 +445,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             newErrors.email = 'Email is invalid';
         }
         if (!password) newErrors.password = 'Password is required';
-        if (password && password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+        else if (!passwordPassesPolicy(password)) {
+            newErrors.password = 'Password must satisfy all requirements below';
+        }
+        if (!confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
+        else if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -231,7 +504,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 setShowVerification(true);
                 setCodeSent(false); // Reset code sent state - user must select method first
                 setVerificationMethod(''); // Reset verification method
-                setVerificationCode(''); // Reset verification code
+                setVerificationDigits(EMPTY_VERIFY_DIGITS()); // Reset verification code
                 setVerificationError(null); // Reset errors
                 setSendCodeError(null); // Reset send code errors
                 setRegisterError(null);
@@ -547,19 +820,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setProfilePhotoBase64('');
         setPhotoPreview('');
         setVerificationMethod('');
-        setVerificationCode('');
+        setVerificationDigits(EMPTY_VERIFY_DIGITS());
         setVerificationError(null);
         setSendCodeError(null);
         setCodeSent(false);
         setIsSendingCode(false);
         setIsVerifying(false);
         setShowVerification(false);
-        // After welcome popup closes, redirect to homepage
-        router.push('/');
-        // Force a page reload to ensure state is clean
-        setTimeout(() => {
-            window.location.href = '/';
-        }, 100);
+        // User is usually already on `/` after verify (modal closed). Avoid router + full reload (double load).
+        if (pathname !== '/') {
+            router.replace('/');
+        }
     };
 
     const close = () => {
@@ -570,7 +841,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setShowVerification(false);
             setRegisteredUserId(null);
             setVerificationMethod('');
-            setVerificationCode('');
+            setVerificationDigits(EMPTY_VERIFY_DIGITS());
             setVerificationError(null);
             setSendCodeError(null);
             setCodeSent(false);
@@ -579,6 +850,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setRegisteredFirstName('');
             setProfilePhotoBase64('');
             setPhotoPreview('');
+            setConfirmPassword('');
+            setShowRegisterPassword(false);
+            setShowRegisterConfirmPassword(false);
         }
         onClose();
     };
@@ -718,7 +992,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     const handleResendCode = () => {
         setCodeSent(false);
-        setVerificationCode('');
+        setVerificationDigits(EMPTY_VERIFY_DIGITS());
         setVerificationError(null);
         setSendCodeError(null);
     };
@@ -848,57 +1122,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 ) : (
                                     <div className="verification-code-section">
                                         <div className="code-input-container">
-                                            <div className="code-input-wrapper">
-                                                {[0, 1, 2, 3, 4, 5].map((index) => (
-                                                    <input
-                                                        key={index}
-                                                        type="text"
-                                                        inputMode="numeric"
-                                                        className="code-digit"
-                                                        maxLength={1}
-                                                        value={verificationCode[index] || ''}
-                                                        onChange={(e) => {
-                                                            const value = e.target.value.replace(/\D/g, '');
-                                                            if (value) {
-                                                                const newCode = verificationCode.split('');
-                                                                newCode[index] = value;
-                                                                const updatedCode = newCode.join('').slice(0, 6);
-                                                                setVerificationCode(updatedCode);
-                                                                setVerificationError(null);
-
-                                                                if (index < 5) {
-                                                                    const wrapper = e.target.closest('.code-input-wrapper');
-                                                                    const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                    inputs?.[index + 1]?.focus();
-                                                                }
-                                                            }
-                                                        }}
-                                                        onPaste={(e) => {
-                                                            e.preventDefault();
-                                                            const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-                                                            if (pastedData.length > 0) {
-                                                                setVerificationCode(pastedData);
-                                                                setVerificationError(null);
-                                                                const focusIndex = Math.min(pastedData.length - 1, 5);
-                                                                const wrapper = e.currentTarget.closest('.code-input-wrapper');
-                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                inputs?.[focusIndex]?.focus();
-                                                            }
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
-                                                                const wrapper = (e.target as HTMLElement).closest('.code-input-wrapper');
-                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                inputs?.[index - 1]?.focus();
-                                                            }
-                                                        }}
-                                                        style={{
-                                                            borderColor: verificationError ? '#ef4444' : (verificationCode[index] ? 'var(--primary)' : 'var(--cream-dark)')
-                                                        }}
-                                                        disabled={isVerifying}
-                                                    />
-                                                ))}
-                                            </div>
+                                            <VerificationCodeInputs
+                                                digits={verificationDigits}
+                                                setDigits={setVerificationDigits}
+                                                verificationError={verificationError}
+                                                isVerifying={isVerifying}
+                                                onClearError={() => setVerificationError(null)}
+                                            />
                                             {verificationError && (
                                                 <div className="error-message" style={{
                                                     color: '#ef4444',
@@ -923,11 +1153,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 padding: '1rem',
                                                 fontSize: '1rem',
                                                 marginTop: '1.5rem',
-                                                opacity: (verificationCode.length === 6 && !isVerifying) ? 1 : 0.5,
-                                                cursor: (verificationCode.length === 6 && !isVerifying) ? 'pointer' : 'not-allowed',
+                                                opacity: (verificationComplete && !isVerifying) ? 1 : 0.5,
+                                                cursor: (verificationComplete && !isVerifying) ? 'pointer' : 'not-allowed',
                                                 position: 'relative'
                                             }}
-                                            disabled={verificationCode.length !== 6 || isVerifying}
+                                            disabled={!verificationComplete || isVerifying}
                                             onClick={handleVerifyCode}
                                         >
                                             {isVerifying ? (
@@ -972,7 +1202,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     type="button"
                                                     onClick={() => {
                                                         setCodeSent(false);
-                                                        setVerificationCode('');
+                                                        setVerificationDigits(EMPTY_VERIFY_DIGITS());
                                                         setVerificationError(null);
                                                         setSendCodeError(null);
                                                     }}
@@ -1298,11 +1528,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} style={{ borderColor: errors.email ? 'red' : '' }} />
                                     {errors.email && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.email}</span>}
                                 </div>
-                                <div className="form-group">
-                                    <label>Password *</label>
-                                    <input type="password" placeholder="Create a strong password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ borderColor: errors.password ? 'red' : '' }} />
-                                    {errors.password && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.password}</span>}
-                                </div>
+                                <RegisterPasswordFields
+                                    idPrefix="reg-login-tab"
+                                    password={password}
+                                    confirmPassword={confirmPassword}
+                                    onPasswordChange={setPassword}
+                                    onConfirmChange={setConfirmPassword}
+                                    errors={errors}
+                                    pwdChecks={pwdChecks}
+                                    showPassword={showRegisterPassword}
+                                    onToggleShowPassword={() => setShowRegisterPassword((v) => !v)}
+                                    showConfirmPassword={showRegisterConfirmPassword}
+                                    onToggleShowConfirmPassword={() => setShowRegisterConfirmPassword((v) => !v)}
+                                />
                                 <div className="form-group">
                                     <label>I am registering as *</label>
                                     {registerAsMatchmaker ? (
@@ -1398,7 +1636,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             </div>
 
             {/* Register Modal */}
-            <div className={`modal-overlay ${activeModal === 'register' ? 'active' : ''}`} id="registerModal" onClick={handleOverlayClick}>
+            <div className={`modal-overlay ${activeModal === 'register' ? 'active' : ''}`} id="registerModal">
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
@@ -1519,57 +1757,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 ) : (
                                     <div className="verification-code-section">
                                         <div className="code-input-container">
-                                            <div className="code-input-wrapper">
-                                                {[0, 1, 2, 3, 4, 5].map((index) => (
-                                                    <input
-                                                        key={index}
-                                                        type="text"
-                                                        inputMode="numeric"
-                                                        className="code-digit"
-                                                        maxLength={1}
-                                                        value={verificationCode[index] || ''}
-                                                        onChange={(e) => {
-                                                            const value = e.target.value.replace(/\D/g, '');
-                                                            if (value) {
-                                                                const newCode = verificationCode.split('');
-                                                                newCode[index] = value;
-                                                                const updatedCode = newCode.join('').slice(0, 6);
-                                                                setVerificationCode(updatedCode);
-                                                                setVerificationError(null);
-
-                                                                if (index < 5) {
-                                                                    const wrapper = e.target.closest('.code-input-wrapper');
-                                                                    const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                    inputs?.[index + 1]?.focus();
-                                                                }
-                                                            }
-                                                        }}
-                                                        onPaste={(e) => {
-                                                            e.preventDefault();
-                                                            const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-                                                            if (pastedData.length > 0) {
-                                                                setVerificationCode(pastedData);
-                                                                setVerificationError(null);
-                                                                const focusIndex = Math.min(pastedData.length - 1, 5);
-                                                                const wrapper = e.currentTarget.closest('.code-input-wrapper');
-                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                inputs?.[focusIndex]?.focus();
-                                                            }
-                                                        }}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Backspace' && !verificationCode[index] && index > 0) {
-                                                                const wrapper = (e.target as HTMLElement).closest('.code-input-wrapper');
-                                                                const inputs = wrapper?.querySelectorAll<HTMLInputElement>('.code-digit');
-                                                                inputs?.[index - 1]?.focus();
-                                                            }
-                                                        }}
-                                                        style={{
-                                                            borderColor: verificationError ? '#ef4444' : (verificationCode[index] ? 'var(--primary)' : 'var(--cream-dark)')
-                                                        }}
-                                                        disabled={isVerifying}
-                                                    />
-                                                ))}
-                                            </div>
+                                            <VerificationCodeInputs
+                                                digits={verificationDigits}
+                                                setDigits={setVerificationDigits}
+                                                verificationError={verificationError}
+                                                isVerifying={isVerifying}
+                                                onClearError={() => setVerificationError(null)}
+                                            />
                                             {verificationError && (
                                                 <div className="error-message" style={{
                                                     color: '#ef4444',
@@ -1594,11 +1788,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 padding: '1rem',
                                                 fontSize: '1rem',
                                                 marginTop: '1.5rem',
-                                                opacity: (verificationCode.length === 6 && !isVerifying) ? 1 : 0.5,
-                                                cursor: (verificationCode.length === 6 && !isVerifying) ? 'pointer' : 'not-allowed',
+                                                opacity: (verificationComplete && !isVerifying) ? 1 : 0.5,
+                                                cursor: (verificationComplete && !isVerifying) ? 'pointer' : 'not-allowed',
                                                 position: 'relative'
                                             }}
-                                            disabled={verificationCode.length !== 6 || isVerifying}
+                                            disabled={!verificationComplete || isVerifying}
                                             onClick={handleVerifyCode}
                                         >
                                             {isVerifying ? (
@@ -1643,7 +1837,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     type="button"
                                                     onClick={() => {
                                                         setCodeSent(false);
-                                                        setVerificationCode('');
+                                                        setVerificationDigits(EMPTY_VERIFY_DIGITS());
                                                         setVerificationError(null);
                                                         setSendCodeError(null);
                                                     }}
@@ -1742,11 +1936,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} style={{ borderColor: errors.email ? 'red' : '' }} />
                                     {errors.email && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.email}</span>}
                                 </div>
-                                <div className="form-group">
-                                    <label>Password *</label>
-                                    <input type="password" placeholder="Create a strong password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ borderColor: errors.password ? 'red' : '' }} />
-                                    {errors.password && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.password}</span>}
-                                </div>
+                                <RegisterPasswordFields
+                                    idPrefix="reg-modal"
+                                    password={password}
+                                    confirmPassword={confirmPassword}
+                                    onPasswordChange={setPassword}
+                                    onConfirmChange={setConfirmPassword}
+                                    errors={errors}
+                                    pwdChecks={pwdChecks}
+                                    showPassword={showRegisterPassword}
+                                    onToggleShowPassword={() => setShowRegisterPassword((v) => !v)}
+                                    showConfirmPassword={showRegisterConfirmPassword}
+                                    onToggleShowConfirmPassword={() => setShowRegisterConfirmPassword((v) => !v)}
+                                />
                                 <div className="form-group">
                                     <label>I am registering as *</label>
                                     {registerAsMatchmaker ? (
@@ -1839,7 +2041,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             </div>
                             <div className={`sub-option ${subscriptionOption === 'Premium' ? 'selected recommended' : ''}`} onClick={() => setSubscriptionOption('Premium')}>
                                 <h4>Premium</h4>
-                                <div className="price">LKR 2,000<span>/mo</span></div>
+                                <div className="price">LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}<span>/mo</span></div>
                                 <p>Unlimited access + chat</p>
                             </div>
                         </div>
@@ -1883,7 +2085,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         router.push('/search');
                                         return;
                                     }
-                                    router.push('/subscription/checkout?plan=premium&amount=2000');
+                                    router.push(`/subscription/checkout?plan=premium&amount=${PREMIUM_SUBSCRIPTION_LKR}`);
                                 }}
                             >
                                 {subscriptionOption === 'Free' ? 'Continue with Free Plan' : 'Continue to Payment'}
@@ -1971,6 +2173,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 <div className="info-grid">
                                                     <div className="info-item"><label>Full Name</label><span>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</span></div>
                                                     <div className="info-item"><label>Age</label><span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Date of Birth</label><span>{formatBirthdayDisplay(selectedProfile.dateOfBirth ?? selectedProfile.DateOfBirth) || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
@@ -1994,7 +2197,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 <h3>Location</h3>
                                                 <div className="info-grid">
                                                     <div className="info-item"><label>Country of Origin</label><span>{selectedProfile.countryOfOrigin || 'Not Specified'}</span></div>
-                                                    <div className="info-item"><label>Country of Residence</label><span>{selectedProfile.countryOfResidence || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Country of Residence</label><span><CountryResidenceDisplay value={selectedProfile.countryOfResidence} /></span></div>
                                                     <div className="info-item"><label>City of Residence</label><span>{selectedProfile.cityOfResidence || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Residency Status</label><span>{selectedProfile.residencyStatus || 'Not Specified'}</span></div>
                                                 </div>
@@ -2012,12 +2215,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <div className="profile-section">
                                         <h3>Family Information</h3>
                                         <div className="info-grid">
+                                            <div className="info-item"><label>Father&apos;s Name</label><span>{(selectedProfile.fatherName || selectedProfile.FatherName || '').trim() || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother&apos;s Name</label><span>{(selectedProfile.motherName || selectedProfile.MotherName || '').trim() || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Father's Occupation</label><span>{selectedProfile.fatherOccupation || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Mother's Occupation</label><span>{selectedProfile.motherOccupation || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Father's Religion</label><span>{selectedProfile.fatherReligion || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Mother's Religion</label><span>{selectedProfile.motherReligion || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Father's Country</label><span>{selectedProfile.fatherCountryOfResidence || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Mother's Country</label><span>{selectedProfile.motherCountryOfResidence || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Father&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.fatherCountryOfResidence} /></span></div>
+                                            <div className="info-item"><label>Mother&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.motherCountryOfResidence} /></span></div>
                                         </div>
                                     </div>
                                 </div>
