@@ -7,6 +7,8 @@ import Footer from '../../components/Footer';
 import { useAuth } from '../../context/AuthContext';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
+import { sanitizeNicInput } from '../../utils/nicInput';
+import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
@@ -306,6 +308,12 @@ export default function ProfilePage() {
     const handleCreateSubAccount = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubAccountError(null);
+        const phoneErr = sriLankanPhoneFormatErrorIfInvalid(subAccountForm.phone, 'Phone number');
+        if (phoneErr) {
+            setSubAccountError(phoneErr);
+            return;
+        }
+
         setIsCreatingSubAccount(true);
 
         try {
@@ -349,9 +357,12 @@ export default function ProfilePage() {
 
     const handleSubAccountChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
+        let nextValue = value;
+        if (name === 'nic') nextValue = sanitizeNicInput(value);
+        else if (name === 'phone') nextValue = sanitizeSriLankanPhoneInput(value);
         setSubAccountForm(prev => ({
             ...prev,
-            [name]: value
+            [name]: nextValue
         }));
     };
 
@@ -397,9 +408,12 @@ export default function ProfilePage() {
 
     const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
+        let nextValue = value;
+        if (name === 'nic') nextValue = sanitizeNicInput(value);
+        else if (name === 'phone' || name === 'whatsapp') nextValue = sanitizeSriLankanPhoneInput(value);
         setEditForm(prev => ({
             ...prev,
-            [name]: value
+            [name]: nextValue
         }));
     };
 
@@ -470,6 +484,17 @@ export default function ProfilePage() {
                                 <form onSubmit={async (e) => {
                                     e.preventDefault();
                                     try {
+                                        const phoneErr = sriLankanPhoneFormatErrorIfInvalid(editForm.phone, 'Phone number');
+                                        const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(editForm.whatsapp, 'WhatsApp number');
+                                        if (phoneErr) {
+                                            alert(phoneErr);
+                                            return;
+                                        }
+                                        if (whatsappErr) {
+                                            alert(whatsappErr);
+                                            return;
+                                        }
+
                                         const token = localStorage.getItem('token');
                                         if (!token || !user?.id) {
                                             throw new Error('Please login again to save changes');

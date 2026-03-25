@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useEffect, MouseEvent, useMemo, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
+import { sanitizeNicInput } from '../utils/nicInput';
+import {
+    sanitizeSriLankanPhoneInput,
+    isValidSriLankanPhone,
+    sriLankanPhoneFormatErrorIfInvalid,
+    phonesAreSameSriLankanNumber,
+    SL_PHONE_PLACEHOLDER,
+    WHATSAPP_REQUIRED_MSG,
+    WHATSAPP_SAME_AS_PHONE_MSG,
+} from '../utils/sriLankanPhone';
 import { PREMIUM_SUBSCRIPTION_LKR } from '../constants/subscription';
 import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
@@ -42,6 +52,18 @@ function checkPasswordPolicy(password: string) {
 function passwordPassesPolicy(password: string): boolean {
     const c = checkPasswordPolicy(password);
     return c.minLength && c.hasUpper && c.hasLower && c.hasDigit && c.hasSpecial;
+}
+
+/** Unicode letters, spaces, hyphens, apostrophes — no digits or other symbols. */
+const NAME_LETTERS_ONLY = /^[\p{L}\s'-]+$/u;
+
+function nameLettersOnlyError(value: string, fieldLabel: 'First name' | 'Last name'): string | undefined {
+    const t = value.trim();
+    if (!t) return undefined;
+    if (!NAME_LETTERS_ONLY.test(t)) {
+        return `${fieldLabel} may only contain letters (no numbers or symbols).`;
+    }
+    return undefined;
 }
 
 type PwdChecks = ReturnType<typeof checkPasswordPolicy>;
@@ -433,12 +455,40 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     const validateForm = () => {
         const newErrors: { [key: string]: string } = {};
-        if (!firstName) newErrors.firstName = 'First Name is required';
-        if (!lastName) newErrors.lastName = 'Last Name is required';
+        if (!firstName.trim()) newErrors.firstName = 'First Name is required';
+        else {
+            const fnErr = nameLettersOnlyError(firstName, 'First name');
+            if (fnErr) newErrors.firstName = fnErr;
+        }
+        if (!lastName.trim()) newErrors.lastName = 'Last Name is required';
+        else {
+            const lnErr = nameLettersOnlyError(lastName, 'Last name');
+            if (lnErr) newErrors.lastName = lnErr;
+        }
         if (!nic) newErrors.nic = 'NIC/Passport is required';
         if (!dob) newErrors.dob = 'Date of Birth is required';
         if (!gender) newErrors.gender = 'Gender is required';
-        if (!phone) newErrors.phone = 'Phone Number is required';
+        if (!phone.trim()) newErrors.phone = 'Phone Number is required';
+        else {
+            const pe = sriLankanPhoneFormatErrorIfInvalid(phone, 'Phone number');
+            if (pe) newErrors.phone = pe;
+        }
+        if (!isWhatsAppSame) {
+            if (!whatsapp.trim()) {
+                newErrors.whatsapp = WHATSAPP_REQUIRED_MSG;
+            } else {
+                const we = sriLankanPhoneFormatErrorIfInvalid(whatsapp, 'WhatsApp number');
+                if (we) {
+                    newErrors.whatsapp = we;
+                } else if (
+                    isValidSriLankanPhone(phone) &&
+                    isValidSriLankanPhone(whatsapp) &&
+                    phonesAreSameSriLankanNumber(phone, whatsapp)
+                ) {
+                    newErrors.whatsapp = WHATSAPP_SAME_AS_PHONE_MSG;
+                }
+            }
+        }
         if (!email) {
             newErrors.email = 'Email is required';
         } else if (!/\S+@\S+\.\S+/.test(email)) {
@@ -453,6 +503,110 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
+    };
+
+    const handleFirstNameChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        setFirstName(v);
+        setErrors((prev) => {
+            const next = { ...prev };
+            const err = nameLettersOnlyError(v, 'First name');
+            if (err) next.firstName = err;
+            else delete next.firstName;
+            return next;
+        });
+    };
+
+    const handleLastNameChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const v = e.target.value;
+        setLastName(v);
+        setErrors((prev) => {
+            const next = { ...prev };
+            const err = nameLettersOnlyError(v, 'Last name');
+            if (err) next.lastName = err;
+            else delete next.lastName;
+            return next;
+        });
+    };
+
+    const handlePhoneChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const v = sanitizeSriLankanPhoneInput(e.target.value);
+        setPhone(v);
+        if (isWhatsAppSame) setWhatsapp(v);
+        setErrors((prev) => {
+            const next = { ...prev };
+            if (!v.trim() || isValidSriLankanPhone(v)) delete next.phone;
+            if (
+                !isWhatsAppSame &&
+                whatsapp.trim() &&
+                isValidSriLankanPhone(v) &&
+                isValidSriLankanPhone(whatsapp) &&
+                phonesAreSameSriLankanNumber(v, whatsapp)
+            ) {
+                next.whatsapp = WHATSAPP_SAME_AS_PHONE_MSG;
+            } else if (
+                !isWhatsAppSame &&
+                whatsapp.trim() &&
+                isValidSriLankanPhone(whatsapp) &&
+                !phonesAreSameSriLankanNumber(v, whatsapp) &&
+                prev.whatsapp === WHATSAPP_SAME_AS_PHONE_MSG
+            ) {
+                delete next.whatsapp;
+            }
+            return next;
+        });
+    };
+
+    const handleWhatsappChange = (e: ChangeEvent<HTMLInputElement>) => {
+        const v = sanitizeSriLankanPhoneInput(e.target.value);
+        setWhatsapp(v);
+        setErrors((prev) => {
+            const next = { ...prev };
+            if (!v.trim()) {
+                delete next.whatsapp;
+                return next;
+            }
+            if (!isValidSriLankanPhone(v)) {
+                return next;
+            }
+            if (
+                !isWhatsAppSame &&
+                isValidSriLankanPhone(phone) &&
+                phonesAreSameSriLankanNumber(phone, v)
+            ) {
+                next.whatsapp = WHATSAPP_SAME_AS_PHONE_MSG;
+            } else {
+                delete next.whatsapp;
+            }
+            return next;
+        });
+    };
+
+    const handleWhatsAppSameToggle = (checked: boolean) => {
+        setIsWhatsAppSame(checked);
+        if (checked) {
+            setWhatsapp(phone);
+            setErrors((prev) => {
+                const next = { ...prev };
+                delete next.whatsapp;
+                return next;
+            });
+        } else {
+            setErrors((prev) => {
+                const next = { ...prev };
+                if (
+                    whatsapp.trim() &&
+                    isValidSriLankanPhone(phone) &&
+                    isValidSriLankanPhone(whatsapp) &&
+                    phonesAreSameSriLankanNumber(phone, whatsapp)
+                ) {
+                    next.whatsapp = WHATSAPP_SAME_AS_PHONE_MSG;
+                } else if (prev.whatsapp === WHATSAPP_SAME_AS_PHONE_MSG) {
+                    delete next.whatsapp;
+                }
+                return next;
+            });
+        }
     };
 
     const handleRegister = async () => {
@@ -803,7 +957,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
+        const value = sanitizeNicInput(e.target.value);
         setNic(value);
         const result = parseNIC(value);
         if (result) {
@@ -1282,11 +1436,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                         </div>
                                                         <div className="form-group">
                                                             <label>Registered Phone Number</label>
-                                                            <input type="text" value={forgotContactPhone} onChange={(e) => setForgotContactPhone(e.target.value)} placeholder="07XXXXXXXX" />
+                                                            <input type="text" value={forgotContactPhone} onChange={(e) => setForgotContactPhone(sanitizeSriLankanPhoneInput(e.target.value))} placeholder={SL_PHONE_PLACEHOLDER} />
                                                         </div>
                                                         <div className="form-group">
                                                             <label>Registered WhatsApp Number</label>
-                                                            <input type="text" value={forgotContactWhatsApp} onChange={(e) => setForgotContactWhatsApp(e.target.value)} placeholder="07XXXXXXXX" />
+                                                            <input type="text" value={forgotContactWhatsApp} onChange={(e) => setForgotContactWhatsApp(sanitizeSriLankanPhoneInput(e.target.value))} placeholder={SL_PHONE_PLACEHOLDER} />
                                                         </div>
                                                         <button
                                                             className="btn btn-primary"
@@ -1472,12 +1626,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
-                                        <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={{ borderColor: errors.firstName ? 'red' : '' }} />
+                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} style={{ borderColor: errors.firstName ? 'red' : '' }} />
                                         {errors.firstName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.firstName}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Last Name *</label>
-                                        <input type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} style={{ borderColor: errors.lastName ? 'red' : '' }} />
+                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} style={{ borderColor: errors.lastName ? 'red' : '' }} />
                                         {errors.lastName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.lastName}</span>}
                                     </div>
                                 </div>
@@ -1504,21 +1658,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                                 <div className="form-group">
                                     <label>Phone Number *</label>
-                                    <input type="tel" placeholder="+94 XX XXX XXXX" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ borderColor: errors.phone ? 'red' : '' }} />
+                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
                                     {errors.phone && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.phone}</span>}
                                 </div>
                                 <div className="form-group">
                                     <label>WhatsApp Number *</label>
-                                    <input type="tel" placeholder="+94 XX XXX XXXX" disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={handleWhatsappChange} style={{ borderColor: errors.whatsapp ? 'red' : '' }} />
+                                    {errors.whatsapp && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.whatsapp}</span>}
                                     <div className="checkbox-group" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
                                         <input
                                             type="checkbox"
                                             id="sameAsPhoneLogin"
                                             checked={isWhatsAppSame}
-                                            onChange={(e) => {
-                                                setIsWhatsAppSame(e.target.checked);
-                                                if (e.target.checked) setWhatsapp(phone);
-                                            }}
+                                            onChange={(e) => handleWhatsAppSameToggle(e.target.checked)}
                                         />
                                         <label htmlFor="sameAsPhoneLogin" style={{ fontSize: '0.9rem' }}>Same as Phone Number</label>
                                     </div>
@@ -1880,12 +2032,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
-                                        <input type="text" placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} style={{ borderColor: errors.firstName ? 'red' : '' }} />
+                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} style={{ borderColor: errors.firstName ? 'red' : '' }} />
                                         {errors.firstName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.firstName}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Last Name *</label>
-                                        <input type="text" placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} style={{ borderColor: errors.lastName ? 'red' : '' }} />
+                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} style={{ borderColor: errors.lastName ? 'red' : '' }} />
                                         {errors.lastName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.lastName}</span>}
                                     </div>
                                 </div>
@@ -1912,21 +2064,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                                 <div className="form-group">
                                     <label>Phone Number *</label>
-                                    <input type="tel" placeholder="+94 XX XXX XXXX" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ borderColor: errors.phone ? 'red' : '' }} />
+                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
                                     {errors.phone && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.phone}</span>}
                                 </div>
                                 <div className="form-group">
                                     <label>WhatsApp Number *</label>
-                                    <input type="tel" placeholder="+94 XX XXX XXXX" disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={handleWhatsappChange} style={{ borderColor: errors.whatsapp ? 'red' : '' }} />
+                                    {errors.whatsapp && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.whatsapp}</span>}
                                     <div className="checkbox-group" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
                                         <input
                                             type="checkbox"
                                             id="sameAsPhone"
                                             checked={isWhatsAppSame}
-                                            onChange={(e) => {
-                                                setIsWhatsAppSame(e.target.checked);
-                                                if (e.target.checked) setWhatsapp(phone);
-                                            }}
+                                            onChange={(e) => handleWhatsAppSameToggle(e.target.checked)}
                                         />
                                         <label htmlFor="sameAsPhone" style={{ fontSize: '0.9rem' }}>Same as Phone Number</label>
                                     </div>
