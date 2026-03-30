@@ -1283,9 +1283,29 @@
             width: 90%;
             max-height: 90vh;
             overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            scrollbar-color: #c9c9c9 transparent;
             position: relative;
             transform: translateY(20px);
             transition: transform 0.3s;
+        }
+
+        .modal::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .modal::-webkit-scrollbar-track {
+            background: transparent;
+            margin: 10px 0;
+            border-radius: 999px;
+        }
+
+        .modal::-webkit-scrollbar-thumb {
+            background: #c9c9c9;
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: content-box;
         }
 
         .modal-overlay.active .modal {
@@ -1331,13 +1351,59 @@
 
         .modal-body {
             padding: 1rem 2rem 2rem;
+            overflow: hidden;
+        }
+
+        /* Keep auth modal header fixed and scroll only content */
+        #loginModal .modal,
+        #registerModal .modal {
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #loginModal .modal-body,
+        #registerModal .modal-body {
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: calc(90vh - 8rem);
+            scrollbar-width: thin;
+            scrollbar-color: #c9c9c9 transparent;
+        }
+
+        #loginModal .modal-body {
+            padding-top: 0;
+        }
+
+        #loginModal .modal-body::-webkit-scrollbar,
+        #registerModal .modal-body::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        #loginModal .modal-body::-webkit-scrollbar-track,
+        #registerModal .modal-body::-webkit-scrollbar-track {
+            background: transparent;
+            margin: 10px 0;
+            border-radius: 999px;
+        }
+
+        #loginModal .modal-body::-webkit-scrollbar-thumb,
+        #registerModal .modal-body::-webkit-scrollbar-thumb {
+            background: #c9c9c9;
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: content-box;
+        }
+
+        #loginModal .login-tabs {
+            background: #ffffff;
         }
 
         /* Login Modal */
         .login-tabs {
             display: flex;
             margin-bottom: 1.5rem;
-            background: var(--cream);
+            background: var(--cream)!important;
             border-radius: 25px;
             padding: 0.25rem;
         }
@@ -3715,3 +3781,56 @@
         }
             }
         }
+
+.global-toast-container {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 5000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: min(92vw, 420px);
+    pointer-events: none;
+}
+
+.global-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.global-toast-info {
+    background: #1d4ed8;
+}
+
+.global-toast-success {
+    background: #166534;
+}
+
+.global-toast-error {
+    background: #b91c1c;
+}
+
+.global-toast-close {
+    background: transparent;
+    color: inherit;
+    border: none;
+    cursor: pointer;
+    line-height: 1;
+    font-size: 1rem;
+    padding: 0 2px;
+    opacity: 0.85;
+}
+
+.global-toast-close:hover {
+    opacity: 1;
+}

@@ -1,3 +1,4 @@
+import { getStoredToken } from '../utils/authStorage';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
 export interface MatrimonialRegisterRequest {
@@ -440,7 +441,7 @@ export const matrimonialService = {
             throw new Error('Invalid sender or receiver ID');
         }
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SendMessage`, {
                 method: 'POST',
                 headers: {
@@ -533,7 +534,7 @@ export const matrimonialService = {
 
     async deleteMessage(messageId: number, userId: number): Promise<any> {
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteMessage?messageId=${messageId}&userId=${userId}`, {
                 method: 'DELETE',
                 headers: {
@@ -556,7 +557,7 @@ export const matrimonialService = {
      */
     async getSubAccounts(parentUserId: number): Promise<any> {
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/GetSubAccounts?parentUserId=${parentUserId}`, {
                 method: 'GET',
                 headers: { 
@@ -573,7 +574,7 @@ export const matrimonialService = {
 
     async activateMockSubscription(userId: number, mockReference: string): Promise<any> {
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/ActivateMockSubscription`, {
                 method: 'POST',
                 headers: {
@@ -602,7 +603,7 @@ export const matrimonialService = {
      */
     async getDashboardStats(): Promise<any> {
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/GetMatrimonialDashboardStats`, {
                 method: 'GET',
                 headers: {
@@ -640,7 +641,7 @@ export const matrimonialService = {
 
     async submitBankTransfer(userId: number, amount: number, paySlipBase64: string, remarks?: string): Promise<any> {
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SubmitBankTransfer`, {
                 method: 'POST',
                 headers: {

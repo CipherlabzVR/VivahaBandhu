@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useState, useEffect } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { matrimonialService } from '../services/matrimonialService';
+import { getStoredToken } from '../utils/authStorage';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
@@ -57,7 +58,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
     useEffect(() => {
         if (!user?.id || user.profilePhoto) return;
-        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        const token = getStoredToken();
         if (!token) return;
 
         let cancelled = false;

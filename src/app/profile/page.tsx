@@ -9,6 +9,8 @@ import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput } from '../../utils/nicInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
+import { getStoredToken } from '../../utils/authStorage';
+import { showToast } from '../../utils/toast';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
@@ -34,7 +36,7 @@ export default function ProfilePage() {
     const checkProfileCompletion = async () => {
         try {
             setProfileFetched(true);
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             if (!user?.id || !token) return;
 
             const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
@@ -291,7 +293,7 @@ export default function ProfilePage() {
         try {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/GetSubAccounts?parentUserId=${user?.id}`, {
                 headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    'Authorization': `Bearer ${getStoredToken() || ''}`
                 }
             });
             if (response.ok) {
@@ -487,15 +489,15 @@ export default function ProfilePage() {
                                         const phoneErr = sriLankanPhoneFormatErrorIfInvalid(editForm.phone, 'Phone number');
                                         const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(editForm.whatsapp, 'WhatsApp number');
                                         if (phoneErr) {
-                                            alert(phoneErr);
+                                            showToast(phoneErr, 'error');
                                             return;
                                         }
                                         if (whatsappErr) {
-                                            alert(whatsappErr);
+                                            showToast(whatsappErr, 'error');
                                             return;
                                         }
 
-                                        const token = localStorage.getItem('token');
+                                        const token = getStoredToken();
                                         if (!token || !user?.id) {
                                             throw new Error('Please login again to save changes');
                                         }
@@ -541,7 +543,7 @@ export default function ProfilePage() {
                                         setProfileFetched(false);
                                         setIsEditModalOpen(false);
                                     } catch (error) {
-                                        alert(error instanceof Error ? error.message : 'Failed to save changes');
+                                        showToast(error instanceof Error ? error.message : 'Failed to save changes', 'error');
                                     }
                                 }}>
                                     <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>

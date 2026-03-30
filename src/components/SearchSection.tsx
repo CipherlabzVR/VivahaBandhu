@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
+import { showToast } from '../utils/toast';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
@@ -106,7 +107,10 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
-        if (!user) return alert('Please login to add favorites');
+        if (!user) {
+            showToast('Please login to add favorites', 'error');
+            return;
+        }
         if (user.isVerified === false) {
             window.dispatchEvent(new CustomEvent('open-verify-modal'));
             return;
@@ -133,7 +137,10 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     const handleToggleShortlist = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
-        if (!user) return alert('Please login to shortlist profiles');
+        if (!user) {
+            showToast('Please login to shortlist profiles', 'error');
+            return;
+        }
         if (user.isVerified === false) {
             window.dispatchEvent(new CustomEvent('open-verify-modal'));
             return;
@@ -259,7 +266,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     checked={preferredSearch}
                                     onChange={() => {
                                         if (!user?.id) {
-                                            alert('Please log in and complete your profile to use Preferred Search.');
+                                            showToast('Please log in and complete your profile to use Preferred Search.', 'error');
                                             return;
                                         }
                                         setPreferredSearch(!preferredSearch);

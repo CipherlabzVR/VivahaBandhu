@@ -4,6 +4,7 @@ import { AuthProvider } from '../context/AuthContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
 import MessageFloatingButton from '../components/MessageFloatingButton';
+import GlobalToast from '../components/GlobalToast';
 import "./globals.css";
 
 
@@ -53,6 +54,7 @@ export default function RootLayout({
             <LoadingScreenWrapper>
               {children}
               <MessageFloatingButton />
+              <GlobalToast />
             </LoadingScreenWrapper>
           </LanguageProvider>
         </AuthProvider>

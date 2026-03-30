@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { getStoredUser, setStoredUser, updateStoredUser, clearStoredAuth } from '../utils/authStorage';
 
 interface User {
     id: string;
@@ -21,7 +22,7 @@ interface User {
 
 interface AuthContextType {
     user: User | null;
-    login: (userData: User) => void;
+    login: (userData: User, remember?: boolean) => void;
     logout: () => void;
     updateUser: (userData: Partial<User>) => void;
     loading: boolean;
@@ -34,43 +35,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check local storage for user on initial load (client-side only)
+        // Check storage for user on initial load (client-side only).
+        // Session user takes precedence over local user.
         if (typeof window !== 'undefined') {
-            const storedUser = localStorage.getItem('user');
+            const storedUser = getStoredUser<User>();
             if (storedUser) {
-                try {
-                    setUser(JSON.parse(storedUser));
-                } catch (error) {
-                    console.error('Failed to parse user data from localStorage:', error);
-                    localStorage.removeItem('user');
-                }
+                setUser(storedUser);
             }
             setLoading(false);
         }
     }, []);
 
-    const login = useCallback((userData: User) => {
+    const login = useCallback((userData: User, remember = true) => {
         setUser(userData);
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('user', JSON.stringify(userData));
-        }
+        setStoredUser(userData, remember);
     }, []);
 
     const logout = useCallback(() => {
         setUser(null);
-        if (typeof window !== 'undefined') {
-            localStorage.removeItem('user');
-            localStorage.removeItem('token');
-        }
+        clearStoredAuth();
     }, []);
 
     const updateUser = useCallback((userData: Partial<User>) => {
         setUser(prev => {
             if (!prev) return prev;
             const updatedUser = { ...prev, ...userData };
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('user', JSON.stringify(updatedUser));
-            }
+            updateStoredUser(updatedUser);
             return updatedUser;
         });
     }, []);
