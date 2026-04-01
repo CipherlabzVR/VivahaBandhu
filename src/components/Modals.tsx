@@ -4,7 +4,9 @@ import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactN
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
-import { sanitizeNicInput } from '../utils/nicInput';
+import { sanitizeNicInput, nicOrPassportFormatError } from '../utils/nicInput';
+import { getStoredToken, setStoredToken } from '../utils/authStorage';
+import { showToast } from '../utils/toast';
 import {
     sanitizeSriLankanPhoneInput,
     isValidSriLankanPhone,
@@ -397,6 +399,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginError, setLoginError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [rememberMe, setRememberMe] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
     const [forgotContactEmail, setForgotContactEmail] = useState('');
@@ -465,7 +468,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             const lnErr = nameLettersOnlyError(lastName, 'Last name');
             if (lnErr) newErrors.lastName = lnErr;
         }
-        if (!nic) newErrors.nic = 'NIC/Passport is required';
+        if (!nic.trim()) {
+            newErrors.nic = 'NIC/Passport is required';
+        } else {
+            const ne = nicOrPassportFormatError(nic);
+            if (ne) newErrors.nic = ne;
+        }
         if (!dob) newErrors.dob = 'Date of Birth is required';
         if (!gender) newErrors.gender = 'Gender is required';
         if (!phone.trim()) newErrors.phone = 'Phone Number is required';
@@ -690,8 +698,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleLogin = async () => {
-        if (!loginEmail || !loginPassword) {
+        const normalizedEmail = loginEmail.trim();
+
+        if (!normalizedEmail || !loginPassword) {
             setLoginError('Please enter both email and password');
+            return;
+        }
+
+        if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
+            setLoginError('Please enter a valid email address');
             return;
         }
 
@@ -700,7 +715,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         try {
             const response = await matrimonialService.login({
-                email: loginEmail,
+                email: normalizedEmail,
                 password: loginPassword,
             });
 
@@ -711,7 +726,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     id: response.result.id.toString(),
                     firstName: response.result.firstName,
                     lastName: response.result.lastName,
-                    email: response.result.email || response.result.username || loginEmail,
+                    email: response.result.email || response.result.username || normalizedEmail,
                     phone: response.result.mobileNumber || response.result.phoneNumber || '',
                     whatsapp: response.result.WhatsApp || response.result.whatsApp || response.result.whatsapp || '',
                     nic: response.result.nic || response.result.Nic || response.result.nicNumber || response.result.identityDocument || response.result.IdentityDocument || '',
@@ -723,11 +738,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     isVerified: response.result.status === 1,
                 };
 
-                login(user);
+                login(user, rememberMe);
 
                 // Store token
                 if (response.result.accessToken) {
-                    localStorage.setItem('token', response.result.accessToken);
+                    setStoredToken(response.result.accessToken, rememberMe);
                 }
 
                 onClose();
@@ -795,10 +810,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleInitiateForgotByContact = async () => {
+        const normalizedEmail = forgotContactEmail.trim();
+        const normalizedPhone = forgotContactPhone.trim();
+        const normalizedWhatsApp = forgotContactWhatsApp.trim();
+
+        if (normalizedEmail && !/\S+@\S+\.\S+/.test(normalizedEmail)) {
+            setForgotError('Please enter a valid registered email address.');
+            return;
+        }
+
         const payload = {
-            email: forgotContactEmail.trim() || undefined,
-            phoneNumber: forgotContactPhone.trim() || undefined,
-            whatsApp: forgotContactWhatsApp.trim() || undefined,
+            email: normalizedEmail || undefined,
+            phoneNumber: normalizedPhone || undefined,
+            whatsApp: normalizedWhatsApp || undefined,
         };
 
         if (!payload.email && !payload.phoneNumber && !payload.whatsApp) {
@@ -824,10 +848,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setForgotSentVia(sentVia);
             setForgotStep('verify');
             setForgotSuccess(`A verification code was sent via ${sentVia}.`);
-            alert(`A verification code has been sent via ${sentVia}.`);
+            showToast(`A verification code has been sent via ${sentVia}.`, 'success');
         } catch (error) {
             setForgotError(error instanceof Error ? error.message : 'Could not verify your account details.');
-            alert(error instanceof Error ? error.message : 'Could not verify your account details.');
+            showToast(error instanceof Error ? error.message : 'Could not verify your account details.', 'error');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -853,10 +877,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setForgotSentVia(String(sentVia));
             setForgotStep('verify');
             setForgotSuccess(`A verification code was sent via ${sentVia}.`);
-            alert(`Code sent via ${sentVia} to the selected account.`);
+            showToast(`Code sent via ${sentVia} to the selected account.`, 'success');
         } catch (error) {
             setForgotError(error instanceof Error ? error.message : 'Could not send verification code.');
-            alert(error instanceof Error ? error.message : 'Could not send verification code.');
+            showToast(error instanceof Error ? error.message : 'Could not send verification code.', 'error');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -897,7 +921,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             if (response.statusCode === 200 || response.statusCode === 1) {
                 setForgotSuccess(response.message || 'Password reset successfully.');
-                alert('Password reset successfully. Please login with your new password.');
+                showToast('Password reset successfully. Please login with your new password.', 'success');
                 resetForgotPasswordState();
                 setLoginTab('login');
             } else {
@@ -905,7 +929,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             }
         } catch (error) {
             setForgotError(error instanceof Error ? error.message : 'Failed to reset password.');
-            alert(error instanceof Error ? error.message : 'Failed to reset password.');
+            showToast(error instanceof Error ? error.message : 'Failed to reset password.', 'error');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -959,6 +983,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const handleNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = sanitizeNicInput(e.target.value);
         setNic(value);
+        setErrors((prev) => {
+            const next = { ...prev };
+            if (!value.trim()) {
+                next.nic = 'NIC/Passport is required';
+            } else {
+                const ne = nicOrPassportFormatError(value);
+                if (ne) next.nic = ne;
+                else delete next.nic;
+            }
+            return next;
+        });
         const result = parseNIC(value);
         if (result) {
             setDob(result.dob);
@@ -1061,7 +1096,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             if (response.statusCode === 200 || response.statusCode === 1) {
                 // Verification successful.
                 // Ensure we have a token for authorized APIs (uploads, profile updates).
-                const existingToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+                const existingToken = getStoredToken();
 
                 const fallbackUser = user || undefined;
                 let userToLogin = {
@@ -1095,7 +1130,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         return;
                     }
 
-                    localStorage.setItem('token', token);
+                    setStoredToken(token, true);
 
                     const r = loginResponse.result;
                     userToLogin = {
@@ -1169,16 +1204,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         <h2>{activeModal === 'verify' ? 'Verify Account' : 'Welcome Back'}</h2>
                         <p>{activeModal === 'verify' ? 'Please verify your account to continue' : 'Login to continue your journey'}</p>
                     </div>
-                    <div className="modal-body">
-                        {activeModal !== 'verify' && !showVerification && (
-                            <div className="login-tabs">
+                    {activeModal !== 'verify' && !showVerification && (
+                        <div style={{ padding: '0 2rem' }}>
+                            <div className="login-tabs" style={{ background: '#ffffff' }}>
                                 <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => { setLoginTab('login'); setShowForgotPassword(false); }}>Login</button>
                                 <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => { setLoginTab('register'); setShowForgotPassword(false); }}>Register</button>
                             </div>
-                        )}
-
+                        </div>
+                    )}
+                    <div className="modal-body">
                         {activeModal === 'verify' || showVerification ? (
-                            <div id="verificationTab" className="tab-content active verification-screen" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            <div id="verificationTab" className="tab-content active verification-screen" style={{ paddingRight: '0.5rem' }}>
                                 <div className="verification-header">
                                     <div className="verification-icon">
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1564,15 +1600,20 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 ) : (
                                     <>
                                         <div className="form-group">
-                                            <label>Email / Account ID</label>
-                                            <input type="email" placeholder="Enter your email or account ID" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                                            <label>Email</label>
+                                            <input type="email" placeholder="Enter your email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
                                         </div>
                                         <div className="form-group">
                                             <label>Password</label>
                                             <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
                                         </div>
                                         <div className="checkbox-group">
-                                            <input type="checkbox" id="remember" />
+                                            <input
+                                                type="checkbox"
+                                                id="remember"
+                                                checked={rememberMe}
+                                                onChange={(e) => setRememberMe(e.target.checked)}
+                                            />
                                             <label htmlFor="remember">Remember me</label>
                                         </div>
                                         {loginError && (
@@ -1620,7 +1661,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 )}
                             </div>
                         ) : (
-                            <div id="registerTab" className="tab-content active" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            <div id="registerTab" className="tab-content active" style={{ paddingRight: '0.5rem', paddingBottom: '1rem' }}>
                                 <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Create a new account to get started</p>
 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
@@ -1773,6 +1814,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     style={{
                                         width: '100%',
                                         justifyContent: 'center',
+                                        marginBottom: '0.5rem',
                                         opacity: (loginTermsAccepted && !isLoading) ? 1 : 0.5,
                                         cursor: (loginTermsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
                                     }}
@@ -2145,6 +2187,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     style={{
                                         width: '100%',
                                         justifyContent: 'center',
+                                        marginBottom: '0.5rem',
                                         opacity: (termsAccepted && !isLoading) ? 1 : 0.5,
                                         cursor: (termsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
                                     }}

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Country, City } from 'country-state-city';
+import { getStoredToken } from '../../utils/authStorage';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -418,7 +419,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
         const fetchProfile = async () => {
             try {
-                const token = localStorage.getItem('token');
+                const token = getStoredToken();
                 if (!token) return;
 
                 const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
@@ -532,7 +533,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         setSubmitError('');
 
         try {
-            const token = localStorage.getItem('token');
+            const token = getStoredToken();
             if (!token) {
                 setSubmitError('Please login again to upload documents.');
                 return;
@@ -633,7 +634,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             return false;
         }
 
-        const token = localStorage.getItem('token');
+        const token = getStoredToken();
         if (!token) {
             setSubmitError('Please login again to save your progress.');
             return false;
@@ -711,7 +712,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             return;
         }
 
-        const token = localStorage.getItem('token');
+        const token = getStoredToken();
         if (!token) {
             setSubmitError('Please login again to save your profile.');
             return;
