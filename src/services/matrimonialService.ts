@@ -389,14 +389,29 @@ export const matrimonialService = {
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Failed to search profiles: ${response.statusText}`);
+                return {
+                    statusCode: response.status || 0,
+                    message: errorData.message || `Failed to search profiles: ${response.statusText}`,
+                    result: {
+                        profiles: [],
+                        totalCount: 0,
+                    },
+                };
             }
             return await response.json();
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error('An unexpected error occurred while searching profiles');
+            const fallbackMessage =
+                error instanceof Error
+                    ? error.message
+                    : 'Unable to reach server. Please check your internet connection and try again.';
+            return {
+                statusCode: 0,
+                message: fallbackMessage,
+                result: {
+                    profiles: [],
+                    totalCount: 0,
+                },
+            };
         }
     },
 
