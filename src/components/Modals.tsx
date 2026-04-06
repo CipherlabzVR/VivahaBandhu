@@ -4,9 +4,7 @@ import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactN
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
-import { sanitizeNicInput, nicOrPassportFormatError } from '../utils/nicInput';
-import { getStoredToken, setStoredToken } from '../utils/authStorage';
-import { showToast } from '../utils/toast';
+import { sanitizeNicInput } from '../utils/nicInput';
 import {
     sanitizeSriLankanPhoneInput,
     isValidSriLankanPhone,
@@ -69,6 +67,15 @@ function nameLettersOnlyError(value: string, fieldLabel: 'First name' | 'Last na
 }
 
 type PwdChecks = ReturnType<typeof checkPasswordPolicy>;
+
+function getPasswordStrength(password: string, checks: PwdChecks): { level: number; label: string; color: string } {
+    if (!password) return { level: 0, label: '', color: '#e5e7eb' };
+    const passed = [checks.minLength, checks.hasUpper, checks.hasLower, checks.hasDigit, checks.hasSpecial].filter(Boolean).length;
+    if (passed <= 1) return { level: 1, label: 'Weak', color: '#ef4444' };
+    if (passed === 2) return { level: 2, label: 'Fair', color: '#f97316' };
+    if (passed <= 4) return { level: 3, label: 'Good', color: '#eab308' };
+    return { level: 4, label: 'Strong', color: '#22c55e' };
+}
 
 function RegisterPasswordFields({
     idPrefix,
@@ -140,6 +147,31 @@ function RegisterPasswordFields({
                         {showPassword ? '🙈' : '👁'}
                     </button>
                 </div>
+                {(() => {
+                    const strength = getPasswordStrength(password, pwdChecks);
+                    if (!password) return null;
+                    return (
+                        <div style={{ marginTop: '0.45rem', marginBottom: '0.1rem' }}>
+                            <div style={{ display: 'flex', gap: '4px', marginBottom: '0.25rem' }} role="meter" aria-label={`Password strength: ${strength.label}`} aria-valuenow={strength.level} aria-valuemin={0} aria-valuemax={4}>
+                                {[1, 2, 3, 4].map((bar) => (
+                                    <div
+                                        key={bar}
+                                        style={{
+                                            flex: 1,
+                                            height: '5px',
+                                            borderRadius: '3px',
+                                            backgroundColor: bar <= strength.level ? strength.color : '#e5e7eb',
+                                            transition: 'background-color 0.25s ease',
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: strength.color, letterSpacing: '0.02em' }}>
+                                {strength.label}
+                            </span>
+                        </div>
+                    );
+                })()}
                 <ul style={{ listStyle: 'none', padding: '0.5rem 0 0', margin: 0, borderTop: '1px solid #eee', marginTop: '0.35rem' }}>
                     {ruleRow(pwdChecks.minLength, 'At least 6 characters')}
                     {ruleRow(pwdChecks.hasUpper, 'One uppercase letter (A–Z)')}
@@ -397,11 +429,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [isLoading, setIsLoading] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
     const [loginError, setLoginError] = useState<string | null>(null);
+    const [loginEmailError, setLoginEmailError] = useState<string | null>(null);
+    const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
-    const [rememberMe, setRememberMe] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
+    const [forgotContactMethod, setForgotContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
     const [forgotContactEmail, setForgotContactEmail] = useState('');
     const [forgotContactPhone, setForgotContactPhone] = useState('');
     const [forgotContactWhatsApp, setForgotContactWhatsApp] = useState('');
@@ -468,12 +502,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             const lnErr = nameLettersOnlyError(lastName, 'Last name');
             if (lnErr) newErrors.lastName = lnErr;
         }
-        if (!nic.trim()) {
-            newErrors.nic = 'NIC/Passport is required';
-        } else {
-            const ne = nicOrPassportFormatError(nic);
-            if (ne) newErrors.nic = ne;
-        }
+        if (!nic) newErrors.nic = 'NIC/Passport is required';
         if (!dob) newErrors.dob = 'Date of Birth is required';
         if (!gender) newErrors.gender = 'Gender is required';
         if (!phone.trim()) newErrors.phone = 'Phone Number is required';
@@ -698,24 +727,37 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleLogin = async () => {
-        const normalizedEmail = loginEmail.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        let hasError = false;
 
-        if (!normalizedEmail || !loginPassword) {
-            setLoginError('Please enter both email and password');
-            return;
+        if (!loginEmail.trim()) {
+            setLoginEmailError('Email is required.');
+            hasError = true;
+        } else if (!emailRegex.test(loginEmail.trim())) {
+            setLoginEmailError('Please enter a valid email address.');
+            hasError = true;
+        } else {
+            setLoginEmailError(null);
         }
 
-        if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
-            setLoginError('Please enter a valid email address');
-            return;
+        if (!loginPassword) {
+            setLoginPasswordError('Password is required.');
+            hasError = true;
+        } else if (loginPassword.length < 6) {
+            setLoginPasswordError('Password must be at least 6 characters.');
+            hasError = true;
+        } else {
+            setLoginPasswordError(null);
         }
+
+        if (hasError) return;
 
         setIsLoading(true);
         setLoginError(null);
 
         try {
             const response = await matrimonialService.login({
-                email: normalizedEmail,
+                email: loginEmail.trim(),
                 password: loginPassword,
             });
 
@@ -726,7 +768,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     id: response.result.id.toString(),
                     firstName: response.result.firstName,
                     lastName: response.result.lastName,
-                    email: response.result.email || response.result.username || normalizedEmail,
+                    email: response.result.email || response.result.username || loginEmail,
                     phone: response.result.mobileNumber || response.result.phoneNumber || '',
                     whatsapp: response.result.WhatsApp || response.result.whatsApp || response.result.whatsapp || '',
                     nic: response.result.nic || response.result.Nic || response.result.nicNumber || response.result.identityDocument || response.result.IdentityDocument || '',
@@ -738,11 +780,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     isVerified: response.result.status === 1,
                 };
 
-                login(user, rememberMe);
+                login(user);
 
                 // Store token
                 if (response.result.accessToken) {
-                    setStoredToken(response.result.accessToken, rememberMe);
+                    localStorage.setItem('token', response.result.accessToken);
                 }
 
                 onClose();
@@ -752,11 +794,18 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     window.location.href = '/';
                 }, 100);
             } else {
-                setLoginError(response.message || 'Login failed. Please check your credentials.');
+                const msg = response.message || '';
+                if (/password/i.test(msg)) {
+                    setLoginPasswordError('Incorrect password. Please try again.');
+                } else if (/email|user|not found|exist/i.test(msg)) {
+                    setLoginEmailError('No account found with this email address.');
+                } else {
+                    setLoginError('Invalid email or password. Please try again.');
+                }
             }
         } catch (error) {
             console.error('Login error:', error);
-            setLoginError(error instanceof Error ? error.message : 'Login failed. Please try again.');
+            setLoginError('Unable to sign in. Please check your connection and try again.');
         } finally {
             setIsLoading(false);
         }
@@ -765,6 +814,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const resetForgotPasswordState = () => {
         setShowForgotPassword(false);
         setForgotMode('contact');
+        setForgotContactMethod('email');
         setForgotContactEmail('');
         setForgotContactPhone('');
         setForgotContactWhatsApp('');
@@ -780,6 +830,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotSuccess(null);
         setForgotStep('entry');
         setIsForgotSubmitting(false);
+        setLoginError(null);
+        setLoginEmailError(null);
+        setLoginPasswordError(null);
     };
 
     const handleSearchRecoveryAccounts = async () => {
@@ -810,24 +863,47 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleInitiateForgotByContact = async () => {
-        const normalizedEmail = forgotContactEmail.trim();
-        const normalizedPhone = forgotContactPhone.trim();
-        const normalizedWhatsApp = forgotContactWhatsApp.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-        if (normalizedEmail && !/\S+@\S+\.\S+/.test(normalizedEmail)) {
-            setForgotError('Please enter a valid registered email address.');
-            return;
-        }
+        let payload: { email?: string; phoneNumber?: string; whatsApp?: string } = {};
+        let notFoundMsg = '';
 
-        const payload = {
-            email: normalizedEmail || undefined,
-            phoneNumber: normalizedPhone || undefined,
-            whatsApp: normalizedWhatsApp || undefined,
-        };
-
-        if (!payload.email && !payload.phoneNumber && !payload.whatsApp) {
-            setForgotError('Enter your registered email, phone number, or WhatsApp number to continue.');
-            return;
+        if (forgotContactMethod === 'email') {
+            const emailVal = forgotContactEmail.trim();
+            if (!emailVal) {
+                setForgotError('Please enter your registered email address.');
+                return;
+            }
+            if (!emailRegex.test(emailVal)) {
+                setForgotError('Please enter a valid email address (e.g. yourname@email.com).');
+                return;
+            }
+            payload = { email: emailVal };
+            notFoundMsg = 'No account is registered with this email address. Please check and try again.';
+        } else if (forgotContactMethod === 'phone') {
+            const phoneVal = forgotContactPhone.trim();
+            if (!phoneVal) {
+                setForgotError('Please enter your registered phone number.');
+                return;
+            }
+            if (!isValidSriLankanPhone(phoneVal)) {
+                setForgotError('Please enter a valid phone number (e.g. 0771234567 or +94771234567).');
+                return;
+            }
+            payload = { phoneNumber: phoneVal };
+            notFoundMsg = 'No account is registered with this phone number. Please check and try again.';
+        } else {
+            const waVal = forgotContactWhatsApp.trim();
+            if (!waVal) {
+                setForgotError('Please enter your registered WhatsApp number.');
+                return;
+            }
+            if (!isValidSriLankanPhone(waVal)) {
+                setForgotError('Please enter a valid WhatsApp number (e.g. 0771234567 or +94771234567).');
+                return;
+            }
+            payload = { whatsApp: waVal };
+            notFoundMsg = 'No account is registered with this WhatsApp number. Please check and try again.';
         }
 
         setIsForgotSubmitting(true);
@@ -836,22 +912,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         try {
             const response = await matrimonialService.initiateForgotPassword(payload);
+            const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
             const userId = response?.result?.userId;
-            const sentVia = response?.result?.sentVia || 'Email';
+            const sentVia = response?.result?.sentVia || forgotContactMethod;
 
-            if (!userId) {
-                setForgotError(response.message || 'Could not start password recovery.');
+            if (!statusOk || !userId) {
+                setForgotError(response?.message || notFoundMsg);
                 return;
             }
 
             setForgotRecoveryUserId(Number(userId));
             setForgotSentVia(sentVia);
             setForgotStep('verify');
-            setForgotSuccess(`A verification code was sent via ${sentVia}.`);
-            showToast(`A verification code has been sent via ${sentVia}.`, 'success');
+            setForgotSuccess(`A verification code has been sent to your ${sentVia}. Please check and enter the code below.`);
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Could not verify your account details.');
-            showToast(error instanceof Error ? error.message : 'Could not verify your account details.', 'error');
+            setForgotError(error instanceof Error ? error.message : 'Could not verify your account details. Please try again.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -865,22 +940,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         try {
             const response = await matrimonialService.initiateForgotPassword({ userId: account.userId });
+            const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
             const userId = response?.result?.userId;
             const sentVia = response?.result?.sentVia || account.verifiedBy || 'Email';
 
-            if (!userId) {
-                setForgotError(response.message || 'Could not start password recovery.');
+            if (!statusOk || !userId) {
+                setForgotError(response?.message || 'Could not send a verification code to this account. Please try again.');
                 return;
             }
 
             setForgotRecoveryUserId(Number(userId));
             setForgotSentVia(String(sentVia));
             setForgotStep('verify');
-            setForgotSuccess(`A verification code was sent via ${sentVia}.`);
-            showToast(`Code sent via ${sentVia} to the selected account.`, 'success');
+            setForgotSuccess(`A verification code has been sent to your ${sentVia}. Please check and enter the code below.`);
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Could not send verification code.');
-            showToast(error instanceof Error ? error.message : 'Could not send verification code.', 'error');
+            setForgotError(error instanceof Error ? error.message : 'Could not send verification code. Please try again.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -921,7 +995,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             if (response.statusCode === 200 || response.statusCode === 1) {
                 setForgotSuccess(response.message || 'Password reset successfully.');
-                showToast('Password reset successfully. Please login with your new password.', 'success');
+                alert('Password reset successfully. Please login with your new password.');
                 resetForgotPasswordState();
                 setLoginTab('login');
             } else {
@@ -929,7 +1003,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             }
         } catch (error) {
             setForgotError(error instanceof Error ? error.message : 'Failed to reset password.');
-            showToast(error instanceof Error ? error.message : 'Failed to reset password.', 'error');
+            alert(error instanceof Error ? error.message : 'Failed to reset password.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -983,17 +1057,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const handleNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = sanitizeNicInput(e.target.value);
         setNic(value);
-        setErrors((prev) => {
-            const next = { ...prev };
-            if (!value.trim()) {
-                next.nic = 'NIC/Passport is required';
-            } else {
-                const ne = nicOrPassportFormatError(value);
-                if (ne) next.nic = ne;
-                else delete next.nic;
-            }
-            return next;
-        });
         const result = parseNIC(value);
         if (result) {
             setDob(result.dob);
@@ -1096,7 +1159,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             if (response.statusCode === 200 || response.statusCode === 1) {
                 // Verification successful.
                 // Ensure we have a token for authorized APIs (uploads, profile updates).
-                const existingToken = getStoredToken();
+                const existingToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
                 const fallbackUser = user || undefined;
                 let userToLogin = {
@@ -1130,7 +1193,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         return;
                     }
 
-                    setStoredToken(token, true);
+                    localStorage.setItem('token', token);
 
                     const r = loginResponse.result;
                     userToLogin = {
@@ -1204,17 +1267,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         <h2>{activeModal === 'verify' ? 'Verify Account' : 'Welcome Back'}</h2>
                         <p>{activeModal === 'verify' ? 'Please verify your account to continue' : 'Login to continue your journey'}</p>
                     </div>
-                    {activeModal !== 'verify' && !showVerification && (
-                        <div style={{ padding: '0 2rem' }}>
-                            <div className="login-tabs" style={{ background: '#ffffff' }}>
+                    <div className="modal-body">
+                        {activeModal !== 'verify' && !showVerification && (
+                            <div className="login-tabs">
                                 <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => { setLoginTab('login'); setShowForgotPassword(false); }}>Login</button>
                                 <button className={`login-tab ${loginTab === 'register' ? 'active' : ''}`} onClick={() => { setLoginTab('register'); setShowForgotPassword(false); }}>Register</button>
                             </div>
-                        </div>
-                    )}
-                    <div className="modal-body">
+                        )}
+
                         {activeModal === 'verify' || showVerification ? (
-                            <div id="verificationTab" className="tab-content active verification-screen" style={{ paddingRight: '0.5rem' }}>
+                            <div id="verificationTab" className="tab-content active verification-screen" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
                                 <div className="verification-header">
                                     <div className="verification-icon">
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1462,29 +1524,84 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
                                                 {forgotMode === 'contact' ? (
                                                     <>
-                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
-                                                            Enter the same email, phone number, or WhatsApp used during registration.
-                                                            If details are wrong, recovery cannot continue.
+                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginBottom: '0.75rem' }}>
+                                                            Choose how you want to receive the recovery code:
                                                         </p>
-                                                        <div className="form-group">
-                                                            <label>Registered Email</label>
-                                                            <input type="email" value={forgotContactEmail} onChange={(e) => setForgotContactEmail(e.target.value)} placeholder="your@email.com" />
+                                                        {/* Method picker */}
+                                                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                                                            {(['email', 'phone', 'whatsapp'] as const).map((m) => {
+                                                                const label = m === 'email' ? '📧 Email' : m === 'phone' ? '📞 Phone' : '💬 WhatsApp';
+                                                                const active = forgotContactMethod === m;
+                                                                return (
+                                                                    <button
+                                                                        key={m}
+                                                                        type="button"
+                                                                        onClick={() => { setForgotContactMethod(m); setForgotError(null); setForgotSuccess(null); }}
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            padding: '0.45rem 0.25rem',
+                                                                            borderRadius: '6px',
+                                                                            border: active ? '2px solid var(--primary)' : '1px solid #d1d5db',
+                                                                            background: active ? 'var(--primary)' : '#fff',
+                                                                            color: active ? '#fff' : '#374151',
+                                                                            fontWeight: active ? 700 : 400,
+                                                                            fontSize: '0.8rem',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease',
+                                                                        }}
+                                                                    >
+                                                                        {label}
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
-                                                        <div className="form-group">
-                                                            <label>Registered Phone Number</label>
-                                                            <input type="text" value={forgotContactPhone} onChange={(e) => setForgotContactPhone(sanitizeSriLankanPhoneInput(e.target.value))} placeholder={SL_PHONE_PLACEHOLDER} />
-                                                        </div>
-                                                        <div className="form-group">
-                                                            <label>Registered WhatsApp Number</label>
-                                                            <input type="text" value={forgotContactWhatsApp} onChange={(e) => setForgotContactWhatsApp(sanitizeSriLankanPhoneInput(e.target.value))} placeholder={SL_PHONE_PLACEHOLDER} />
-                                                        </div>
+
+                                                        {/* Input for selected method only */}
+                                                        {forgotContactMethod === 'email' && (
+                                                            <div className="form-group">
+                                                                <label>Registered Email Address</label>
+                                                                <input
+                                                                    type="email"
+                                                                    value={forgotContactEmail}
+                                                                    onChange={(e) => { setForgotContactEmail(e.target.value); setForgotError(null); }}
+                                                                    placeholder="your@email.com"
+                                                                    autoComplete="email"
+                                                                />
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code to this email.</span>
+                                                            </div>
+                                                        )}
+                                                        {forgotContactMethod === 'phone' && (
+                                                            <div className="form-group">
+                                                                <label>Registered Phone Number</label>
+                                                                <input
+                                                                    type="tel"
+                                                                    value={forgotContactPhone}
+                                                                    onChange={(e) => { setForgotContactPhone(sanitizeSriLankanPhoneInput(e.target.value)); setForgotError(null); }}
+                                                                    placeholder={SL_PHONE_PLACEHOLDER}
+                                                                />
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code to this phone number.</span>
+                                                            </div>
+                                                        )}
+                                                        {forgotContactMethod === 'whatsapp' && (
+                                                            <div className="form-group">
+                                                                <label>Registered WhatsApp Number</label>
+                                                                <input
+                                                                    type="tel"
+                                                                    value={forgotContactWhatsApp}
+                                                                    onChange={(e) => { setForgotContactWhatsApp(sanitizeSriLankanPhoneInput(e.target.value)); setForgotError(null); }}
+                                                                    placeholder={SL_PHONE_PLACEHOLDER}
+                                                                />
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code via WhatsApp to this number.</span>
+                                                            </div>
+                                                        )}
+
                                                         <button
                                                             className="btn btn-primary"
-                                                            style={{ width: '100%', justifyContent: 'center' }}
+                                                            style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}
                                                             onClick={handleInitiateForgotByContact}
                                                             disabled={isForgotSubmitting}
                                                         >
-                                                            {isForgotSubmitting ? 'Validating...' : 'Send Recovery Code'}
+                                                            {isForgotSubmitting ? 'Validating...' : `Send Code via ${forgotContactMethod === 'email' ? 'Email' : forgotContactMethod === 'phone' ? 'Phone' : 'WhatsApp'}`}
                                                         </button>
                                                     </>
                                                 ) : (
@@ -1601,29 +1718,49 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <>
                                         <div className="form-group">
                                             <label>Email</label>
-                                            <input type="email" placeholder="Enter your email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} />
+                                            <input
+                                                type="email"
+                                                placeholder="Enter your email"
+                                                value={loginEmail}
+                                                onChange={(e) => { setLoginEmail(e.target.value); setLoginEmailError(null); setLoginError(null); }}
+                                                style={{ borderColor: loginEmailError ? 'red' : '' }}
+                                                autoComplete="username"
+                                            />
+                                            {loginEmailError && (
+                                                <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
+                                                    {loginEmailError}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="form-group">
                                             <label>Password</label>
-                                            <input type="password" placeholder="Enter your password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} />
+                                            <input
+                                                type="password"
+                                                placeholder="Enter your password"
+                                                value={loginPassword}
+                                                onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
+                                                style={{ borderColor: loginPasswordError ? 'red' : '' }}
+                                                autoComplete="current-password"
+                                            />
+                                            {loginPasswordError && (
+                                                <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
+                                                    {loginPasswordError}
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="checkbox-group">
-                                            <input
-                                                type="checkbox"
-                                                id="remember"
-                                                checked={rememberMe}
-                                                onChange={(e) => setRememberMe(e.target.checked)}
-                                            />
+                                            <input type="checkbox" id="remember" />
                                             <label htmlFor="remember">Remember me</label>
                                         </div>
                                         {loginError && (
                                             <div style={{
-                                                color: 'red',
-                                                fontSize: '0.9rem',
+                                                color: '#b91c1c',
+                                                fontSize: '0.85rem',
                                                 marginBottom: '1rem',
-                                                padding: '0.5rem',
-                                                backgroundColor: '#ffe6e6',
-                                                borderRadius: '4px'
+                                                padding: '0.6rem 0.75rem',
+                                                backgroundColor: '#fee2e2',
+                                                borderRadius: '6px',
+                                                borderLeft: '3px solid #ef4444',
                                             }}>
                                                 {loginError}
                                             </div>
@@ -1650,18 +1787,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 Forgot Password?
                                             </a>
                                         </p>
-                                        <div className="divider">
-                                            <span>or continue with</span>
-                                        </div>
-                                        <div className="social-login">
-                                            <button className="social-btn">G</button>
-                                            <button className="social-btn">f</button>
-                                        </div>
                                     </>
                                 )}
                             </div>
                         ) : (
-                            <div id="registerTab" className="tab-content active" style={{ paddingRight: '0.5rem', paddingBottom: '1rem' }}>
+                            <div id="registerTab" className="tab-content active" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
                                 <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Create a new account to get started</p>
 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
@@ -1814,7 +1944,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     style={{
                                         width: '100%',
                                         justifyContent: 'center',
-                                        marginBottom: '0.5rem',
                                         opacity: (loginTermsAccepted && !isLoading) ? 1 : 0.5,
                                         cursor: (loginTermsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
                                     }}
@@ -2187,7 +2316,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     style={{
                                         width: '100%',
                                         justifyContent: 'center',
-                                        marginBottom: '0.5rem',
                                         opacity: (termsAccepted && !isLoading) ? 1 : 0.5,
                                         cursor: (termsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
                                     }}
