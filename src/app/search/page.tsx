@@ -14,6 +14,15 @@ function SearchContent() {
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
 
+    const normalizeReligion = (value?: string | null): string => {
+        const v = (value || '').trim().toLowerCase();
+        if (!v || v === 'any') return '';
+        if (v === 'christianity' || v === 'christians') return 'christian';
+        if (v === 'hinduism' || v === 'hindus') return 'hindu';
+        if (v === 'islamic') return 'islam';
+        return v;
+    };
+
     useEffect(() => {
         const fetchAndFilterProfiles = async () => {
             try {
@@ -35,7 +44,7 @@ function SearchContent() {
                         }
                         if (ageFrom && profile.age < parseInt(ageFrom)) return false;
                         if (ageTo && profile.age > parseInt(ageTo)) return false;
-                        if (religion && religion !== 'Any' && profile.religion !== religion) return false;
+                        if (normalizeReligion(religion) && normalizeReligion(profile.religion) !== normalizeReligion(religion)) return false;
                         if (district && district !== 'Any' && profile.cityOfResidence !== district) return false;
                         return true;
                     });

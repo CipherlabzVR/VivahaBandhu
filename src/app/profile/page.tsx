@@ -67,12 +67,17 @@ export default function ProfilePage() {
             ]);
 
             const profileUpdates: any = {};
+            let userApiPhoto = '';
+            let matrimonialApiPhoto = '';
+            let receivedUserApi = false;
+            let receivedMatrimonialApi = false;
 
             // Process user details (AppUser data - has NIC, WhatsApp, Phone, DOB)
             if (userResponse && userResponse.ok) {
                 const userData = await userResponse.json();
                 const u = userData.result || userData;
                 if (u) {
+                    receivedUserApi = true;
                     if (u.identityDocument) {
                         profileUpdates.nic = u.identityDocument;
                     }
@@ -85,9 +90,8 @@ export default function ProfilePage() {
                     if (u.dateofBirth || u.dateOfBirth) {
                         profileUpdates.dob = toDateOnly(u.dateofBirth || u.dateOfBirth);
                     }
-                    if (u.profilePhoto && u.profilePhoto.length > 0) {
-                        profileUpdates.profilePhoto = u.profilePhoto;
-                    }
+                    userApiPhoto = typeof u.profilePhoto === 'string' ? u.profilePhoto.trim() : '';
+                    if (userApiPhoto) profileUpdates.profilePhoto = userApiPhoto;
                     if (u.status !== undefined) {
                         profileUpdates.isVerified = u.status === 1;
                     }
@@ -102,6 +106,7 @@ export default function ProfilePage() {
                 const data = await profileResponse.json();
                 if (data.result) {
                     const r = data.result;
+                    receivedMatrimonialApi = true;
 
                     const rStatus = r.status ?? r.Status;
                     if (rStatus !== undefined && profileUpdates.isVerified === undefined) {
@@ -109,9 +114,7 @@ export default function ProfilePage() {
                     }
                     
                     const profilePhoto = r.profilePhoto || r.ProfilePhoto;
-                    if (!profileUpdates.profilePhoto && !user?.profilePhoto && profilePhoto && profilePhoto.length > 0) {
-                        profileUpdates.profilePhoto = withCacheBuster(profilePhoto);
-                    }
+                    matrimonialApiPhoto = typeof profilePhoto === 'string' ? profilePhoto.trim() : '';
                     
                     const gender = r.gender || r.Gender;
                     if (gender && gender.length > 0) {
@@ -151,6 +154,15 @@ export default function ProfilePage() {
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
                     
+                    // Resolve profile photo from APIs; clear stale cached value if both are empty.
+                    if (userApiPhoto) {
+                        profileUpdates.profilePhoto = userApiPhoto;
+                    } else if (matrimonialApiPhoto) {
+                        profileUpdates.profilePhoto = withCacheBuster(matrimonialApiPhoto);
+                    } else if (receivedUserApi || receivedMatrimonialApi) {
+                        profileUpdates.profilePhoto = '';
+                    }
+
                     // Update user context with all available data
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
@@ -170,12 +182,18 @@ export default function ProfilePage() {
                     }
                 } else {
                     // Profile data exists but result is null - update with user data only
+                    if (!userApiPhoto && (receivedUserApi || receivedMatrimonialApi)) {
+                        profileUpdates.profilePhoto = '';
+                    }
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
                     }
                 }
             } else {
                 // Profile not found - still apply user data updates
+                if (!userApiPhoto && receivedUserApi) {
+                    profileUpdates.profilePhoto = '';
+                }
                 if (Object.keys(profileUpdates).length > 0) {
                     updateUser(profileUpdates);
                 }

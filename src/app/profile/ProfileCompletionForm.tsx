@@ -7,6 +7,8 @@ import { Country, City } from 'country-state-city';
 import { getStoredToken } from '../../utils/authStorage';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+const MIN_HEIGHT_CM = 120;
+const MAX_HEIGHT_CM = 250;
 
 type CountryOption = { name: string; isoCode: string };
 
@@ -327,6 +329,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
     // Only fetch once when the form mounts (not on every user state change).
     const [initialFetchDone, setInitialFetchDone] = useState(false);
+    type UploadField = 'profilePhoto' | 'upload1' | 'upload2' | 'upload3';
+    type AnyUploadField = UploadField | 'horoscopeDocument';
 
     const countryOptions = useMemo(
         () => Country.getAllCountries().map((c) => ({ name: c.name, isoCode: c.isoCode })),
@@ -465,7 +469,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             motherReligion: v('motherReligion') || prev.motherReligion,
                             motherCaste: v('motherCaste') || prev.motherCaste,
                             motherRemarks: v('motherRemarks') || prev.motherRemarks,
-                            partnerMinAge: p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge,
+                            partnerMinAge: String(Math.max(18, parseInt(p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge || '18', 10) || 18)),
                             partnerMaxAge: p.partnerMaxAge || p.PartnerMaxAge || prev.partnerMaxAge,
                             partnerEatingHabits: v('partnerEatingHabits') || prev.partnerEatingHabits,
                             partnerDrinkingHabits: v('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
@@ -505,6 +509,26 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
+        if (name === 'height') {
+            const numericOnly = value.replace(/[^\d]/g, '').slice(0, 3);
+            setFormData(prev => ({ ...prev, [name]: numericOnly }));
+            return;
+        }
+        if (name === 'partnerMinAge') {
+            const numericOnly = value.replace(/[^\d]/g, '').slice(0, 2);
+            if (numericOnly === '') {
+                setFormData(prev => ({ ...prev, [name]: '' }));
+                return;
+            }
+            const normalized = Math.max(18, parseInt(numericOnly, 10) || 18);
+            setFormData(prev => ({ ...prev, [name]: String(normalized) }));
+            return;
+        }
+        if (name === 'occupation' || name === 'fatherOccupation' || name === 'motherOccupation') {
+            const lettersAndSpacesOnly = value.replace(/[^\p{L}\s]/gu, '');
+            setFormData(prev => ({ ...prev, [name]: lettersAndSpacesOnly }));
+            return;
+        }
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
@@ -515,6 +539,127 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         }
         // Allow selecting the same file again to re-upload/replace.
         e.target.value = '';
+    };
+
+    const handleRemoveUploadedImage = (fieldName: AnyUploadField) => {
+        setFormData((prev) => ({ ...prev, [fieldName]: '' }));
+        setPreviewBusters((prev) => {
+            if (!(fieldName in prev)) return prev;
+            const next = { ...prev };
+            delete next[fieldName];
+            return next;
+        });
+        if (fieldName === 'profilePhoto') {
+            updateUser({ profilePhoto: '' });
+        }
+        if (fieldName === 'horoscopeDocument') {
+            updateUser({ horoscopeDocument: '' });
+        }
+    };
+
+    const renderPhotoUploadField = (
+        fieldName: UploadField,
+        label: string,
+        alt: string,
+        required?: boolean
+    ) => {
+        const value = formData[fieldName];
+        const inputId = `${fieldName}Input`;
+        const isUploading = !!uploading[fieldName];
+
+        return (
+            <div className="form-group">
+                <label>{label}{required ? '*' : ''}</label>
+                <input
+                    id={inputId}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleFileChange(e, fieldName)}
+                    disabled={isUploading}
+                    style={{ display: 'none' }}
+                />
+                <label
+                    htmlFor={inputId}
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.3rem',
+                        border: '2px dashed #e7d8c9',
+                        borderRadius: '12px',
+                        padding: '1rem',
+                        minHeight: '200px',
+                        background: value ? `linear-gradient(rgba(17, 24, 39, 0.45), rgba(17, 24, 39, 0.45)), url(${previewSrc(fieldName, value)}) center/cover no-repeat` : '#fff',
+                        cursor: isUploading ? 'not-allowed' : 'pointer',
+                        opacity: isUploading ? 0.7 : 1,
+                        transition: 'all 0.2s ease',
+                        position: 'relative',
+                    }}
+                >
+                    {value && (
+                        <button
+                            type="button"
+                            title="Remove image"
+                            aria-label="Remove image"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleRemoveUploadedImage(fieldName);
+                            }}
+                            disabled={isUploading}
+                            style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '8px',
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                border: 'none',
+                                background: '#ef4444',
+                                color: 'white',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.9rem',
+                                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                                zIndex: 2,
+                            }}
+                        >
+                            ✕
+                        </button>
+                    )}
+                    <div
+                        style={{
+                            width: '44px',
+                            height: '44px',
+                            borderRadius: '50%',
+                            background: 'rgba(255,255,255,0.92)',
+                            color: '#111827',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 1,
+                        }}
+                    >
+                        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden>
+                            <path
+                                fill="currentColor"
+                                d="M9 4l-1.2 1.6c-.2.3-.5.4-.8.4H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-2c-.3 0-.6-.1-.8-.4L15 4H9zm3 4.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm0 2A2.5 2.5 0 1 0 14.5 13 2.5 2.5 0 0 0 12 10.5z"
+                            />
+                        </svg>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: value ? '#fff' : '#374151', textAlign: 'center', zIndex: 1 }}>
+                        {isUploading ? 'Uploading image...' : value ? 'Tap to change image' : 'Drop your image here, or browse'}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: value ? 'rgba(255,255,255,0.86)' : '#9ca3af', textAlign: 'center', zIndex: 1 }}>
+                        Supports JPG, PNG, WEBP
+                    </div>
+                </label>
+            </div>
+        );
     };
 
     const withCacheBuster = (url: string) => {
@@ -591,6 +736,11 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 setSubmitError('Please fill in all mandatory fields (*)');
                 return false;
             }
+            const heightCm = Number(formData.height);
+            if (!Number.isFinite(heightCm) || heightCm < MIN_HEIGHT_CM || heightCm > MAX_HEIGHT_CM) {
+                setSubmitError(`Height must be between ${MIN_HEIGHT_CM} and ${MAX_HEIGHT_CM} cm.`);
+                return false;
+            }
         }
         if (currentStep === 2) {
             const userCountries = formData.countryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
@@ -602,6 +752,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         if (currentStep === 3) {
             if (!formData.horoscope) {
                 setSubmitError('Please select Horoscope option (*)');
+                return false;
+            }
+            if (formData.horoscope === 'Required' && !formData.horoscopeDocument) {
+                setSubmitError('Please upload Horoscope Document to continue.');
                 return false;
             }
         }
@@ -623,7 +777,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         userId: user?.id,
         ...formData,
         height: parseFloat(formData.height) || 0,
-        partnerMinAge: parseInt(formData.partnerMinAge) || 18,
+        partnerMinAge: Math.max(18, parseInt(formData.partnerMinAge) || 18),
         partnerMaxAge: parseInt(formData.partnerMaxAge) || 60,
         dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
     });
@@ -796,10 +950,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 {step === 1 && (
                     <div className="step-content">
                         <h3>Personal Details</h3>
-                        <div className="form-grid">
+                        <div className="form-grid step6-grid">
                             <div className="form-group">
                                 <label>Gender*</label>
-                                <select name="gender" value={formData.gender} onChange={handleChange} required>
+                                <select name="gender" value={formData.gender} onChange={handleChange} required disabled>
                                     <option value="">Select Gender</option>
                                     <option value="Male">Male</option>
                                     <option value="Female">Female</option>
@@ -808,7 +962,17 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             {/* DOB Removed */}
                             <div className="form-group">
                                 <label>Height (cm)*</label>
-                                <input type="number" name="height" value={formData.height} onChange={handleChange} required placeholder="e.g. 175" />
+                                <input
+                                    type="number"
+                                    name="height"
+                                    value={formData.height}
+                                    onChange={handleChange}
+                                    required
+                                    min={MIN_HEIGHT_CM}
+                                    max={MAX_HEIGHT_CM}
+                                    step={1}
+                                    placeholder="e.g. 175"
+                                />
                             </div>
                             <div className="form-group">
                                 <label>Complexion</label>
@@ -967,30 +1131,101 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                                     <label>Upload Horoscope Document</label>
                                     <input
+                                        id="horoscopeDocumentInput"
                                         type="file"
                                         accept="image/*,.pdf,.doc,.docx"
                                         onChange={(e) => handleFileChange(e, 'horoscopeDocument')}
                                         disabled={uploading['horoscopeDocument']}
+                                        style={{ display: 'none' }}
                                     />
-                                    {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
-                                    {formData.horoscopeDocument && (
-                                        <div style={{ marginTop: '0.5rem' }}>
-                                            <img
-                                                src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
-                                                alt="Horoscope"
-                                                onClick={() => setHoroscopePopupOpen(true)}
-                                                style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
-                                            />
-                                            <div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setHoroscopePopupOpen(true)}
-                                                    style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.25rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
-                                                >
-                                                    View Full Image
-                                                </button>
-                                            </div>
+                                    <label
+                                        htmlFor="horoscopeDocumentInput"
+                                        style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '0.3rem',
+                                            border: '2px dashed #e7d8c9',
+                                            borderRadius: '12px',
+                                            padding: '1rem',
+                                            minHeight: '200px',
+                                            background: formData.horoscopeDocument ? `linear-gradient(rgba(17, 24, 39, 0.45), rgba(17, 24, 39, 0.45)), url(${previewSrc('horoscopeDocument', formData.horoscopeDocument)}) center/cover no-repeat` : '#fff',
+                                            cursor: uploading['horoscopeDocument'] ? 'not-allowed' : 'pointer',
+                                            opacity: uploading['horoscopeDocument'] ? 0.7 : 1,
+                                            transition: 'all 0.2s ease',
+                                            position: 'relative',
+                                        }}
+                                    >
+                                        {formData.horoscopeDocument && (
+                                            <button
+                                                type="button"
+                                                title="Remove document"
+                                                aria-label="Remove document"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handleRemoveUploadedImage('horoscopeDocument');
+                                                }}
+                                                disabled={uploading['horoscopeDocument']}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '8px',
+                                                    right: '8px',
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    border: 'none',
+                                                    background: '#ef4444',
+                                                    color: 'white',
+                                                    cursor: 'pointer',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    fontSize: '0.9rem',
+                                                    boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+                                                    zIndex: 2,
+                                                }}
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+                                        <div
+                                            style={{
+                                                width: '44px',
+                                                height: '44px',
+                                                borderRadius: '50%',
+                                                background: 'rgba(255,255,255,0.92)',
+                                                color: '#111827',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                zIndex: 1,
+                                            }}
+                                        >
+                                            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden>
+                                                <path
+                                                    fill="currentColor"
+                                                    d="M9 4l-1.2 1.6c-.2.3-.5.4-.8.4H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-2c-.3 0-.6-.1-.8-.4L15 4H9zm3 4.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm0 2A2.5 2.5 0 1 0 14.5 13 2.5 2.5 0 0 0 12 10.5z"
+                                                />
+                                            </svg>
                                         </div>
+                                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: formData.horoscopeDocument ? '#fff' : '#374151', textAlign: 'center', zIndex: 1 }}>
+                                            {uploading['horoscopeDocument'] ? 'Uploading document...' : formData.horoscopeDocument ? 'Tap to change document' : 'Drop your document here, or browse'}
+                                        </div>
+                                        <div style={{ fontSize: '0.72rem', color: formData.horoscopeDocument ? 'rgba(255,255,255,0.86)' : '#9ca3af', textAlign: 'center', zIndex: 1 }}>
+                                            Supports JPG, PNG, PDF, DOC, DOCX
+                                        </div>
+                                    </label>
+                                    {formData.horoscopeDocument && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setHoroscopePopupOpen(true)}
+                                            style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.5rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
+                                        >
+                                            View Full Image
+                                        </button>
                                     )}
                                 </div>
                             )}
@@ -1117,7 +1352,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <label>Age Range (Years)</label>
                                 <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <input type="number" name="partnerMinAge" value={formData.partnerMinAge} onChange={handleChange} placeholder="Min" style={{ width: '50%' }} />
+                                    <input type="number" name="partnerMinAge" value={formData.partnerMinAge} onChange={handleChange} placeholder="Min" min={18} style={{ width: '50%' }} />
                                     <input type="number" name="partnerMaxAge" value={formData.partnerMaxAge} onChange={handleChange} placeholder="Max" style={{ width: '50%' }} />
                                 </div>
                             </div>
@@ -1216,69 +1451,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <h4>Profile Photos</h4>
                             </div>
 
-                            <div className="form-group">
-                                <label>Main Profile Photo*</label>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileChange(e, 'profilePhoto')}
-                                    disabled={uploading['profilePhoto']}
-                                />
-                                {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
-                                {formData.profilePhoto && (
-                                    <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="form-group">
-                                <label>Gallery Photo 1</label>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileChange(e, 'upload1')}
-                                    disabled={uploading['upload1']}
-                                />
-                                {uploading['upload1'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
-                                {formData.upload1 && (
-                                    <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="form-group">
-                                <label>Gallery Photo 2</label>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileChange(e, 'upload2')}
-                                    disabled={uploading['upload2']}
-                                />
-                                {uploading['upload2'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
-                                {formData.upload2 && (
-                                    <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="form-group">
-                                <label>Gallery Photo 3</label>
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileChange(e, 'upload3')}
-                                    disabled={uploading['upload3']}
-                                />
-                                {uploading['upload3'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
-                                {formData.upload3 && (
-                                    <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
-                                    </div>
-                                )}
-                            </div>
+                            {renderPhotoUploadField('profilePhoto', 'Main Profile Photo', 'Profile', true)}
+                            {renderPhotoUploadField('upload1', 'Gallery Photo 1', 'Gallery 1')}
+                            {renderPhotoUploadField('upload2', 'Gallery Photo 2', 'Gallery 2')}
+                            {renderPhotoUploadField('upload3', 'Gallery Photo 3', 'Gallery 3')}
                         </div>
                     </div>
                 )}
@@ -1322,6 +1498,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     border-radius: 6px;
                     font-size: 1rem;
                     transition: border-color 0.3s;
+                }
+                .step6-grid {
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
                 }
                 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
                     outline: none;
