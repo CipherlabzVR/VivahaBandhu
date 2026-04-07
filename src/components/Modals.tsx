@@ -77,6 +77,26 @@ function getPasswordStrength(password: string, checks: PwdChecks): { level: numb
     return { level: 4, label: 'Strong', color: '#22c55e' };
 }
 
+const MIN_REGISTRATION_AGE = 18;
+
+function calculateAgeFromDateString(dateOnly: string): number | null {
+    if (!dateOnly) return null;
+    const m = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    if (!year || !month || !day) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - year;
+    const monthDiff = (today.getMonth() + 1) - month;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
+        age -= 1;
+    }
+    return age;
+}
+
 function RegisterPasswordFields({
     idPrefix,
     password,
@@ -433,6 +453,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
     const [forgotContactMethod, setForgotContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
@@ -648,6 +669,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     const handleRegister = async () => {
         if (!validateForm()) {
+            return;
+        }
+
+        const nicParsed = parseNIC(nic);
+        const referenceDob = nicParsed?.dob || dob;
+        const age = calculateAgeFromDateString(referenceDob);
+        if (age !== null && age < MIN_REGISTRATION_AGE) {
+            setRegisterError(`You must be at least ${MIN_REGISTRATION_AGE} years old to create an account.`);
             return;
         }
 
@@ -1103,6 +1132,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setProfilePhotoBase64('');
             setPhotoPreview('');
             setConfirmPassword('');
+            setShowLoginPassword(false);
             setShowRegisterPassword(false);
             setShowRegisterConfirmPassword(false);
         }
@@ -1734,14 +1764,37 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                         <div className="form-group">
                                             <label>Password</label>
-                                            <input
-                                                type="password"
-                                                placeholder="Enter your password"
-                                                value={loginPassword}
-                                                onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
-                                                style={{ borderColor: loginPasswordError ? 'red' : '' }}
-                                                autoComplete="current-password"
-                                            />
+                                            <div style={{ position: 'relative' }}>
+                                                <input
+                                                    type={showLoginPassword ? 'text' : 'password'}
+                                                    placeholder="Enter your password"
+                                                    value={loginPassword}
+                                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
+                                                    style={{ borderColor: loginPasswordError ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                    autoComplete="current-password"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowLoginPassword((v) => !v)}
+                                                    tabIndex={-1}
+                                                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                                                    style={{
+                                                        position: 'absolute',
+                                                        right: '10px',
+                                                        top: '50%',
+                                                        transform: 'translateY(-50%)',
+                                                        border: 'none',
+                                                        background: 'transparent',
+                                                        cursor: 'pointer',
+                                                        padding: '4px',
+                                                        fontSize: '1rem',
+                                                        lineHeight: 1,
+                                                        color: 'var(--text-light)',
+                                                    }}
+                                                >
+                                                    {showLoginPassword ? '🙈' : '👁'}
+                                                </button>
+                                            </div>
                                             {loginPasswordError && (
                                                 <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
                                                     {loginPasswordError}
@@ -1925,7 +1978,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={loginTermsAccepted}
                                         onChange={(e) => setLoginTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="termsLogin">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+                                    <label htmlFor="termsLogin">I agree to the <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
                                     <div style={{
@@ -2297,7 +2350,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={termsAccepted}
                                         onChange={(e) => setTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="terms">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+                                    <label htmlFor="terms">I agree to the <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
                                     <div style={{

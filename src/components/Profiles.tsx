@@ -21,6 +21,13 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
 
     const [isMatched, setIsMatched] = useState(false);
 
+    const isOwnProfile = (profile: any): boolean => {
+        if (!user?.id) return false;
+        const me = Number(user.id);
+        const profileOwnerId = Number(profile?.userId ?? profile?.UserId ?? profile?.id ?? profile?.Id);
+        return !Number.isNaN(profileOwnerId) && profileOwnerId === me;
+    };
+
     useEffect(() => {
         const fetchProfiles = async () => {
             try {
@@ -29,24 +36,24 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                     if (res.statusCode === 200 && res.result) {
                         const matched = res.result;
                         if (Array.isArray(matched) && matched.length > 0) {
-                            setProfiles(matched);
+                            setProfiles(matched.filter((p: any) => !isOwnProfile(p)));
                             setIsMatched(true);
                         } else {
                             const fallback = await matrimonialService.getRecentProfiles(4);
-                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result);
+                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result.filter((p: any) => !isOwnProfile(p)));
                             setIsMatched(false);
                         }
                     }
                 } else {
                     const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result.filter((p: any) => !isOwnProfile(p)));
                     setIsMatched(false);
                 }
             } catch (error) {
                 console.error("Failed to load profiles", error);
                 try {
                     const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result.filter((p: any) => !isOwnProfile(p)));
                 } catch (e) { /* ignore */ }
             }
         };
@@ -142,6 +149,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
             <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                 {profiles.map((profile, index) => {
                     const isBlurred = index % 2 !== 0; // Simulate blurred subscription view for test
+                    const showVerifiedBadge = profile?.isVerified === true;
                     const placeholderImg = profile.gender === "Female"
                         ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
                         : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
@@ -154,7 +162,9 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                             }
                             if (!isBlurred && onOpenProfileDetail) onOpenProfileDetail(profile); 
                         }} className={`bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative ${!isBlurred ? 'cursor-pointer' : ''}`}>
-                            <span className="absolute top-4 right-4 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold z-10">{t('verified')}</span>
+                            {showVerifiedBadge && (
+                                <span className="absolute top-4 right-4 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold z-10">{t('verified')}</span>
+                            )}
                             <div className="relative">
                                 <img src={profile.profilePhoto || placeholderImg} alt="Profile" className="w-full h-80 object-cover" />
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-white">

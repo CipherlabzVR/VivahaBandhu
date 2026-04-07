@@ -30,6 +30,22 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const [loading, setLoading] = useState(false);
     const [actionToast, setActionToast] = useState('');
 
+    const normalizeReligion = (value?: string | null): string => {
+        const v = (value || '').trim().toLowerCase();
+        if (!v || v === 'any') return '';
+        if (v === 'christianity' || v === 'christians') return 'christian';
+        if (v === 'hinduism' || v === 'hindus') return 'hindu';
+        if (v === 'islamic') return 'islam';
+        return v;
+    };
+
+    const isOwnProfile = (profile: any): boolean => {
+        if (!user?.id) return false;
+        const me = Number(user.id);
+        const profileOwnerId = Number(profile?.userId ?? profile?.UserId ?? profile?.id ?? profile?.Id);
+        return !Number.isNaN(profileOwnerId) && profileOwnerId === me;
+    };
+
     const fetchProfiles = async () => {
         setLoading(true);
         try {
@@ -37,6 +53,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 ...filters,
                 minAge: filters.minAge ? parseInt(filters.minAge) : null,
                 maxAge: filters.maxAge ? parseInt(filters.maxAge) : null,
+                religion: normalizeReligion(filters.religion),
             };
 
             if (preferredSearch && user?.id) {
@@ -49,8 +66,17 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             
             const res = await matrimonialService.searchProfiles(searchParams);
             if (res.statusCode === 200 && res.result) {
-                setProfiles(res.result.profiles || res.result.Profiles || []);
-                setTotalCount(res.result.totalCount || res.result.TotalCount || 0);
+                const fetchedProfiles = res.result.profiles || res.result.Profiles || [];
+                const normalizedSelectedReligion = normalizeReligion(filters.religion);
+                const filteredProfiles = normalizedSelectedReligion
+                    ? fetchedProfiles.filter((profile: any) => normalizeReligion(profile?.religion || profile?.Religion) === normalizedSelectedReligion)
+                    : fetchedProfiles;
+                const visibleProfiles = filteredProfiles.filter((profile: any) => !isOwnProfile(profile));
+                const removedOwnCount = filteredProfiles.length - visibleProfiles.length;
+                const serverTotal = Number(res.result.totalCount || res.result.TotalCount || 0);
+
+                setProfiles(visibleProfiles);
+                setTotalCount(Math.max(0, serverTotal - removedOwnCount));
             }
         } catch (error) {
             console.error("Failed to load profiles", error);
@@ -232,7 +258,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             <option value="Buddhism">Buddhism</option>
                             <option value="Hinduism">Hinduism</option>
                             <option value="Islam">Islam</option>
-                            <option value="Christianity">Christianity</option>
+                            <option value="Christian">Christianity</option>
                             <option value="Catholic">Catholic</option>
                             <option value="Other">Other</option>
                         </select>
@@ -297,6 +323,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="results-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
                         {profiles.map((profile, index) => {
+                            const showVerifiedBadge = profile?.isVerified === true;
                             const placeholderImg = profile.gender === "Female"
                                 ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
                                 : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
@@ -309,7 +336,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     }
                                     onOpenProfileDetail(profile);
                                 }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={{ borderRadius: '20px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', cursor: 'pointer' }}>
-                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    {showVerifiedBadge && (
+                                        <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    )}
                                     <div style={{ position: 'relative', height: '300px' }}>
                                         <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', padding: '20px 15px', color: 'white' }}>
