@@ -1,7 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
+import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
+import MatchmakerBadge from './MatchmakerBadge';
+import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
+import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
@@ -30,20 +34,111 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const [loading, setLoading] = useState(false);
     const [actionToast, setActionToast] = useState('');
 
-    const normalizeReligion = (value?: string | null): string => {
-        const v = (value || '').trim().toLowerCase();
-        if (!v || v === 'any') return '';
-        if (v === 'christianity' || v === 'christians') return 'christian';
-        if (v === 'hinduism' || v === 'hindus') return 'hindu';
-        if (v === 'islamic') return 'islam';
-        return v;
+    // Free-text search
+    const [searchInput, setSearchInput] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [highlightedSuggestion, setHighlightedSuggestion] = useState(-1);
+    const searchBoxRef = useRef<HTMLDivElement | null>(null);
+
+    // Debounce input -> active search term
+    useEffect(() => {
+        const handle = window.setTimeout(() => {
+            setSearchTerm(searchInput.trim());
+            setFilters(prev => (prev.pageNumber === 1 ? prev : { ...prev, pageNumber: 1 }));
+        }, 250);
+        return () => window.clearTimeout(handle);
+    }, [searchInput]);
+
+    // Close suggestion dropdown when clicking outside
+    useEffect(() => {
+        const onClick = (e: MouseEvent) => {
+            if (!searchBoxRef.current) return;
+            if (!searchBoxRef.current.contains(e.target as Node)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', onClick);
+        return () => document.removeEventListener('mousedown', onClick);
+    }, []);
+
+    const matchesSearch = (profile: any, q: string) => {
+        if (!q) return true;
+        const needle = q.toLowerCase();
+        const haystack = [
+            profile.firstName,
+            profile.lastName,
+            profile.cityOfResidence,
+            profile.country,
+            profile.occupation,
+            profile.qualificationLevel,
+            profile.religion,
+            profile.ethnicity,
+            profile.maritalStatus,
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+        return haystack.includes(needle);
     };
 
-    const isOwnProfile = (profile: any): boolean => {
-        if (!user?.id) return false;
-        const me = Number(user.id);
-        const profileOwnerId = Number(profile?.userId ?? profile?.UserId ?? profile?.id ?? profile?.Id);
-        return !Number.isNaN(profileOwnerId) && profileOwnerId === me;
+    const filteredProfiles = useMemo(() => {
+        if (!searchTerm) return profiles;
+        return profiles.filter(p => matchesSearch(p, searchTerm));
+    }, [profiles, searchTerm]);
+
+    const suggestions = useMemo(() => {
+        const q = searchInput.trim().toLowerCase();
+        if (!q || q.length < 1) return [] as { label: string; subLabel: string; profile: any }[];
+        const seen = new Set<string>();
+        const results: { label: string; subLabel: string; profile: any }[] = [];
+        for (const p of profiles) {
+            if (!matchesSearch(p, q)) continue;
+            const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Unnamed';
+            const key = `${p.userId || p.id}-${name}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const subParts = [p.age ? `${p.age} yrs` : null, p.cityOfResidence, p.occupation, p.religion].filter(Boolean);
+            results.push({ label: name, subLabel: subParts.join(' · '), profile: p });
+            if (results.length >= 8) break;
+        }
+        return results;
+    }, [profiles, searchInput]);
+
+    const applySuggestion = (s: { label: string; profile: any }) => {
+        setSearchInput(s.label);
+        setSearchTerm(s.label);
+        setShowSuggestions(false);
+        setHighlightedSuggestion(-1);
+        if (user?.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+        onOpenProfileDetail(s.profile);
+    };
+
+    const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (!showSuggestions || suggestions.length === 0) {
+            if (e.key === 'Escape') setShowSuggestions(false);
+            return;
+        }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedSuggestion(prev => (prev + 1) % suggestions.length);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedSuggestion(prev => (prev <= 0 ? suggestions.length - 1 : prev - 1));
+        } else if (e.key === 'Enter') {
+            if (highlightedSuggestion >= 0) {
+                e.preventDefault();
+                applySuggestion(suggestions[highlightedSuggestion]);
+            } else {
+                setShowSuggestions(false);
+            }
+        } else if (e.key === 'Escape') {
+            setShowSuggestions(false);
+            setHighlightedSuggestion(-1);
+        }
     };
 
     const fetchProfiles = async () => {
@@ -53,7 +148,6 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 ...filters,
                 minAge: filters.minAge ? parseInt(filters.minAge) : null,
                 maxAge: filters.maxAge ? parseInt(filters.maxAge) : null,
-                religion: normalizeReligion(filters.religion),
             };
 
             if (preferredSearch && user?.id) {
@@ -66,17 +160,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             
             const res = await matrimonialService.searchProfiles(searchParams);
             if (res.statusCode === 200 && res.result) {
-                const fetchedProfiles = res.result.profiles || res.result.Profiles || [];
-                const normalizedSelectedReligion = normalizeReligion(filters.religion);
-                const filteredProfiles = normalizedSelectedReligion
-                    ? fetchedProfiles.filter((profile: any) => normalizeReligion(profile?.religion || profile?.Religion) === normalizedSelectedReligion)
-                    : fetchedProfiles;
-                const visibleProfiles = filteredProfiles.filter((profile: any) => !isOwnProfile(profile));
-                const removedOwnCount = filteredProfiles.length - visibleProfiles.length;
-                const serverTotal = Number(res.result.totalCount || res.result.TotalCount || 0);
-
-                setProfiles(visibleProfiles);
-                setTotalCount(Math.max(0, serverTotal - removedOwnCount));
+                setProfiles(res.result.profiles || res.result.Profiles || []);
+                setTotalCount(res.result.totalCount || res.result.TotalCount || 0);
             }
         } catch (error) {
             console.error("Failed to load profiles", error);
@@ -258,7 +343,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             <option value="Buddhism">Buddhism</option>
                             <option value="Hinduism">Hinduism</option>
                             <option value="Islam">Islam</option>
-                            <option value="Christian">Christianity</option>
+                            <option value="Christianity">Christianity</option>
                             <option value="Catholic">Catholic</option>
                             <option value="Other">Other</option>
                         </select>
@@ -283,6 +368,78 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                 {/* Search Results */}
                 <div className="search-results">
+                    {/* Free-text search bar with live suggestions */}
+                    <div ref={searchBoxRef} style={{ position: 'relative', marginBottom: '15px' }}>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', backgroundColor: 'white', borderRadius: '10px', border: '1px solid #eee', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                            <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', display: 'flex' }} aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="11" cy="11" r="7" />
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                </svg>
+                            </span>
+                            <input
+                                type="search"
+                                value={searchInput}
+                                onChange={(e) => { setSearchInput(e.target.value); setShowSuggestions(true); setHighlightedSuggestion(-1); }}
+                                onFocus={() => { if (searchInput.trim()) setShowSuggestions(true); }}
+                                onKeyDown={handleSearchKeyDown}
+                                placeholder="Search by name, city, occupation, religion..."
+                                aria-label="Search profiles"
+                                aria-autocomplete="list"
+                                aria-expanded={showSuggestions && suggestions.length > 0}
+                                aria-controls="profile-search-suggestions"
+                                style={{ width: '100%', padding: '12px 44px 12px 42px', border: 'none', borderRadius: '10px', outline: 'none', fontSize: '0.95rem', background: 'transparent' }}
+                            />
+                            {searchInput && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setSearchInput(''); setSearchTerm(''); setShowSuggestions(false); setHighlightedSuggestion(-1); }}
+                                    aria-label="Clear search"
+                                    title="Clear search"
+                                    style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', border: 'none', background: '#f3f4f6', color: '#6b7280', cursor: 'pointer' }}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18" />
+                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+
+                        {showSuggestions && suggestions.length > 0 && (
+                            <ul
+                                id="profile-search-suggestions"
+                                role="listbox"
+                                style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, listStyle: 'none', margin: 0, padding: '6px 0', background: 'white', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', maxHeight: '320px', overflowY: 'auto' }}
+                            >
+                                {suggestions.map((s, idx) => {
+                                    const isActive = idx === highlightedSuggestion;
+                                    return (
+                                        <li
+                                            key={`${s.profile.userId || s.profile.id}-${idx}`}
+                                            role="option"
+                                            aria-selected={isActive}
+                                            onMouseEnter={() => setHighlightedSuggestion(idx)}
+                                            onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }}
+                                            style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '2px', backgroundColor: isActive ? '#fdf3ec' : 'transparent' }}
+                                        >
+                                            <span style={{ fontWeight: 600, color: '#1f2937', fontSize: '0.95rem' }}>{s.label}</span>
+                                            {s.subLabel && (
+                                                <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{s.subLabel}</span>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+
+                        {showSuggestions && searchInput.trim() && suggestions.length === 0 && (
+                            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, padding: '12px 14px', background: 'white', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', color: '#6b7280', fontSize: '0.9rem' }}>
+                                No matching profiles in current results. Try adjusting your filters.
+                            </div>
+                        )}
+                    </div>
+
                     <div className="results-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
                         <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? '#F97316' : '#333' }}>Preferred Search</span>
@@ -306,9 +463,13 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             </label>
                         </div>
                         <p className="results-count" style={{ margin: 0, color: '#666' }}>
-                            {totalCount > 0
-                                ? `Showing ${(filters.pageNumber - 1) * filters.pageSize + 1}–${Math.min(filters.pageNumber * filters.pageSize, totalCount)} of ${totalCount} profiles`
-                                : 'Showing 0 profiles'}
+                            {searchTerm
+                                ? (filteredProfiles.length > 0
+                                    ? `Showing ${filteredProfiles.length} match${filteredProfiles.length === 1 ? '' : 'es'} for “${searchTerm}”`
+                                    : `No matches for “${searchTerm}”`)
+                                : (totalCount > 0
+                                    ? `Showing ${(filters.pageNumber - 1) * filters.pageSize + 1}–${Math.min(filters.pageNumber * filters.pageSize, totalCount)} of ${totalCount} profiles`
+                                    : 'Showing 0 profiles')}
                         </p>
                     </div>
                     
@@ -322,12 +483,23 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     )}
 
                     <div className="results-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                        {profiles.map((profile, index) => {
-                            const showVerifiedBadge = profile?.isVerified === true;
-                            const placeholderImg = profile.gender === "Female"
-                                ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
-                                : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
+                        {filteredProfiles.map((profile, index) => {
+                            const placeholderImg = getDefaultAvatarDataUri({
+                                firstName: profile.firstName,
+                                lastName: profile.lastName,
+                                gender: profile.gender,
+                            });
 
+                            const isPremium = !!(profile.isPremium || profile.IsPremium);
+                            const isManaged = !!(profile.isMatchmakerManaged || profile.IsMatchmakerManaged);
+                            const cardStyle: React.CSSProperties = {
+                                borderRadius: '20px',
+                                overflow: 'hidden',
+                                backgroundColor: 'white',
+                                boxShadow: '0 4px 15px rgba(0,0,0,0.08)',
+                                cursor: 'pointer',
+                                ...(isPremium ? PREMIUM_CARD_FRAME_STYLE : {})
+                            };
                             return (
                                 <div key={profile.id} onClick={() => {
                                     if (user?.isVerified === false) {
@@ -335,9 +507,15 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                         return;
                                     }
                                     onOpenProfileDetail(profile);
-                                }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={{ borderRadius: '20px', overflow: 'hidden', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.08)', cursor: 'pointer' }}>
-                                    {showVerifiedBadge && (
-                                        <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={cardStyle}>
+                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    {(isManaged || isPremium) && (
+                                        <span style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                            {isPremium && <PremiumBadge variant="compact" />}
+                                            {isManaged && (
+                                                <MatchmakerBadge matchmakerName={profile.matchmakerName || profile.MatchmakerName} variant="compact" />
+                                            )}
+                                        </span>
                                     )}
                                     <div style={{ position: 'relative', height: '300px' }}>
                                         <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -364,8 +542,31 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                                 {preferredSearch && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                             </span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
-                                                <button onClick={(e) => handleToggleFavorite(e, profile.userId || profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Favorites || []).includes(profile.userId || profile.id) ? '#ff5a5f' : '#fce4e4', color: (interactions.Favorites || []).includes(profile.userId || profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>❤️</button>
-                                                <button onClick={(e) => handleToggleShortlist(e, profile.userId || profile.id)} style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: (interactions.Shortlists || []).includes(profile.userId || profile.id) ? '#ffb400' : '#fdf8e4', color: (interactions.Shortlists || []).includes(profile.userId || profile.id) ? 'white' : 'inherit', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⭐</button>
+                                                {(() => {
+                                                    const pid = profile.userId || profile.id;
+                                                    const isFav = (interactions.Favorites || []).includes(pid);
+                                                    const isSaved = (interactions.Shortlists || []).includes(pid);
+                                                    return (
+                                                        <>
+                                                            <button
+                                                                onClick={(e) => handleToggleFavorite(e, pid)}
+                                                                aria-label={isFav ? 'Remove from favourites' : 'Add to favourites'}
+                                                                title={isFav ? 'Remove from favourites' : 'Add to favourites'}
+                                                                style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: isFav ? '#ff5a5f' : '#fce4e4', color: isFav ? 'white' : '#ff5a5f', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.15s, color 0.15s' }}
+                                                            >
+                                                                <HeartIcon filled={isFav} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => handleToggleShortlist(e, pid)}
+                                                                aria-label={isSaved ? 'Remove from saved' : 'Save profile'}
+                                                                title={isSaved ? 'Remove from saved' : 'Save profile'}
+                                                                style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: isSaved ? '#f59e0b' : '#fef3c7', color: isSaved ? 'white' : '#b45309', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.15s, color 0.15s' }}
+                                                            >
+                                                                <BookmarkIcon filled={isSaved} />
+                                                            </button>
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     </div>
@@ -374,9 +575,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         })}
                     </div>
 
-                    {profiles.length === 0 && !loading && (
+                    {filteredProfiles.length === 0 && !loading && (
                         <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
-                            <p>No profiles found matching your criteria.</p>
+                            <p>{searchTerm ? `No profiles match “${searchTerm}” in the current results.` : 'No profiles found matching your criteria.'}</p>
                         </div>
                     )}
 
@@ -386,7 +587,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         </div>
                     )}
 
-                    {!loading && totalCount > filters.pageSize && (() => {
+                    {!loading && !searchTerm && totalCount > filters.pageSize && (() => {
                         const totalPages = Math.ceil(totalCount / filters.pageSize);
                         const currentPage = filters.pageNumber;
 

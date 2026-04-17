@@ -1,24 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput } from '../../utils/nicInput';
+import { sanitizeNameInput } from '../../utils/nameInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
+import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
 export default function ProfilePage() {
-    const { user, loading, updateUser } = useAuth();
+    const { user, loading, updateUser, logout } = useAuth();
+    const { language, setLanguage } = useLanguage();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
+    const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
     const [profileCompleted, setProfileCompleted] = useState(false);
     const [profileFetched, setProfileFetched] = useState(false);
@@ -67,31 +73,42 @@ export default function ProfilePage() {
             ]);
 
             const profileUpdates: any = {};
-            let userApiPhoto = '';
-            let matrimonialApiPhoto = '';
-            let receivedUserApi = false;
-            let receivedMatrimonialApi = false;
 
             // Process user details (AppUser data - has NIC, WhatsApp, Phone, DOB)
             if (userResponse && userResponse.ok) {
                 const userData = await userResponse.json();
                 const u = userData.result || userData;
                 if (u) {
-                    receivedUserApi = true;
                     if (u.identityDocument) {
                         profileUpdates.nic = u.identityDocument;
                     }
                     if (u.phoneNumber) {
                         profileUpdates.phone = u.phoneNumber;
                     }
-                    if (u.address && typeof u.address === 'string' && u.address.startsWith('WHATSAPP:')) {
-                        profileUpdates.whatsapp = u.address.substring('WHATSAPP:'.length);
+                    if (u.address && typeof u.address === 'string') {
+                        // Address is a metadata blob written by the backend in the form
+                        //   KEY:value;KEY2:value2;...
+                        // Old code used `substring('WHATSAPP:'.length)` which leaked the
+                        // ";VERIFIED_BY:WhatsApp" tail into the displayed number.
+                        // Parse the segments and pull just the WHATSAPP digits.
+                        const segments = u.address.split(';');
+                        for (const seg of segments) {
+                            const idx = seg.indexOf(':');
+                            if (idx <= 0) continue;
+                            const key = seg.substring(0, idx).trim().toUpperCase();
+                            const val = seg.substring(idx + 1).trim();
+                            if (key === 'WHATSAPP' && val) {
+                                profileUpdates.whatsapp = val.replace(/\D+/g, '');
+                                break;
+                            }
+                        }
                     }
                     if (u.dateofBirth || u.dateOfBirth) {
                         profileUpdates.dob = toDateOnly(u.dateofBirth || u.dateOfBirth);
                     }
-                    userApiPhoto = typeof u.profilePhoto === 'string' ? u.profilePhoto.trim() : '';
-                    if (userApiPhoto) profileUpdates.profilePhoto = userApiPhoto;
+                    if (u.profilePhoto && u.profilePhoto.length > 0) {
+                        profileUpdates.profilePhoto = u.profilePhoto;
+                    }
                     if (u.status !== undefined) {
                         profileUpdates.isVerified = u.status === 1;
                     }
@@ -106,7 +123,6 @@ export default function ProfilePage() {
                 const data = await profileResponse.json();
                 if (data.result) {
                     const r = data.result;
-                    receivedMatrimonialApi = true;
 
                     const rStatus = r.status ?? r.Status;
                     if (rStatus !== undefined && profileUpdates.isVerified === undefined) {
@@ -114,7 +130,9 @@ export default function ProfilePage() {
                     }
                     
                     const profilePhoto = r.profilePhoto || r.ProfilePhoto;
-                    matrimonialApiPhoto = typeof profilePhoto === 'string' ? profilePhoto.trim() : '';
+                    if (!profileUpdates.profilePhoto && !user?.profilePhoto && profilePhoto && profilePhoto.length > 0) {
+                        profileUpdates.profilePhoto = withCacheBuster(profilePhoto);
+                    }
                     
                     const gender = r.gender || r.Gender;
                     if (gender && gender.length > 0) {
@@ -128,7 +146,11 @@ export default function ProfilePage() {
 
                     const whatsapp = r.whatsApp || r.WhatsApp || r.whatsapp;
                     if (whatsapp && whatsapp.length > 0 && !profileUpdates.whatsapp) {
-                        profileUpdates.whatsapp = whatsapp;
+                        // Strip any accidental metadata tail (e.g. ";VERIFIED_BY:WhatsApp")
+                        // that may have leaked from older serialised values.
+                        const head = String(whatsapp).split(';')[0] ?? '';
+                        const digits = head.replace(/\D+/g, '');
+                        profileUpdates.whatsapp = digits || String(whatsapp);
                     }
 
                     const nic = r.nic || r.Nic || r.identityDocument;
@@ -153,16 +175,14 @@ export default function ProfilePage() {
 
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
-                    
-                    // Resolve profile photo from APIs; clear stale cached value if both are empty.
-                    if (userApiPhoto) {
-                        profileUpdates.profilePhoto = userApiPhoto;
-                    } else if (matrimonialApiPhoto) {
-                        profileUpdates.profilePhoto = withCacheBuster(matrimonialApiPhoto);
-                    } else if (receivedUserApi || receivedMatrimonialApi) {
-                        profileUpdates.profilePhoto = '';
-                    }
 
+                    // Notification preference (server-authoritative). Defaults to true
+                    // when missing so existing users keep getting interest emails.
+                    const emailOnInterest = r.emailOnInterest ?? r.EmailOnInterest;
+                    if (emailOnInterest !== undefined && emailOnInterest !== null) {
+                        profileUpdates.emailOnInterest = !!emailOnInterest;
+                    }
+                    
                     // Update user context with all available data
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
@@ -172,7 +192,12 @@ export default function ProfilePage() {
                     const profileReligion = r.religion || r.Religion || '';
                     const profileStatus = r.status ?? r.Status;
 
-                    if (profileStatus === 0) {
+                    const isMatchmakerAccount = (profileUpdates.accountType || user?.accountType || '') === 'Matchmaker';
+
+                    if (isMatchmakerAccount) {
+                        // Matchmakers manage sub-accounts, they don't need their own detailed profile.
+                        setProfileCompleted(true);
+                    } else if (profileStatus === 0) {
                         setProfileCompleted(false);
                     } else if (profileGender.length > 0 && profileReligion.length > 0) {
                         setProfileCompleted(true);
@@ -182,24 +207,24 @@ export default function ProfilePage() {
                     }
                 } else {
                     // Profile data exists but result is null - update with user data only
-                    if (!userApiPhoto && (receivedUserApi || receivedMatrimonialApi)) {
-                        profileUpdates.profilePhoto = '';
-                    }
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
                     }
                 }
             } else {
                 // Profile not found - still apply user data updates
-                if (!userApiPhoto && receivedUserApi) {
-                    profileUpdates.profilePhoto = '';
-                }
                 if (Object.keys(profileUpdates).length > 0) {
                     updateUser(profileUpdates);
                 }
-                setProfileCompleted(false);
-                if (user?.isVerified !== false) {
-                    setIsCompletionModalOpen(true);
+                const isMatchmakerAccount = (profileUpdates.accountType || user?.accountType || '') === 'Matchmaker';
+                if (isMatchmakerAccount) {
+                    // Matchmakers don't need their own detailed matrimonial profile.
+                    setProfileCompleted(true);
+                } else {
+                    setProfileCompleted(false);
+                    if (user?.isVerified !== false) {
+                        setIsCompletionModalOpen(true);
+                    }
                 }
             }
         } catch (error) {
@@ -207,14 +232,16 @@ export default function ProfilePage() {
         }
     };
 
-    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number) => {
+    const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
+        if (modal === 'profile' && profile) setSelectedProfile(profile);
     };
 
     const closeModal = () => {
         setActiveModal(null);
         setSelectedBlogId(null);
+        setSelectedProfile(null);
     };
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -234,13 +261,21 @@ export default function ProfilePage() {
         whatsapp: '',
         email: '',
         password: '',
+        confirmPassword: '',
         accountType: 'Self'
     });
     const [subAccountError, setSubAccountError] = useState<string | null>(null);
     const [isCreatingSubAccount, setIsCreatingSubAccount] = useState(false);
+    // Extended fields for the matchmaker "Add New Profile" experience (mirrors the public register form)
+    const [subAccountWhatsAppSame, setSubAccountWhatsAppSame] = useState(true);
+    const [subAccountShowPassword, setSubAccountShowPassword] = useState(false);
+    const [subAccountShowConfirmPassword, setSubAccountShowConfirmPassword] = useState(false);
+    const [subAccountPhotoBase64, setSubAccountPhotoBase64] = useState<string>('');
+    const [subAccountPhotoPreview, setSubAccountPhotoPreview] = useState<string>('');
+    const [subAccountTermsAccepted, setSubAccountTermsAccepted] = useState(false);
 
     useEffect(() => {
-        if (user?.accountType === 'Self' && user.id) {
+        if ((user?.accountType === 'Self' || user?.accountType === 'Matchmaker') && user.id) {
             fetchSubAccounts();
         }
     }, [user]);
@@ -278,8 +313,10 @@ export default function ProfilePage() {
                             const profileRes = await matrimonialService.getProfile(profileId);
                             if (profileRes?.statusCode === 200 && profileRes?.result) {
                                 const p = profileRes.result;
+                                const userId = p.UserId || p.userId || profileId;
                                 return {
-                                    id: p.UserId || p.userId || profileId,
+                                    id: userId,
+                                    userId,
                                     firstName: p.FirstName || p.firstName || 'User',
                                     lastName: p.LastName || p.lastName || '',
                                     age: p.Age || p.age || 0,
@@ -328,9 +365,50 @@ export default function ProfilePage() {
     const handleCreateSubAccount = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubAccountError(null);
+
+        // Required-field validation (mirrors the public register modal so matchmakers
+        // create profiles that look identical to user-registered ones).
+        if (!subAccountForm.firstName.trim() || !subAccountForm.lastName.trim()) {
+            setSubAccountError('First and last name are required.');
+            return;
+        }
+        if (!subAccountForm.nic.trim()) {
+            setSubAccountError('NIC or passport number is required.');
+            return;
+        }
+        if (!subAccountForm.dob) {
+            setSubAccountError('Date of birth is required.');
+            return;
+        }
+        if (!subAccountForm.gender) {
+            setSubAccountError('Gender is required.');
+            return;
+        }
         const phoneErr = sriLankanPhoneFormatErrorIfInvalid(subAccountForm.phone, 'Phone number');
         if (phoneErr) {
             setSubAccountError(phoneErr);
+            return;
+        }
+        const effectiveWhatsApp = subAccountWhatsAppSame ? subAccountForm.phone : subAccountForm.whatsapp;
+        const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(effectiveWhatsApp, 'WhatsApp number');
+        if (whatsappErr) {
+            setSubAccountError(whatsappErr);
+            return;
+        }
+        if (!/^\S+@\S+\.\S+$/.test(subAccountForm.email)) {
+            setSubAccountError('Please enter a valid email address.');
+            return;
+        }
+        if (subAccountForm.password.length < 6) {
+            setSubAccountError('Password must be at least 6 characters.');
+            return;
+        }
+        if (subAccountForm.password !== subAccountForm.confirmPassword) {
+            setSubAccountError('Passwords do not match.');
+            return;
+        }
+        if (!subAccountTermsAccepted) {
+            setSubAccountError('Please confirm that the client has authorised you to create this profile.');
             return;
         }
 
@@ -343,7 +421,16 @@ export default function ProfilePage() {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    ...subAccountForm,
+                    firstName: subAccountForm.firstName,
+                    lastName: subAccountForm.lastName,
+                    nic: subAccountForm.nic,
+                    gender: subAccountForm.gender,
+                    phone: subAccountForm.phone,
+                    whatsapp: effectiveWhatsApp,
+                    email: subAccountForm.email,
+                    password: subAccountForm.password,
+                    accountType: 'Self',
+                    profilePhotoBase64: subAccountPhotoBase64 || undefined,
                     dateOfBirth: subAccountForm.dob.length === 10 ? `${subAccountForm.dob}T00:00:00` : subAccountForm.dob,
                     parentUserId: Number(user?.id)
                 })
@@ -352,18 +439,8 @@ export default function ProfilePage() {
             const data = await response.json();
             if (response.ok && (data.statusCode === 200 || data.statusCode === 1)) {
                 setIsCreateSubAccountModalOpen(false);
-                setSubAccountForm({
-                    firstName: '',
-                    lastName: '',
-                    nic: '',
-                    dob: '',
-                    gender: '',
-                    phone: '',
-                    whatsapp: '',
-                    email: '',
-                    password: '',
-                    accountType: 'Self'
-                });
+                resetSubAccountForm();
+                showToast('Client profile created successfully.', 'success');
                 fetchSubAccounts();
             } else {
                 setSubAccountError(data.message || 'Failed to create sub-account');
@@ -375,15 +452,276 @@ export default function ProfilePage() {
         }
     };
 
+    const [deletingSubAccountId, setDeletingSubAccountId] = useState<number | null>(null);
+
+    // ─── Settings panel state ────────────────────────────────────────────────────
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+    /**
+     * Allow other places (e.g. the header user dropdown) to deep-link straight to the
+     * settings panel via `/profile?settings=open`. We open the panel and then smoothly
+     * scroll it into view once the layout has settled.
+     */
+    useEffect(() => {
+        if (!user) return;
+        if (searchParams?.get('settings') === 'open') {
+            setIsSettingsOpen(true);
+            // Defer the scroll until the panel has actually rendered.
+            const t = window.setTimeout(() => {
+                document.getElementById('user-settings-panel')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 60);
+            return () => window.clearTimeout(t);
+        }
+    }, [searchParams, user]);
+    /**
+     * UI-only preferences persisted in localStorage. The backend does not (yet) have
+     * dedicated columns for these toggles, so we keep them client-side. They can be
+     * promoted to user fields later without changing this component.
+     */
+    const [prefs, setPrefs] = useState({
+        emailNotifications: true,
+        showInBrowse: true,
+        photoVisibility: 'everyone' as 'everyone' | 'premium',
+    });
+    useEffect(() => {
+        if (typeof window === 'undefined' || !user?.id) return;
+        try {
+            const raw = localStorage.getItem(`cbass.prefs.${user.id}`);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                setPrefs(p => ({ ...p, ...parsed }));
+            }
+        } catch { /* ignore corrupted prefs */ }
+    }, [user?.id]);
+
+    /**
+     * The "email me when someone shows interest" preference is server-authoritative — the
+     * value comes back on the GetProfile call and is mirrored onto the user object. Keep
+     * the toggle UI in sync whenever that arrives or changes.
+     */
+    useEffect(() => {
+        if (user?.emailOnInterest === undefined) return;
+        setPrefs(p => p.emailNotifications === user.emailOnInterest
+            ? p
+            : { ...p, emailNotifications: !!user.emailOnInterest });
+    }, [user?.emailOnInterest]);
+
+    const updatePref = <K extends keyof typeof prefs>(key: K, value: (typeof prefs)[K]) => {
+        setPrefs(prev => {
+            const next = { ...prev, [key]: value };
+            if (typeof window !== 'undefined' && user?.id) {
+                try { localStorage.setItem(`cbass.prefs.${user.id}`, JSON.stringify(next)); } catch { /* quota */ }
+            }
+            return next;
+        });
+    };
+
+    const [isSavingEmailPref, setIsSavingEmailPref] = useState(false);
+    /**
+     * Persist the email-on-interest toggle to the server so notifications are actually
+     * sent (or not). We optimistically update the UI and roll it back on error.
+     */
+    const handleEmailNotificationToggle = async (enabled: boolean) => {
+        if (!user?.id) return;
+        const previous = prefs.emailNotifications;
+        updatePref('emailNotifications', enabled);
+        try {
+            setIsSavingEmailPref(true);
+            const res = await matrimonialService.updateNotificationPreferences(Number(user.id), enabled);
+            if (res?.statusCode === 200 || res?.statusCode === 1) {
+                updateUser?.({ emailOnInterest: enabled });
+            } else {
+                updatePref('emailNotifications', previous);
+                showToast(res?.message || 'Could not save preference. Please try again.', 'error');
+            }
+        } catch (err: any) {
+            updatePref('emailNotifications', previous);
+            showToast(err?.message || 'Could not save preference. Please try again.', 'error');
+        } finally {
+            setIsSavingEmailPref(false);
+        }
+    };
+
+    const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
+    const handleCancelSubscription = async () => {
+        if (!user?.id) return;
+        const confirmed = typeof window !== 'undefined' && window.confirm(
+            'Cancel your premium subscription?\n\nYou will lose premium benefits immediately. You can re-subscribe at any time.'
+        );
+        if (!confirmed) return;
+        try {
+            setIsCancellingSubscription(true);
+            const res = await matrimonialService.cancelSubscription(Number(user.id));
+            if (res?.statusCode === 200 || res?.statusCode === 1) {
+                updateUser?.({ ...user, isSubscribed: false } as any);
+                showToast(res?.message || 'Subscription cancelled.', 'success');
+            } else {
+                showToast(res?.message || 'Failed to cancel subscription.', 'error');
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to cancel subscription.', 'error');
+        } finally {
+            setIsCancellingSubscription(false);
+        }
+    };
+
+    const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+    const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+    const handleDeleteOwnAccount = async () => {
+        if (!user?.id) return;
+        if (deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') {
+            showToast('Please type DELETE to confirm.', 'error');
+            return;
+        }
+        try {
+            setIsDeletingAccount(true);
+            const res = await matrimonialService.deleteOwnAccount(Number(user.id));
+            if (res?.statusCode === 200 || res?.statusCode === 1) {
+                showToast('Your account has been permanently deleted.', 'success');
+                // Wipe any per-user prefs
+                if (typeof window !== 'undefined') {
+                    try { localStorage.removeItem(`cbass.prefs.${user.id}`); } catch { /* ignore */ }
+                }
+                setShowDeleteAccountModal(false);
+                logout(); // clears auth + redirects to "/"
+            } else {
+                showToast(res?.message || 'Failed to delete account.', 'error');
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to delete account.', 'error');
+        } finally {
+            setIsDeletingAccount(false);
+        }
+    };
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    const handleDeleteSubAccount = async (subAccount: { id: number; firstName?: string; lastName?: string }) => {
+        if (!user?.id || !subAccount?.id) return;
+        const fullName = `${subAccount.firstName || ''} ${subAccount.lastName || ''}`.trim() || 'this profile';
+        const confirmed = typeof window !== 'undefined' && window.confirm(
+            `Delete ${fullName}?\n\nThis will permanently remove the profile, photos, messages and saved interactions. This action cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        try {
+            setDeletingSubAccountId(subAccount.id);
+            const res = await matrimonialService.deleteSubAccount(Number(user.id), subAccount.id);
+            if (res?.statusCode === 200 || res?.statusCode === 1) {
+                setSubAccounts(prev => prev.filter(sa => sa.id !== subAccount.id));
+                showToast(`${fullName} has been removed.`, 'success');
+            } else {
+                showToast(res?.message || 'Failed to delete profile.', 'error');
+            }
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to delete profile.', 'error');
+        } finally {
+            setDeletingSubAccountId(null);
+        }
+    };
+
+    /**
+     * Parse a Sri Lankan NIC (old or new format) and extract DOB + gender, mirroring
+     * the logic used in the main register form so matchmakers see the same auto-fill UX.
+     */
+    const parseSubAccountNIC = (nicNumber: string): { dob: string; gender: string } | null => {
+        const normalized = nicNumber.trim().toUpperCase();
+        const currentYear = new Date().getFullYear();
+        let year = '';
+        let dayText = '';
+        let gender = '';
+        if (/^\d{9}[VX]$/.test(normalized)) {
+            year = `19${normalized.substring(0, 2)}`;
+            dayText = normalized.substring(2, 5);
+        } else if (/^\d{12}$/.test(normalized)) {
+            const parsedYear = Number(normalized.substring(0, 4));
+            if (parsedYear < 1900 || parsedYear > currentYear) return null;
+            year = normalized.substring(0, 4);
+            dayText = normalized.substring(4, 7);
+        } else {
+            return null;
+        }
+        let dayOfYear = parseInt(dayText, 10);
+        if (Number.isNaN(dayOfYear)) return null;
+        if (dayOfYear > 500) {
+            gender = 'Female';
+            dayOfYear -= 500;
+        } else {
+            gender = 'Male';
+        }
+        if (dayOfYear < 1 || dayOfYear > 366) return null;
+        const refDate = new Date(Date.UTC(2000, 0, 1));
+        refDate.setUTCDate(dayOfYear);
+        const month = String(refDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(refDate.getUTCDate()).padStart(2, '0');
+        return { dob: `${year}-${month}-${day}`, gender };
+    };
+
     const handleSubAccountChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         let nextValue = value;
         if (name === 'nic') nextValue = sanitizeNicInput(value);
-        else if (name === 'phone') nextValue = sanitizeSriLankanPhoneInput(value);
+        else if (name === 'phone' || name === 'whatsapp') nextValue = sanitizeSriLankanPhoneInput(value);
+        else if (name === 'firstName' || name === 'lastName') nextValue = sanitizeNameInput(value);
+
+        setSubAccountForm(prev => {
+            const updated = { ...prev, [name]: nextValue };
+            if (name === 'nic') {
+                const parsed = parseSubAccountNIC(nextValue);
+                if (parsed) {
+                    updated.dob = parsed.dob;
+                    updated.gender = parsed.gender;
+                }
+            }
+            if (name === 'phone' && subAccountWhatsAppSame) {
+                updated.whatsapp = nextValue;
+            }
+            return updated;
+        });
+    };
+
+    const handleSubAccountWhatsAppSameToggle = (same: boolean) => {
+        setSubAccountWhatsAppSame(same);
         setSubAccountForm(prev => ({
             ...prev,
-            [name]: nextValue
+            whatsapp: same ? prev.phone : ''
         }));
+    };
+
+    const handleSubAccountPhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64 = reader.result as string;
+            setSubAccountPhotoBase64(base64);
+            setSubAccountPhotoPreview(base64);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const resetSubAccountForm = () => {
+        setSubAccountForm({
+            firstName: '',
+            lastName: '',
+            nic: '',
+            dob: '',
+            gender: '',
+            phone: '',
+            whatsapp: '',
+            email: '',
+            password: '',
+            confirmPassword: '',
+            accountType: 'Self'
+        });
+        setSubAccountWhatsAppSame(true);
+        setSubAccountShowPassword(false);
+        setSubAccountShowConfirmPassword(false);
+        setSubAccountPhotoBase64('');
+        setSubAccountPhotoPreview('');
+        setSubAccountTermsAccepted(false);
+        setSubAccountError(null);
     };
 
     // Form state for editing (Basic Details)
@@ -431,6 +769,7 @@ export default function ProfilePage() {
         let nextValue = value;
         if (name === 'nic') nextValue = sanitizeNicInput(value);
         else if (name === 'phone' || name === 'whatsapp') nextValue = sanitizeSriLankanPhoneInput(value);
+        else if (name === 'firstName' || name === 'lastName') nextValue = sanitizeNameInput(value);
         setEditForm(prev => ({
             ...prev,
             [name]: nextValue
@@ -456,7 +795,7 @@ export default function ProfilePage() {
             <div className="profile-page-container" style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h1>My Profile</h1>
-                    {!profileCompleted && (
+                    {!profileCompleted && user?.accountType !== 'Matchmaker' && (
                         <div style={{ background: '#fff3cd', color: '#856404', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ffeeba' }}>
                             ⚠️ Your profile is incomplete. Please complete it to view matches.
                             <button onClick={() => {
@@ -470,8 +809,8 @@ export default function ProfilePage() {
                     )}
                 </div>
 
-                {/* Detailed Profile Completion Modal */}
-                {isCompletionModalOpen && (
+                {/* Detailed Profile Completion Modal — not shown for Matchmaker accounts */}
+                {isCompletionModalOpen && user?.accountType !== 'Matchmaker' && (
                     <div className="modal-overlay active" style={{ zIndex: 1000 }}>
                         <div className="modal" style={{ maxWidth: '900px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
                             <button className="modal-close" onClick={() => setIsCompletionModalOpen(false)}>✕</button>
@@ -494,8 +833,8 @@ export default function ProfilePage() {
 
                 {/* Edit Basic Profile Modal */}
                 {isEditModalOpen && (
-                    <div className="modal-overlay active" onClick={() => setIsEditModalOpen(false)}>
-                        <div className="modal" onClick={e => e.stopPropagation()}>
+                    <div className="modal-overlay active">
+                        <div className="modal">
                             <button className="modal-close" onClick={() => setIsEditModalOpen(false)}>✕</button>
                             <div className="modal-header">
                                 <h2>Edit Basic Details</h2>
@@ -640,7 +979,7 @@ export default function ProfilePage() {
                                         Free Plan
                                     </span>
                                 )}
-                                {profileCompleted ? (
+                                {user.accountType === 'Matchmaker' ? null : profileCompleted ? (
                                     <span className="badge" style={{ background: '#e6fffa', color: '#047857', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                         Profile Verified
                                     </span>
@@ -718,13 +1057,15 @@ export default function ProfilePage() {
 
                     <div className="profile-actions" style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid #eee', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                         <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
-                        <button className="btn btn-outline" onClick={() => {
-                            if (user?.isVerified === false) {
-                                window.dispatchEvent(new CustomEvent('open-verify-modal'));
-                                return;
-                            }
-                            setIsCompletionModalOpen(true);
-                        }}>Edit Detailed Profile</button>
+                        {user.accountType !== 'Matchmaker' && (
+                            <button className="btn btn-outline" onClick={() => {
+                                if (user?.isVerified === false) {
+                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                    return;
+                                }
+                                setIsCompletionModalOpen(true);
+                            }}>Edit Detailed Profile</button>
+                        )}
                         <button className="btn btn-outline" onClick={() => {
                             if (user?.isVerified === false) {
                                 window.dispatchEvent(new CustomEvent('open-verify-modal'));
@@ -732,8 +1073,229 @@ export default function ProfilePage() {
                             }
                             setIsEditModalOpen(true);
                         }}>Edit Basic Details</button>
+                        <button
+                            className="btn btn-outline"
+                            onClick={() => {
+                                setIsSettingsOpen(prev => {
+                                    const next = !prev;
+                                    if (next) {
+                                        // Defer the scroll until the panel has actually rendered.
+                                        window.setTimeout(() => {
+                                            document.getElementById('user-settings-panel')
+                                                ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        }, 60);
+                                    }
+                                    return next;
+                                });
+                            }}
+                            aria-expanded={isSettingsOpen}
+                            aria-controls="user-settings-panel"
+                        >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="3" />
+                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                                </svg>
+                                {isSettingsOpen ? 'Hide Settings' : 'Settings'}
+                            </span>
+                        </button>
                     </div>
                 </div>
+
+                {/* ─── Settings Panel ─────────────────────────────────────────── */}
+                {isSettingsOpen && (
+                    <div
+                        id="user-settings-panel"
+                        className="profile-card"
+                        style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}
+                    >
+                        <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.25rem' }}>Settings</h3>
+                        <p style={{ color: '#6b7280', fontSize: '0.9rem', marginBottom: '1.5rem' }}>Manage how you appear on the site, what you receive, and your account.</p>
+
+                        {/* Account & Privacy */}
+                        <section style={{ marginBottom: '2rem' }}>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Privacy</h4>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px', cursor: 'pointer' }}>
+                                    <span>
+                                        <span style={{ display: 'block', fontWeight: 500 }}>Show my profile in browse results</span>
+                                        <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>Turn off to temporarily hide your profile from other members.</span>
+                                    </span>
+                                    <input type="checkbox" checked={prefs.showInBrowse} onChange={(e) => updatePref('showInBrowse', e.target.checked)} style={{ width: 18, height: 18 }} />
+                                </label>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px' }}>
+                                    <span>
+                                        <span style={{ display: 'block', fontWeight: 500 }}>Who can see my profile photo</span>
+                                        <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>Restrict your photo to premium members for added privacy.</span>
+                                    </span>
+                                    <select
+                                        value={prefs.photoVisibility}
+                                        onChange={(e) => updatePref('photoVisibility', e.target.value as 'everyone' | 'premium')}
+                                        style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: 'white', fontSize: '0.9rem' }}
+                                    >
+                                        <option value="everyone">Everyone</option>
+                                        <option value="premium">Premium members only</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Notifications */}
+                        <section style={{ marginBottom: '2rem' }}>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Notifications</h4>
+                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px', cursor: isSavingEmailPref ? 'wait' : 'pointer', opacity: isSavingEmailPref ? 0.7 : 1 }}>
+                                <span>
+                                    <span style={{ display: 'block', fontWeight: 500 }}>Email me when someone shows interest</span>
+                                    <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
+                                        {isSavingEmailPref
+                                            ? 'Saving…'
+                                            : 'You will still see in-app notifications regardless of this setting.'}
+                                    </span>
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    checked={prefs.emailNotifications}
+                                    disabled={isSavingEmailPref}
+                                    onChange={(e) => handleEmailNotificationToggle(e.target.checked)}
+                                    style={{ width: 18, height: 18 }}
+                                />
+                            </label>
+                        </section>
+
+                        {/* Preferences */}
+                        <section style={{ marginBottom: '2rem' }}>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Preferences</h4>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px' }}>
+                                <span>
+                                    <span style={{ display: 'block', fontWeight: 500 }}>Language</span>
+                                    <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>Used across the site interface.</span>
+                                </span>
+                                <select
+                                    value={language}
+                                    onChange={(e) => setLanguage(e.target.value as 'en' | 'si')}
+                                    style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: 'white', fontSize: '0.9rem' }}
+                                >
+                                    <option value="en">English</option>
+                                    <option value="si">සිංහල</option>
+                                </select>
+                            </div>
+                        </section>
+
+                        {/* Subscription */}
+                        <section style={{ marginBottom: '2rem' }}>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : '#374151' }}>
+                                        {user?.isSubscribed ? 'Premium plan — active' : 'Free plan'}
+                                    </div>
+                                    <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
+                                        {user?.isSubscribed
+                                            ? 'You enjoy unlimited messaging and premium visibility.'
+                                            : 'Upgrade to unlock unlimited messaging and the premium gold badge.'}
+                                    </div>
+                                </div>
+                                {user?.isSubscribed ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelSubscription}
+                                        disabled={isCancellingSubscription}
+                                        style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
+                                    >
+                                        {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        onClick={() => openModal('subscription')}
+                                    >
+                                        Upgrade
+                                    </button>
+                                )}
+                            </div>
+                        </section>
+
+                        {/* Danger zone */}
+                        <section>
+                            <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#b91c1c' }}>Danger zone</h4>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                <div>
+                                    <div style={{ fontWeight: 600, color: '#7f1d1d' }}>Delete my account</div>
+                                    <div style={{ color: '#9f1239', fontSize: '0.85rem', marginTop: 2 }}>
+                                        Permanently removes your profile, messages, saved profiles, notifications and any client profiles you manage. This cannot be undone.
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setDeleteAccountConfirm(''); setShowDeleteAccountModal(true); }}
+                                    style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #b91c1c', background: '#b91c1c', color: 'white', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                    Delete account
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+                )}
+
+                {/* Delete-account confirmation modal */}
+                {showDeleteAccountModal && (
+                    <div
+                        className="modal-overlay active"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="delete-account-title"
+                        style={{ zIndex: 1100 }}
+                    >
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                            <button className="modal-close" onClick={() => !isDeletingAccount && setShowDeleteAccountModal(false)} aria-label="Close">✕</button>
+                            <div className="modal-header">
+                                <h2 id="delete-account-title" style={{ color: '#b91c1c' }}>Delete account?</h2>
+                            </div>
+                            <div className="modal-body">
+                                <p style={{ marginBottom: '1rem', color: '#374151' }}>
+                                    This will permanently delete <strong>your profile</strong>, your messages, saved/favourited profiles, notifications
+                                    {user?.accountType === 'Matchmaker' ? ', and every client profile you manage.' : '.'}
+                                </p>
+                                <p style={{ marginBottom: '1rem', color: '#374151' }}>
+                                    This action <strong>cannot be undone</strong>. To proceed, type <code style={{ background: '#f3f4f6', padding: '0.1rem 0.4rem', borderRadius: 4 }}>DELETE</code> below.
+                                </p>
+                                <input
+                                    type="text"
+                                    value={deleteAccountConfirm}
+                                    onChange={(e) => setDeleteAccountConfirm(e.target.value)}
+                                    placeholder="Type DELETE to confirm"
+                                    autoFocus
+                                    aria-label="Type DELETE to confirm account deletion"
+                                    style={{ width: '100%', padding: '0.7rem 0.9rem', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '1rem', marginBottom: '1.25rem' }}
+                                />
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        onClick={() => setShowDeleteAccountModal(false)}
+                                        disabled={isDeletingAccount}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDeleteOwnAccount}
+                                        disabled={isDeletingAccount || deleteAccountConfirm.trim().toUpperCase() !== 'DELETE'}
+                                        style={{
+                                            padding: '0.6rem 1.1rem', borderRadius: '8px', border: 'none',
+                                            background: (isDeletingAccount || deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') ? '#fca5a5' : '#b91c1c',
+                                            color: 'white', fontWeight: 600,
+                                            cursor: (isDeletingAccount || deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        {isDeletingAccount ? 'Deleting…' : 'Delete forever'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {user?.accountType === 'Self' && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
@@ -781,102 +1343,274 @@ export default function ProfilePage() {
                     </div>
                 )}
 
-                {/* Create Sub-Account Modal */}
-                {isCreateSubAccountModalOpen && (
-                    <div className="modal-overlay active" onClick={() => setIsCreateSubAccountModalOpen(false)} style={{ zIndex: 1000 }}>
-                        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
-                            <button className="modal-close" onClick={() => setIsCreateSubAccountModalOpen(false)}>✕</button>
-                            <div className="modal-header">
-                                <h2>Create Sub-Account</h2>
-                                <p style={{ color: '#666', fontSize: '0.9rem' }}>Fill in the details to create a new profile under your account.</p>
-                            </div>
-                            <div className="modal-body">
-                                <form onSubmit={handleCreateSubAccount}>
-                                    <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label>First Name *</label>
-                                            <input type="text" name="firstName" required value={subAccountForm.firstName} onChange={handleSubAccountChange} />
+                {/* Create Sub-Account / Add Client Profile Modal */}
+                {isCreateSubAccountModalOpen && (() => {
+                    const isMatchmaker = user?.accountType === 'Matchmaker';
+                    const nicParsed = !!parseSubAccountNIC(subAccountForm.nic);
+                    return (
+                        <div className="modal-overlay active" style={{ zIndex: 1000 }}>
+                            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '640px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }}>
+                                <button className="modal-close" onClick={() => { setIsCreateSubAccountModalOpen(false); resetSubAccountForm(); }}>✕</button>
+                                <div className="modal-header">
+                                    <h2>{isMatchmaker ? 'Add Client Profile' : 'Create Sub-Account'}</h2>
+                                    <p style={{ color: '#666', fontSize: '0.9rem' }}>
+                                        {isMatchmaker
+                                            ? "Enter your client's details. The profile will appear in browse with a matchmaker badge, and any messages or interest sent to it will come straight to you."
+                                            : 'Fill in the details to create a new profile under your account.'}
+                                    </p>
+                                </div>
+                                <div className="modal-body">
+                                    <form onSubmit={handleCreateSubAccount}>
+                                        {/* Profile photo */}
+                                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <div style={{ width: '88px', height: '88px', borderRadius: '50%', overflow: 'hidden', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e5e7eb' }}>
+                                                {subAccountPhotoPreview ? (
+                                                    <img src={subAccountPhotoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#9ca3af" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: '200px' }}>
+                                                <label style={{ fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>Profile Photo (optional)</label>
+                                                <p style={{ color: '#6b7280', fontSize: '0.8rem', marginBottom: '0.5rem' }}>JPG or PNG, square works best.</p>
+                                                <input type="file" accept="image/*" id="subAccountPhoto" style={{ display: 'none' }} onChange={handleSubAccountPhotoChange} />
+                                                <label htmlFor="subAccountPhoto" className="btn btn-outline" style={{ cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'inline-block' }}>
+                                                    {subAccountPhotoPreview ? 'Change Photo' : 'Upload Photo'}
+                                                </label>
+                                                {subAccountPhotoPreview && (
+                                                    <button type="button" onClick={() => { setSubAccountPhotoBase64(''); setSubAccountPhotoPreview(''); }} style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label>Last Name *</label>
-                                            <input type="text" name="lastName" required value={subAccountForm.lastName} onChange={handleSubAccountChange} />
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>NIC / Passport *</label>
-                                        <input type="text" name="nic" required value={subAccountForm.nic} onChange={handleSubAccountChange} />
-                                    </div>
-                                    <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label>Date of Birth *</label>
-                                            <input type="date" name="dob" required value={subAccountForm.dob} onChange={handleSubAccountChange} />
-                                        </div>
-                                        <div className="form-group" style={{ flex: 1 }}>
-                                            <label>Gender *</label>
-                                            <select name="gender" required value={subAccountForm.gender} onChange={handleSubAccountChange}>
-                                                <option value="">Select Gender</option>
-                                                <option value="Male">Male</option>
-                                                <option value="Female">Female</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Phone Number *</label>
-                                        <input type="tel" name="phone" required value={subAccountForm.phone} onChange={handleSubAccountChange} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Email Address *</label>
-                                        <input type="email" name="email" required value={subAccountForm.email} onChange={handleSubAccountChange} />
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Password *</label>
-                                        <input type="password" name="password" required minLength={6} value={subAccountForm.password} onChange={handleSubAccountChange} />
-                                    </div>
-                                    
-                                    {subAccountError && (
-                                        <div style={{ color: 'red', marginBottom: '1rem', fontSize: '0.9rem', padding: '0.5rem', backgroundColor: '#ffe6e6', borderRadius: '4px' }}>
-                                            {subAccountError}
-                                        </div>
-                                    )}
 
-                                    <button type="submit" className="btn btn-primary" disabled={isCreatingSubAccount} style={{ width: '100%', justifyContent: 'center' }}>
-                                        {isCreatingSubAccount ? 'Creating...' : 'Create Account'}
-                                    </button>
-                                </form>
+                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                                                <label>First Name *</label>
+                                                <input type="text" name="firstName" required value={subAccountForm.firstName} onChange={handleSubAccountChange} />
+                                            </div>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                                                <label>Last Name *</label>
+                                                <input type="text" name="lastName" required value={subAccountForm.lastName} onChange={handleSubAccountChange} />
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>National ID / Passport No *</label>
+                                            <input type="text" name="nic" required maxLength={12} placeholder="e.g. 199012345678 or 901234567V" value={subAccountForm.nic} onChange={handleSubAccountChange} />
+                                            {nicParsed && (
+                                                <span style={{ color: '#059669', fontSize: '0.8rem' }}>Date of birth and gender auto-filled from NIC.</span>
+                                            )}
+                                        </div>
+
+                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                                                <label>Date of Birth *</label>
+                                                <input type="date" name="dob" required value={subAccountForm.dob} onChange={handleSubAccountChange} disabled={nicParsed} />
+                                            </div>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
+                                                <label>Gender *</label>
+                                                <select name="gender" required value={subAccountForm.gender} onChange={handleSubAccountChange} disabled={nicParsed}>
+                                                    <option value="">Select Gender</option>
+                                                    <option value="Male">Male</option>
+                                                    <option value="Female">Female</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Phone Number *</label>
+                                            <input type="tel" name="phone" required placeholder="0771234567 or +94771234567" value={subAccountForm.phone} onChange={handleSubAccountChange} />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>WhatsApp Number *</label>
+                                            <input
+                                                type="tel"
+                                                name="whatsapp"
+                                                required
+                                                placeholder="0771234567 or +94771234567"
+                                                disabled={subAccountWhatsAppSame}
+                                                value={subAccountWhatsAppSame ? subAccountForm.phone : subAccountForm.whatsapp}
+                                                onChange={handleSubAccountChange}
+                                            />
+                                            <div className="checkbox-group" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    id="subAccountSameAsPhone"
+                                                    checked={subAccountWhatsAppSame}
+                                                    onChange={(e) => handleSubAccountWhatsAppSameToggle(e.target.checked)}
+                                                />
+                                                <label htmlFor="subAccountSameAsPhone" style={{ fontSize: '0.9rem' }}>Same as Phone Number</label>
+                                            </div>
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Email Address *</label>
+                                            <input type="email" name="email" required placeholder="client@email.com" value={subAccountForm.email} onChange={handleSubAccountChange} />
+                                        </div>
+
+                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
+                                                <label>Password *</label>
+                                                <input
+                                                    type={subAccountShowPassword ? 'text' : 'password'}
+                                                    name="password"
+                                                    required
+                                                    minLength={6}
+                                                    value={subAccountForm.password}
+                                                    onChange={handleSubAccountChange}
+                                                    style={{ paddingRight: '40px' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSubAccountShowPassword(v => !v)}
+                                                    aria-label={subAccountShowPassword ? 'Hide password' : 'Show password'}
+                                                    style={{ position: 'absolute', right: '8px', top: '34px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem', padding: '4px 8px' }}
+                                                >
+                                                    {subAccountShowPassword ? 'Hide' : 'Show'}
+                                                </button>
+                                            </div>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
+                                                <label>Confirm Password *</label>
+                                                <input
+                                                    type={subAccountShowConfirmPassword ? 'text' : 'password'}
+                                                    name="confirmPassword"
+                                                    required
+                                                    minLength={6}
+                                                    value={subAccountForm.confirmPassword}
+                                                    onChange={handleSubAccountChange}
+                                                    style={{ paddingRight: '40px' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSubAccountShowConfirmPassword(v => !v)}
+                                                    aria-label={subAccountShowConfirmPassword ? 'Hide password' : 'Show password'}
+                                                    style={{ position: 'absolute', right: '8px', top: '34px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem', padding: '4px 8px' }}
+                                                >
+                                                    {subAccountShowConfirmPassword ? 'Hide' : 'Show'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="checkbox-group" style={{ marginTop: '0.5rem' }}>
+                                            <input
+                                                type="checkbox"
+                                                id="subAccountTerms"
+                                                checked={subAccountTermsAccepted}
+                                                onChange={(e) => setSubAccountTermsAccepted(e.target.checked)}
+                                            />
+                                            <label htmlFor="subAccountTerms" style={{ fontSize: '0.9rem' }}>
+                                                {isMatchmaker
+                                                    ? 'I confirm my client has authorised me to create this profile on their behalf.'
+                                                    : 'I confirm the details above are accurate.'}
+                                            </label>
+                                        </div>
+
+                                        {subAccountError && (
+                                            <div style={{ color: 'red', marginTop: '1rem', marginBottom: '0.5rem', fontSize: '0.9rem', padding: '0.6rem 0.75rem', backgroundColor: '#ffe6e6', borderRadius: '6px' }}>
+                                                {subAccountError}
+                                            </div>
+                                        )}
+
+                                        <button
+                                            type="submit"
+                                            className="btn btn-primary"
+                                            disabled={isCreatingSubAccount}
+                                            style={{ width: '100%', justifyContent: 'center', marginTop: '1rem', opacity: isCreatingSubAccount ? 0.6 : 1, cursor: isCreatingSubAccount ? 'not-allowed' : 'pointer' }}
+                                        >
+                                            {isCreatingSubAccount ? 'Creating...' : (isMatchmaker ? 'Create Client Profile →' : 'Create Account')}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    );
+                })()}
 
                 {user?.accountType === 'Matchmaker' && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
-                        <h3 style={{ marginBottom: '1.5rem', fontSize: '1.5rem', fontWeight: 'bold' }}>Your Client Profiles</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px' }}>
-                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover' }} alt="Client" />
-                                <div>
-                                    <h5 style={{ fontWeight: '600', marginBottom: '0.25rem', fontSize: '1rem' }}>Amaya Fernando</h5>
-                                    <p style={{ color: '#6B6560', fontSize: '0.875rem' }}>26 years • Bride • Colombo</p>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px' }}>
-                                <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover' }} alt="Client" />
-                                <div>
-                                    <h5 style={{ fontWeight: '600', marginBottom: '0.25rem', fontSize: '1rem' }}>Ravindu Silva</h5>
-                                    <p style={{ color: '#6B6560', fontSize: '0.875rem' }}>29 years • Groom • Kandy</p>
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px' }}>
-                                <img src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" style={{ width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover' }} alt="Client" />
-                                <div>
-                                    <h5 style={{ fontWeight: '600', marginBottom: '0.25rem', fontSize: '1rem' }}>Ishara Perera</h5>
-                                    <p style={{ color: '#6B6560', fontSize: '0.875rem' }}>24 years • Bride • Galle</p>
-                                </div>
-                            </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem', flexWrap: 'wrap' }}>
+                            <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>
+                                Your Client Profiles{subAccounts.length > 0 ? ` (${subAccounts.length})` : ''}
+                            </h3>
+                            <button className="btn btn-primary" onClick={() => {
+                                if (user?.isVerified === false) {
+                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                    return;
+                                }
+                                setIsCreateSubAccountModalOpen(true);
+                            }}>+ Add New Profile</button>
                         </div>
-                        <button className="btn btn-outline" style={{ width: '100%', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span>+</span> Add New Profile
-                        </button>
+                        <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+                            Profiles you have created on behalf of clients. You can remove a profile at any time and all of its data will be permanently deleted.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            {subAccounts.length > 0 ? (
+                                subAccounts.map((subAccount: any) => {
+                                    const fullName = `${subAccount.firstName || ''} ${subAccount.lastName || ''}`.trim() || 'Unnamed Profile';
+                                    const initials = `${(subAccount.firstName || '?')[0] || '?'}${(subAccount.lastName || '')[0] || ''}`.toUpperCase();
+                                    const isDeleting = deletingSubAccountId === subAccount.id;
+                                    return (
+                                        <div key={subAccount.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px', flexWrap: 'wrap' }}>
+                                            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0 }}>
+                                                {subAccount.profilePhoto ? (
+                                                    <img src={subAccount.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <span>{initials}</span>
+                                                )}
+                                            </div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <h5 style={{ fontWeight: 600, marginBottom: '0.25rem', fontSize: '1rem' }}>{fullName}</h5>
+                                                <p style={{ color: '#6B6560', fontSize: '0.875rem', wordBreak: 'break-word' }}>
+                                                    {subAccount.email || '—'}{subAccount.phoneNumber ? ` • ${subAccount.phoneNumber}` : ''}
+                                                </p>
+                                                {subAccount.age ? (
+                                                    <p style={{ color: '#6B6560', fontSize: '0.8rem', marginTop: '0.15rem' }}>{subAccount.age} years</p>
+                                                ) : null}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDeleteSubAccount(subAccount)}
+                                                disabled={isDeleting}
+                                                aria-label={`Delete ${fullName}`}
+                                                title={`Delete ${fullName}`}
+                                                style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                                                    padding: '0.5rem 0.85rem', borderRadius: '8px',
+                                                    border: '1px solid #fecaca', background: isDeleting ? '#fee2e2' : 'white',
+                                                    color: '#b91c1c', cursor: isDeleting ? 'not-allowed' : 'pointer',
+                                                    fontSize: '0.85rem', fontWeight: 600,
+                                                    opacity: isDeleting ? 0.7 : 1, transition: 'background-color 0.15s'
+                                                }}
+                                                onMouseEnter={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = '#fff1f2'; }}
+                                                onMouseLeave={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = 'white'; }}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                    <polyline points="3 6 5 6 21 6" />
+                                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                                    <path d="M10 11v6" />
+                                                    <path d="M14 11v6" />
+                                                    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                                                </svg>
+                                                {isDeleting ? 'Deleting...' : 'Delete'}
+                                            </button>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.25rem', background: '#FDF8F3', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
+                                    <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '1.5rem' }}>+</div>
+                                    <div>
+                                        <h5 style={{ fontWeight: 600, marginBottom: '0.25rem', fontSize: '1rem', color: '#666' }}>No client profiles yet</h5>
+                                        <p style={{ color: '#999', fontSize: '0.875rem' }}>Click "Add New Profile" above to create one for your client.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -885,15 +1619,40 @@ export default function ProfilePage() {
                         <h3>Recent Activity</h3>
                         <p style={{ color: '#666', marginTop: '1rem' }}>No recent activity to show.</p>
                     </div>
-                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-                        <h3>Saved Profiles</h3>
+                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                        <h3>Saved Profiles{savedProfiles.length > 0 ? ` (${savedProfiles.length})` : ''}</h3>
                         {loadingSavedProfiles ? (
                             <p style={{ color: '#666', marginTop: '1rem' }}>Loading saved profiles...</p>
                         ) : savedProfiles.length > 0 ? (
                             <>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
-                                    {savedProfiles.slice(0, 4).map((p) => (
-                                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '0.25rem' }}>
+                                    {savedProfiles.map((p) => (
+                                        <div
+                                            key={p.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => {
+                                                if (user?.isVerified === false) {
+                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                    return;
+                                                }
+                                                openModal('profile', undefined, p);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    if (user?.isVerified === false) {
+                                                        window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                        return;
+                                                    }
+                                                    openModal('profile', undefined, p);
+                                                }
+                                            }}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
+                                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                            title={`View ${p.firstName} ${p.lastName}'s profile`}
+                                        >
                                             <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
                                                 {p.profilePhoto ? (
                                                     <img src={p.profilePhoto} alt={`${p.firstName} ${p.lastName}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -903,10 +1662,11 @@ export default function ProfilePage() {
                                                     </div>
                                                 )}
                                             </div>
-                                            <div style={{ minWidth: 0 }}>
+                                            <div style={{ minWidth: 0, flex: 1 }}>
                                                 <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
                                                 <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
                                             </div>
+                                            <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
                                         </div>
                                     ))}
                                 </div>
@@ -926,26 +1686,11 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {horoscopePopupOpen && user?.horoscopeDocument && (
-                <div
-                    onClick={() => setHoroscopePopupOpen(false)}
-                    style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
-                >
-                    <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
-                        <button
-                            onClick={() => setHoroscopePopupOpen(false)}
-                            style={{ position: 'absolute', top: '-12px', right: '-12px', width: '32px', height: '32px', borderRadius: '50%', background: 'white', border: 'none', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 1 }}
-                        >
-                            ✕
-                        </button>
-                        <img
-                            src={user.horoscopeDocument}
-                            alt="Horoscope"
-                            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain', background: 'white' }}
-                        />
-                    </div>
-                </div>
-            )}
+            <HoroscopeLightbox
+                open={horoscopePopupOpen && !!user?.horoscopeDocument}
+                src={user?.horoscopeDocument || ''}
+                onClose={() => setHoroscopePopupOpen(false)}
+            />
 
             <Footer />
 
@@ -954,6 +1699,7 @@ export default function ProfilePage() {
                 onClose={closeModal}
                 onSwitch={openModal}
                 selectedBlogId={selectedBlogId}
+                selectedProfile={selectedProfile}
             />
         </main>
     );

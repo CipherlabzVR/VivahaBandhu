@@ -6,6 +6,7 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
+import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
 
 function SearchContent() {
     const searchParams = useSearchParams();
@@ -13,15 +14,6 @@ function SearchContent() {
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
-
-    const normalizeReligion = (value?: string | null): string => {
-        const v = (value || '').trim().toLowerCase();
-        if (!v || v === 'any') return '';
-        if (v === 'christianity' || v === 'christians') return 'christian';
-        if (v === 'hinduism' || v === 'hindus') return 'hindu';
-        if (v === 'islamic') return 'islam';
-        return v;
-    };
 
     useEffect(() => {
         const fetchAndFilterProfiles = async () => {
@@ -44,7 +36,7 @@ function SearchContent() {
                         }
                         if (ageFrom && profile.age < parseInt(ageFrom)) return false;
                         if (ageTo && profile.age > parseInt(ageTo)) return false;
-                        if (normalizeReligion(religion) && normalizeReligion(profile.religion) !== normalizeReligion(religion)) return false;
+                        if (religion && religion !== 'Any' && profile.religion !== religion) return false;
                         if (district && district !== 'Any' && profile.cityOfResidence !== district) return false;
                         return true;
                     });
@@ -85,9 +77,11 @@ function SearchContent() {
                 {results.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem' }}>
                         {results.map(profile => {
-                            const placeholderImg = profile.gender === "Female"
-                                ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
-                                : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
+                            const placeholderImg = getDefaultAvatarDataUri({
+                                firstName: profile.firstName,
+                                lastName: profile.lastName,
+                                gender: profile.gender,
+                            });
 
                             return (
                                 <div key={profile.id} onClick={() => openModal('profile', undefined, profile)} style={{ background: 'white', borderRadius: '15px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', transition: 'transform 0.3s', cursor: 'pointer' }}>

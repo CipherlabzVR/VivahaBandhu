@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { getStoredUser, setStoredUser, updateStoredUser, clearStoredAuth } from '../utils/authStorage';
 
 interface User {
@@ -17,6 +18,8 @@ interface User {
     profilePhoto?: string;
     isVerified?: boolean;
     isSubscribed?: boolean;
+    /** Whether the user wants an email when someone shows interest. Server-authoritative. */
+    emailOnInterest?: boolean;
     horoscopeDocument?: string;
 }
 
@@ -33,6 +36,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const router = useRouter();
 
     useEffect(() => {
         // Check storage for user on initial load (client-side only).
@@ -54,7 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = useCallback(() => {
         setUser(null);
         clearStoredAuth();
-    }, []);
+        router.push('/');
+    }, [router]);
 
     const updateUser = useCallback((userData: Partial<User>) => {
         setUser(prev => {

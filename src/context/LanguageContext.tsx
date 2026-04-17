@@ -15,6 +15,8 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 // Translation dictionary
 const translations: Record<Language, Record<string, string>> = {
   en: {
+    'home': 'Home',
+    'settings': 'Settings',
     'browseProfiles': 'Browse Profiles',
     'aboutUs': 'About Us',
     'successStories': 'Success Stories',
@@ -188,6 +190,8 @@ const translations: Record<Language, Record<string, string>> = {
     'sendButton': 'Send',
   },
   si: {
+    'home': 'මුල් පිටුව',
+    'settings': 'සැකසුම්',
     'browseProfiles': 'පැතිකඩ පිරික්සන්න',
     'aboutUs': 'අප ගැන',
     'successStories': 'සාර්ථක කතා',

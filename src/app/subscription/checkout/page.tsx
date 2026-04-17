@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 import { PREMIUM_SUBSCRIPTION_LKR } from '../../../constants/subscription';
+import { sanitizeNameInput } from '../../../utils/nameInput';
 
 type PaymentMethod = 'card' | 'bank';
 
@@ -142,16 +143,24 @@ export default function SubscriptionCheckoutPage() {
                         bankRemarks
                     );
                     if (res?.statusCode === 200 || res?.statusCode === 1) {
-                        setSuccess('Bank transfer slip submitted successfully! Your subscription will be activated after admin verification. We will notify you once approved.');
+                        setSuccess(
+                            'Slip received! Our admin team will review your payment and approve your premium membership shortly. ' +
+                            'You will be redirected to your profile in a moment.'
+                        );
                         setBankSlipFile(null);
                         setBankSlipPreview(null);
                         setBankRemarks('');
+                        // Keep the confirmation visible for 2 seconds so the user can read it,
+                        // then take them back to their profile page.
+                        window.setTimeout(() => {
+                            router.push('/profile');
+                        }, 2000);
                     } else {
                         setError(res?.message || 'Failed to submit bank transfer.');
+                        setIsSubmitting(false);
                     }
                 } catch (err) {
                     setError(err instanceof Error ? err.message : 'Failed to submit bank transfer.');
-                } finally {
                     setIsSubmitting(false);
                 }
             };
@@ -236,7 +245,7 @@ export default function SubscriptionCheckoutPage() {
                                 <input
                                     type="text"
                                     value={cardHolder}
-                                    onChange={(e) => setCardHolder(e.target.value)}
+                                    onChange={(e) => setCardHolder(sanitizeNameInput(e.target.value))}
                                     placeholder="Name on card"
                                     className="w-full border border-cream-dark rounded-xl px-3 py-3 mt-2"
                                 />

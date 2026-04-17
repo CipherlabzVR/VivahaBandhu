@@ -587,6 +587,106 @@ export const matrimonialService = {
         }
     },
 
+    /**
+     * Delete a sub-account (managed/client profile) created under the given parent user.
+     * Removes related matrimonial profile, messages, favourites, shortlists and notifications.
+     */
+    async deleteSubAccount(parentUserId: number, subUserId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteSubAccount?parentUserId=${parentUserId}&subUserId=${subUserId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to delete sub-account: ${response.statusText}`);
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Cancel the current user's premium subscription. The user remains registered and
+     * can re-subscribe later; only the SUBSCRIPTION_ACTIVE flag is cleared.
+     */
+    async cancelSubscription(userId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/CancelSubscription?userId=${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to cancel subscription');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Persist the user's notification preferences (currently only the
+     * "email me when someone shows interest" toggle) to the server.
+     */
+    async updateNotificationPreferences(userId: number, emailOnInterest: boolean): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/UpdateNotificationPreferences?userId=${userId}&emailOnInterest=${emailOnInterest}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : ''
+                    }
+                }
+            );
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to update preferences');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
+     * Permanently delete the calling user's own account and all associated data
+     * (profile, messages, favourites, shortlists, notifications, managed sub-accounts).
+     * IRREVERSIBLE — caller MUST confirm with the user first.
+     */
+    async deleteOwnAccount(userId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteOwnAccount?userId=${userId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to delete account');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async activateMockSubscription(userId: number, mockReference: string): Promise<any> {
         try {
             const token = getStoredToken();

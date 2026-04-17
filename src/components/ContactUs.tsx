@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
+import { sanitizeNameInput } from '../utils/nameInput';
 
 const HEART_PATH =
     'M 5 25 ' +
@@ -39,7 +40,11 @@ export default function ContactUs() {
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+        const { name, value } = e.target;
+        const nextValue = (name === 'firstName' || name === 'lastName')
+            ? sanitizeNameInput(value)
+            : value;
+        setFormData((prev) => ({ ...prev, [name]: nextValue }));
     };
 
     return (

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
 import { sanitizeNicInput } from '../utils/nicInput';
+import { sanitizeNameInput, nameLettersOnlyError } from '../utils/nameInput';
 import {
     sanitizeSriLankanPhoneInput,
     isValidSriLankanPhone,
@@ -17,6 +18,10 @@ import {
 import { PREMIUM_SUBSCRIPTION_LKR } from '../constants/subscription';
 import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
+import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
+import MatchmakerBadge from './MatchmakerBadge';
+import PremiumBadge from './PremiumBadge';
+import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 
 interface ModalsProps {
     activeModal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null;
@@ -54,18 +59,6 @@ function passwordPassesPolicy(password: string): boolean {
     return c.minLength && c.hasUpper && c.hasLower && c.hasDigit && c.hasSpecial;
 }
 
-/** Unicode letters, spaces, hyphens, apostrophes — no digits or other symbols. */
-const NAME_LETTERS_ONLY = /^[\p{L}\s'-]+$/u;
-
-function nameLettersOnlyError(value: string, fieldLabel: 'First name' | 'Last name'): string | undefined {
-    const t = value.trim();
-    if (!t) return undefined;
-    if (!NAME_LETTERS_ONLY.test(t)) {
-        return `${fieldLabel} may only contain letters (no numbers or symbols).`;
-    }
-    return undefined;
-}
-
 type PwdChecks = ReturnType<typeof checkPasswordPolicy>;
 
 function getPasswordStrength(password: string, checks: PwdChecks): { level: number; label: string; color: string } {
@@ -75,26 +68,6 @@ function getPasswordStrength(password: string, checks: PwdChecks): { level: numb
     if (passed === 2) return { level: 2, label: 'Fair', color: '#f97316' };
     if (passed <= 4) return { level: 3, label: 'Good', color: '#eab308' };
     return { level: 4, label: 'Strong', color: '#22c55e' };
-}
-
-const MIN_REGISTRATION_AGE = 18;
-
-function calculateAgeFromDateString(dateOnly: string): number | null {
-    if (!dateOnly) return null;
-    const m = dateOnly.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return null;
-    const year = Number(m[1]);
-    const month = Number(m[2]);
-    const day = Number(m[3]);
-    if (!year || !month || !day) return null;
-
-    const today = new Date();
-    let age = today.getFullYear() - year;
-    const monthDiff = (today.getMonth() + 1) - month;
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
-        age -= 1;
-    }
-    return age;
 }
 
 function RegisterPasswordFields({
@@ -366,6 +339,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const pathname = usePathname();
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
     const [profileTab, setProfileTab] = useState('about');
+    const [galleryLightboxSrc, setGalleryLightboxSrc] = useState<string | null>(null);
     const [registerAccountType, setRegisterAccountType] = useState('Self');
     const [subscriptionOption, setSubscriptionOption] = useState('Free');
 
@@ -428,6 +402,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setSelectedProfile(null);
             setProfileAccessMessage(null);
             setIsProfileLockedByDailyLimit(false);
+            setGalleryLightboxSrc(null);
         }
     }, [activeModal, initialSelectedProfile, user?.id]);
     const [isWhatsAppSame, setIsWhatsAppSame] = useState(false);
@@ -453,7 +428,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
-    const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
     const [forgotContactMethod, setForgotContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
@@ -564,7 +538,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleFirstNameChange = (e: ChangeEvent<HTMLInputElement>) => {
-        const v = e.target.value;
+        // Strip digits/symbols on input so "John9" or pasted "John 123" can never
+        // be entered. nameLettersOnlyError() is kept as a backstop on submit.
+        const v = sanitizeNameInput(e.target.value);
         setFirstName(v);
         setErrors((prev) => {
             const next = { ...prev };
@@ -576,7 +552,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleLastNameChange = (e: ChangeEvent<HTMLInputElement>) => {
-        const v = e.target.value;
+        const v = sanitizeNameInput(e.target.value);
         setLastName(v);
         setErrors((prev) => {
             const next = { ...prev };
@@ -669,14 +645,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     const handleRegister = async () => {
         if (!validateForm()) {
-            return;
-        }
-
-        const nicParsed = parseNIC(nic);
-        const referenceDob = nicParsed?.dob || dob;
-        const age = calculateAgeFromDateString(referenceDob);
-        if (age !== null && age < MIN_REGISTRATION_AGE) {
-            setRegisterError(`You must be at least ${MIN_REGISTRATION_AGE} years old to create an account.`);
             return;
         }
 
@@ -1132,7 +1100,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setProfilePhotoBase64('');
             setPhotoPreview('');
             setConfirmPassword('');
-            setShowLoginPassword(false);
             setShowRegisterPassword(false);
             setShowRegisterConfirmPassword(false);
         }
@@ -1290,7 +1257,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             )}
 
             {/* Login Modal */}
-            <div className={`modal-overlay ${activeModal === 'login' || activeModal === 'verify' ? 'active' : ''}`} id="loginModal" onClick={handleOverlayClick}>
+            <div className={`modal-overlay ${activeModal === 'login' || activeModal === 'verify' ? 'active' : ''}`} id="loginModal">
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
@@ -1644,7 +1611,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             <input
                                                                 type="text"
                                                                 value={forgotSearchName}
-                                                                onChange={(e) => setForgotSearchName(e.target.value)}
+                                                                onChange={(e) => setForgotSearchName(sanitizeNameInput(e.target.value))}
                                                                 placeholder="First name or full name"
                                                             />
                                                         </div>
@@ -1764,37 +1731,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                         <div className="form-group">
                                             <label>Password</label>
-                                            <div style={{ position: 'relative' }}>
-                                                <input
-                                                    type={showLoginPassword ? 'text' : 'password'}
-                                                    placeholder="Enter your password"
-                                                    value={loginPassword}
-                                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
-                                                    style={{ borderColor: loginPasswordError ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
-                                                    autoComplete="current-password"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowLoginPassword((v) => !v)}
-                                                    tabIndex={-1}
-                                                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
-                                                    style={{
-                                                        position: 'absolute',
-                                                        right: '10px',
-                                                        top: '50%',
-                                                        transform: 'translateY(-50%)',
-                                                        border: 'none',
-                                                        background: 'transparent',
-                                                        cursor: 'pointer',
-                                                        padding: '4px',
-                                                        fontSize: '1rem',
-                                                        lineHeight: 1,
-                                                        color: 'var(--text-light)',
-                                                    }}
-                                                >
-                                                    {showLoginPassword ? '🙈' : '👁'}
-                                                </button>
-                                            </div>
+                                            <input
+                                                type="password"
+                                                placeholder="Enter your password"
+                                                value={loginPassword}
+                                                onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
+                                                style={{ borderColor: loginPasswordError ? 'red' : '' }}
+                                                autoComplete="current-password"
+                                            />
                                             {loginPasswordError && (
                                                 <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
                                                     {loginPasswordError}
@@ -1978,7 +1922,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={loginTermsAccepted}
                                         onChange={(e) => setLoginTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="termsLogin">I agree to the <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a></label>
+                                    <label htmlFor="termsLogin">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
                                     <div style={{
@@ -2350,7 +2294,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={termsAccepted}
                                         onChange={(e) => setTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="terms">I agree to the <a href="/terms-of-service">Terms of Service</a> and <a href="/privacy-policy">Privacy Policy</a></label>
+                                    <label htmlFor="terms">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
                                     <div style={{
@@ -2481,15 +2425,40 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         <div className="profile-detail-content">
                             {/* Profile Header */}
                             <div className="profile-detail-header">
-                                <div className="profile-detail-photo">
+                                <div
+                                    className="profile-detail-photo"
+                                    style={(selectedProfile.isPremium || selectedProfile.IsPremium) ? {
+                                        // Glowing gold ring for premium members.
+                                        boxShadow: '0 0 0 4px #fde68a, 0 0 0 6px #d97706, 0 8px 24px rgba(217, 119, 6, 0.45)',
+                                        borderRadius: '50%',
+                                        transition: 'box-shadow 0.2s'
+                                    } : undefined}
+                                >
                                     <img
-                                        src={selectedProfile.profilePhoto || (selectedProfile.gender === 'Female' ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400' : 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400')}
+                                        src={selectedProfile.profilePhoto || getDefaultAvatarDataUri({
+                                            firstName: selectedProfile.firstName,
+                                            lastName: selectedProfile.lastName,
+                                            gender: selectedProfile.gender,
+                                        })}
                                         alt={`${selectedProfile.firstName || 'User'}'s Profile`}
                                     />
                                     {selectedProfile.isVerified && <span className="verified-badge-large">✓ Verified</span>}
                                 </div>
                                 <div className="profile-detail-summary">
                                     <h2>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</h2>
+                                    {((selectedProfile.isPremium || selectedProfile.IsPremium) || (selectedProfile.isMatchmakerManaged || selectedProfile.IsMatchmakerManaged)) && (
+                                        <div style={{ marginTop: '6px', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            {(selectedProfile.isPremium || selectedProfile.IsPremium) && (
+                                                <PremiumBadge variant="full" />
+                                            )}
+                                            {(selectedProfile.isMatchmakerManaged || selectedProfile.IsMatchmakerManaged) && (
+                                                <MatchmakerBadge
+                                                    matchmakerName={selectedProfile.matchmakerName || selectedProfile.MatchmakerName}
+                                                    variant="full"
+                                                />
+                                            )}
+                                        </div>
+                                    )}
                                     <p className="profile-tagline">{selectedProfile.bio || 'Looking for a caring and understanding life partner'}</p>
                                     <div className="profile-key-info">
                                         <span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Age Not Specified'}</span>
@@ -2503,7 +2472,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             </div>
                                         ) : (
                                             <>
-                                                <button className="btn btn-primary" onClick={() => onSwitch('subscription')}><span>❤️</span> Express Interest</button>
+                                                <button className="btn btn-primary" onClick={() => onSwitch('subscription')}><HeartIcon filled size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Express Interest</button>
                                                 <button className="btn btn-outline" onClick={() => {
                                                     if (!user) {
                                                         onSwitch('login');
@@ -2517,7 +2486,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                         router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
                                                     }
                                                 }}><span>💬</span> Message</button>
-                                                <button className="btn btn-outline" onClick={() => onSwitch('login')}><span>⭐</span> Shortlist</button>
+                                                <button className="btn btn-outline" onClick={() => onSwitch('login')}><BookmarkIcon size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Shortlist</button>
                                             </>
                                         )}
                                     </div>
@@ -2528,6 +2497,57 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     )}
                                 </div>
                             </div>
+
+                            {!isProfileLockedByDailyLimit && (() => {
+                                // Collect any additional gallery photos uploaded by the user.
+                                const galleryPhotos: string[] = [
+                                    selectedProfile.upload1 || selectedProfile.Upload1 || '',
+                                    selectedProfile.upload2 || selectedProfile.Upload2 || '',
+                                    selectedProfile.upload3 || selectedProfile.Upload3 || '',
+                                ].filter((src) => typeof src === 'string' && src.trim() !== '');
+                                if (galleryPhotos.length === 0) return null;
+                                return (
+                                    <div className="profile-section" style={{ marginTop: '1.25rem' }}>
+                                        <h3>Photos</h3>
+                                        <div
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                                                gap: '0.75rem',
+                                            }}
+                                        >
+                                            {galleryPhotos.map((src, idx) => (
+                                                <button
+                                                    key={`${src}-${idx}`}
+                                                    type="button"
+                                                    onClick={() => setGalleryLightboxSrc(src)}
+                                                    aria-label={`View photo ${idx + 1} larger`}
+                                                    style={{
+                                                        padding: 0,
+                                                        border: '1px solid #eee',
+                                                        borderRadius: '8px',
+                                                        background: '#fafafa',
+                                                        cursor: 'pointer',
+                                                        overflow: 'hidden',
+                                                        aspectRatio: '1 / 1',
+                                                    }}
+                                                >
+                                                    <img
+                                                        src={src}
+                                                        alt={`${selectedProfile.firstName || 'User'}'s photo ${idx + 1}`}
+                                                        style={{
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            objectFit: 'cover',
+                                                            display: 'block',
+                                                        }}
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             {!isProfileLockedByDailyLimit && (
                                 <>
@@ -2639,50 +2659,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                                    {/* Contact Section - Subscription gated */}
-                                    {selectedProfile?.canViewContact || selectedProfile?.CanViewContact ? (
-                                <div className="contact-section">
-                                    <div className="contact-info-hidden" style={{ filter: 'none' }}>
-                                        <div className="contact-item">
-                                            <span>📱</span>
-                                            <div><label>Mobile</label><span>{selectedProfile.phoneNumber || selectedProfile.PhoneNumber || 'Not available'}</span></div>
-                                        </div>
-                                        <div className="contact-item">
-                                            <span>💬</span>
-                                            <div><label>WhatsApp</label><span>{selectedProfile.whatsApp || selectedProfile.WhatsApp || 'Not available'}</span></div>
-                                        </div>
-                                        <div className="contact-item">
-                                            <span>📧</span>
-                                            <div><label>Email</label><span>{selectedProfile.email || selectedProfile.Email || 'Not available'}</span></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                    ) : (
-                                <div className="contact-section blurred-section">
-                                    <div className="contact-blur-overlay">
-                                        <span>🔒</span>
-                                        <h4>Upgrade to View Contact Details</h4>
-                                        <p>Subscribe to unlock contact details and unlimited messaging.</p>
-                                        <button className="btn btn-primary" onClick={() => onSwitch('subscription')}>Upgrade Now</button>
-                                    </div>
-                                    <div className="contact-info-hidden">
-                                        <div className="contact-item">
-                                            <span>📱</span>
-                                            <div><label>Mobile</label><span>{selectedProfile.phoneNumber || selectedProfile.PhoneNumber || '+94 XX XXX XXXX'}</span></div>
-                                        </div>
-                                        <div className="contact-item">
-                                            <span>📧</span>
-                                            <div><label>Email</label><span>{selectedProfile.email || selectedProfile.Email || 'us***@gmail.com'}</span></div>
-                                        </div>
-                                        <div className="contact-item">
-                                            <span>🔢</span>
-                                            <div>
-                                                <label>Daily profile views left</label>
-                                                <span>{selectedProfile.remainingDailyProfileViews ?? selectedProfile.RemainingDailyProfileViews ?? 0}</span>
+                                    {/*
+                                        Contact info (mobile / WhatsApp / email) is intentionally hidden
+                                        from the profile detail view. Members should connect through the
+                                        in-app messaging feature instead.
+                                    */}
+                                    {!(selectedProfile?.canViewContact || selectedProfile?.CanViewContact) && (
+                                        <div className="contact-section">
+                                            <div className="contact-info-hidden">
+                                                <div className="contact-item">
+                                                    <span>🔢</span>
+                                                    <div>
+                                                        <label>Daily profile views left</label>
+                                                        <span>{selectedProfile.remainingDailyProfileViews ?? selectedProfile.RemainingDailyProfileViews ?? 0}</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                </div>
                                     )}
                                 </>
                             )}
@@ -2695,6 +2688,63 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     )}
                 </div>
             </div>
+
+            {/* Gallery photo lightbox (sits above the profile modal) */}
+            {galleryLightboxSrc && (
+                <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Photo viewer"
+                    onClick={() => setGalleryLightboxSrc(null)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        background: 'rgba(0, 0, 0, 0.85)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '2rem',
+                    }}
+                >
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setGalleryLightboxSrc(null); }}
+                        aria-label="Close photo viewer"
+                        style={{
+                            position: 'absolute',
+                            top: '1rem',
+                            right: '1rem',
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            border: 'none',
+                            background: 'rgba(255,255,255,0.95)',
+                            color: '#111',
+                            fontSize: '1.25rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                        }}
+                    >
+                        ✕
+                    </button>
+                    <img
+                        src={galleryLightboxSrc}
+                        alt="Profile photo enlarged"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            maxWidth: '90vw',
+                            maxHeight: '85vh',
+                            objectFit: 'contain',
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                            background: '#000',
+                        }}
+                    />
+                </div>
+            )}
 
             {/* Blog Detail Modal */}
             <div className={`modal-overlay blog-modal ${activeModal === 'blog' ? 'active' : ''}`} id="blogModal" onClick={handleOverlayClick}>

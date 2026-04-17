@@ -165,10 +165,10 @@ export default function Footer() {
                 <div className={colClass(3)} style={colStyle(3)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('legal')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="/privacy-policy" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
-                        <li><Link href="/terms-of-service" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
-                        <li><Link href="/cookie-policy" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
-                        <li><Link href="/refund-policy" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
+                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
+                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
+                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
+                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
                     </ul>
                 </div>
             </div>

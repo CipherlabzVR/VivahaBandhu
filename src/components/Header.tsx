@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { matrimonialService } from '../services/matrimonialService';
 import { getStoredToken } from '../utils/authStorage';
+import { BookmarkIcon } from './icons/InteractionIcons';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
@@ -258,6 +259,9 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     />
                 </Link>
                 <nav className="hidden md:flex gap-8 items-center">
+                    <Link href="/" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
+                        {t('home')}
+                    </Link>
                     <Link href="/profiles" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('browseProfiles')}
                     </Link>
@@ -361,10 +365,18 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                         <strong>{user.firstName} {user.lastName}</strong>
                                         <div className="text-xs text-gray-600">{user.email}</div>
                                     </div>
-                                    <Link href="/profile" className="block py-2 text-text-dark no-underline hover:text-primary">
+                                    <Link
+                                        href="/profile"
+                                        className="block py-2 text-text-dark no-underline hover:text-primary"
+                                        onClick={() => setProfileMenuOpen(false)}
+                                    >
                                         {t('myProfile')}
                                     </Link>
-                                    <Link href="#" className="block py-2 text-text-dark no-underline hover:text-primary">
+                                    <Link
+                                        href="/profile?settings=open"
+                                        className="block py-2 text-text-dark no-underline hover:text-primary"
+                                        onClick={() => setProfileMenuOpen(false)}
+                                    >
                                         {t('settings')}
                                     </Link>
                                     <div
@@ -413,6 +425,9 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             {mobileMenuOpen && (
                 <div className="md:hidden bg-white border-t border-gray-100 px-4 py-4 shadow-lg absolute w-full left-0 top-full">
                     <nav className="flex flex-col gap-4 mb-6">
+                        <Link href="/" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                            {t('home')}
+                        </Link>
                         <Link href="/profiles" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                             {t('browseProfiles')}
                         </Link>
@@ -468,6 +483,9 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                             <div className="flex flex-col gap-3">
                                 <Link href="/profile" className="text-text-dark hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                                     {t('myProfile')}
+                                </Link>
+                                <Link href="/profile?settings=open" className="text-text-dark hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                                    {t('settings')}
                                 </Link>
                                 <button 
                                     onClick={() => { logout(); setMobileMenuOpen(false); }}
@@ -534,9 +552,9 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                             <button
                                 onClick={handleSaveInterestedProfile}
                                 disabled={isSavingInterestProfile}
-                                className="flex-1 px-4 py-2 rounded-full bg-primary text-white hover:bg-primary-dark disabled:opacity-60"
+                                className="flex-1 px-4 py-2 rounded-full bg-primary text-white hover:bg-primary-dark disabled:opacity-60 inline-flex items-center justify-center gap-2"
                             >
-                                {isSavingInterestProfile ? 'Saving...' : '⭐ Save Profile'}
+                                {isSavingInterestProfile ? 'Saving...' : (<><BookmarkIcon filled size={16} /> Save Profile</>)}
                             </button>
                         </div>
                     </div>

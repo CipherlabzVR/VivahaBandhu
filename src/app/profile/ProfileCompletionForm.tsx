@@ -5,12 +5,451 @@ import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Country, City } from 'country-state-city';
 import { getStoredToken } from '../../utils/authStorage';
+import { sanitizeNameInput } from '../../utils/nameInput';
+import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
-const MIN_HEIGHT_CM = 120;
-const MAX_HEIGHT_CM = 250;
 
 type CountryOption = { name: string; isoCode: string };
+
+/** Comma-separated values from a fixed list of string options (e.g. ethnicity, religion). */
+function OptionMultiSelect({
+    idPrefix,
+    label,
+    value,
+    onChange,
+    options,
+    placeholder = 'Any',
+    searchable = false,
+}: {
+    idPrefix: string;
+    label: ReactNode;
+    value: string;
+    onChange: (commaJoined: string) => void;
+    options: string[];
+    placeholder?: string;
+    searchable?: boolean;
+}) {
+    const selected = useMemo(
+        () => value.split(',').map((s) => s.trim()).filter(Boolean),
+        [value]
+    );
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+                setOpen(false);
+                setSearch('');
+            }
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
+    const toggle = (opt: string) => {
+        const cur = value.split(',').map((s) => s.trim()).filter(Boolean);
+        const next = cur.includes(opt) ? cur.filter((c) => c !== opt) : [...cur, opt];
+        onChange(next.join(', '));
+    };
+
+    const filtered = useMemo(() => {
+        const t = search.toLowerCase().trim();
+        return options.filter((o) => !t || o.toLowerCase().includes(t));
+    }, [options, search]);
+
+    return (
+        <div className="country-multi-select" ref={wrapRef} style={{ position: 'relative' }}>
+            <label>{label}</label>
+            <div
+                className="country-multi-trigger"
+                onClick={() => setOpen((o) => !o)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setOpen((o) => !o);
+                    }
+                }}
+            >
+                {selected.length > 0 ? (
+                    selected.map((c) => (
+                        <span key={c} className="country-multi-chip">
+                            {c}
+                            <button
+                                type="button"
+                                className="country-multi-chip-remove"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggle(c);
+                                }}
+                                aria-label={`Remove ${c}`}
+                            >
+                                ×
+                            </button>
+                        </span>
+                    ))
+                ) : (
+                    <span className="country-multi-placeholder">{placeholder}</span>
+                )}
+            </div>
+            {open && (
+                <div className="country-multi-panel">
+                    {searchable && (
+                        <div className="country-multi-search-wrap">
+                            <input
+                                type="text"
+                                className="country-multi-search"
+                                placeholder="Search..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                    )}
+                    <div className="country-multi-list">
+                        {filtered.map((opt) => {
+                            const cid = `${idPrefix}-${opt.replace(/\s+/g, '-')}`;
+                            const isOn = selected.includes(opt);
+                            return (
+                                <label
+                                    key={opt}
+                                    htmlFor={cid}
+                                    className={`country-multi-row ${isOn ? 'selected' : ''}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <input
+                                        id={cid}
+                                        type="checkbox"
+                                        className="country-multi-checkbox"
+                                        checked={isOn}
+                                        onChange={() => toggle(opt)}
+                                    />
+                                    <span className="country-multi-text">{opt}</span>
+                                </label>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            <style jsx>{`
+                .country-multi-select :global(.country-multi-checkbox) {
+                    width: 1rem !important;
+                    min-width: 1rem !important;
+                    max-width: 1rem !important;
+                    height: 1rem !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    flex-shrink: 0;
+                    align-self: center;
+                }
+                .country-multi-select :global(label.country-multi-row) {
+                    display: flex !important;
+                    flex-direction: row !important;
+                    align-items: center !important;
+                    gap: 0.6rem !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 0.45rem 0.65rem !important;
+                    cursor: pointer;
+                    border-radius: 4px;
+                    font-weight: 400;
+                }
+                .country-multi-select :global(label.country-multi-row):hover {
+                    background: #f7f7fb;
+                }
+                .country-multi-select :global(label.country-multi-row.selected) {
+                    background: #f0f4ff;
+                }
+                .country-multi-select :global(.country-multi-text) {
+                    flex: 1;
+                    min-width: 0;
+                    line-height: 1.35;
+                    text-align: left;
+                }
+                .country-multi-trigger {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    padding: 0.5rem 0.75rem;
+                    min-height: 42px;
+                    cursor: pointer;
+                    background: #fff;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.35rem;
+                    align-items: center;
+                }
+                .country-multi-placeholder {
+                    color: #999;
+                    font-size: 0.95rem;
+                }
+                .country-multi-chip {
+                    background: #eef2ff;
+                    color: var(--primary);
+                    padding: 0.2rem 0.45rem 0.2rem 0.6rem;
+                    border-radius: 12px;
+                    font-size: 0.85rem;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.25rem;
+                }
+                .country-multi-chip-remove {
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-weight: 700;
+                    font-size: 1rem;
+                    line-height: 1;
+                    padding: 0 0.15rem;
+                    color: inherit;
+                }
+                .country-multi-panel {
+                    position: absolute;
+                    top: calc(100% + 4px);
+                    left: 0;
+                    right: 0;
+                    z-index: 100;
+                    background: #fff;
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+                    display: flex;
+                    flex-direction: column;
+                    max-height: 280px;
+                    overflow: hidden;
+                }
+                .country-multi-search-wrap {
+                    padding: 0.5rem;
+                    flex-shrink: 0;
+                    border-bottom: 1px solid #eee;
+                    background: #fff;
+                }
+                .country-multi-search {
+                    width: 100%;
+                    padding: 0.45rem 0.6rem;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    font-size: 0.9rem;
+                }
+                .country-multi-list {
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    max-height: 220px;
+                    padding: 0.25rem 0;
+                }
+            `}</style>
+        </div>
+    );
+}
+
+/**
+ * Autocomplete input for free-text city selection backed by a (potentially huge)
+ * suggestion list. We deliberately avoid the native <datalist> here because some
+ * browsers (notably Chrome) silently truncate or stop showing suggestions once
+ * the option count grows into the thousands - which is exactly what happens
+ * when a user picks a large country like India or the US in the residence list.
+ *
+ * Behaviour:
+ *  - Free typing is always allowed (the dataset is incomplete for many regions).
+ *  - Typing filters the suggestion list as a case-insensitive substring match.
+ *  - Visible matches are capped to keep the dropdown responsive.
+ *  - Click a suggestion to fill the field; outside-click / Escape closes.
+ */
+type CityGroup = { country: string; cities: string[] };
+
+function CityAutocomplete({
+    name,
+    value,
+    onChange,
+    cityGroups,
+    placeholder,
+    required,
+    disabled,
+}: {
+    name: string;
+    value: string;
+    onChange: (next: string) => void;
+    cityGroups: CityGroup[];
+    placeholder: string;
+    required?: boolean;
+    disabled?: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const MAX_VISIBLE = 100;
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
+    /**
+     * Per-group filtered matches. Cities are kept in their own country bucket
+     * so the dropdown shows them separated rather than alphabetically mixed.
+     * The MAX_VISIBLE budget is shared across all groups - each group may also
+     * surface a "+N more" hint when its own bucket exceeds its share.
+     */
+    const filteredGroups = useMemo(() => {
+        const q = value.trim().toLowerCase();
+        let remaining = MAX_VISIBLE;
+        return cityGroups.map((group) => {
+            const startsWith: string[] = [];
+            const contains: string[] = [];
+            for (const c of group.cities) {
+                const lc = c.toLowerCase();
+                if (q && lc === q) continue;
+                if (!q) {
+                    startsWith.push(c);
+                } else if (lc.startsWith(q)) {
+                    startsWith.push(c);
+                } else if (lc.includes(q)) {
+                    contains.push(c);
+                }
+            }
+            const allMatched = [...startsWith, ...contains];
+            const take = Math.min(allMatched.length, Math.max(0, remaining));
+            const visible = allMatched.slice(0, take);
+            remaining -= visible.length;
+            return {
+                country: group.country,
+                visible,
+                hiddenCount: allMatched.length - visible.length,
+                totalMatched: allMatched.length,
+            };
+        });
+    }, [value, cityGroups]);
+
+    const totalVisible = filteredGroups.reduce((sum, g) => sum + g.visible.length, 0);
+    const hasAnything = filteredGroups.some((g) => g.totalMatched > 0);
+
+    return (
+        <div ref={wrapRef} style={{ position: 'relative' }}>
+            <input
+                type="text"
+                name={name}
+                value={value}
+                onChange={(e) => {
+                    onChange(e.target.value);
+                    if (!open) setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Escape') setOpen(false);
+                }}
+                placeholder={placeholder}
+                required={required}
+                disabled={disabled}
+                autoComplete="off"
+            />
+            {open && !disabled && hasAnything && (
+                <div
+                    role="listbox"
+                    style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 2px)',
+                        left: 0,
+                        right: 0,
+                        zIndex: 20,
+                        background: '#fff',
+                        border: '1px solid #ddd',
+                        borderRadius: 6,
+                        maxHeight: 260,
+                        overflowY: 'auto',
+                        boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
+                    }}
+                >
+                    {filteredGroups.map((group) => {
+                        if (group.visible.length === 0) return null;
+                        const showCountryHeader = cityGroups.length > 1;
+                        return (
+                            <div key={group.country}>
+                                {showCountryHeader && (
+                                    <div
+                                        style={{
+                                            padding: '0.4rem 0.7rem',
+                                            fontSize: '0.72rem',
+                                            fontWeight: 600,
+                                            letterSpacing: '0.04em',
+                                            textTransform: 'uppercase',
+                                            color: '#8a6d3b',
+                                            background: '#fdf6ec',
+                                            borderTop: '1px solid #f1e6d2',
+                                            borderBottom: '1px solid #f1e6d2',
+                                            position: 'sticky',
+                                            top: 0,
+                                        }}
+                                    >
+                                        {group.country}
+                                    </div>
+                                )}
+                                {group.visible.map((city) => (
+                                    <div
+                                        key={`${group.country}::${city}`}
+                                        role="option"
+                                        aria-selected={city === value}
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            onChange(city);
+                                            setOpen(false);
+                                        }}
+                                        style={{
+                                            padding: '0.45rem 0.7rem',
+                                            cursor: 'pointer',
+                                            fontSize: '0.9rem',
+                                            background: city === value ? '#f5efe6' : 'transparent',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            (e.currentTarget as HTMLDivElement).style.background = '#fdf6ec';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            (e.currentTarget as HTMLDivElement).style.background =
+                                                city === value ? '#f5efe6' : 'transparent';
+                                        }}
+                                    >
+                                        {city}
+                                    </div>
+                                ))}
+                                {group.hiddenCount > 0 && (
+                                    <div
+                                        style={{
+                                            padding: '0.35rem 0.7rem',
+                                            fontSize: '0.72rem',
+                                            color: '#888',
+                                            background: '#fafafa',
+                                        }}
+                                    >
+                                        +{group.hiddenCount} more in {group.country} - keep typing to narrow down
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {totalVisible === 0 && (
+                        <div
+                            style={{
+                                padding: '0.5rem 0.7rem',
+                                fontSize: '0.85rem',
+                                color: '#888',
+                            }}
+                        >
+                            No matches - your typed value will be kept as-is.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
 
 /** Comma-separated country names; avoids global .form-group input { width:100% } breaking checkbox layout */
 function CountryMultiSelect({
@@ -261,6 +700,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
     const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
     const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
 
+    useEffect(() => {
+        if (horoscopePopupOpen) setHoroscopePopupOpen(false);
+    }, [step]);
+
     const [formData, setFormData] = useState({
         // Personal
         gender: '',
@@ -329,8 +772,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
 
     // Only fetch once when the form mounts (not on every user state change).
     const [initialFetchDone, setInitialFetchDone] = useState(false);
-    type UploadField = 'profilePhoto' | 'upload1' | 'upload2' | 'upload3';
-    type AnyUploadField = UploadField | 'horoscopeDocument';
 
     const countryOptions = useMemo(
         () => Country.getAllCountries().map((c) => ({ name: c.name, isoCode: c.isoCode })),
@@ -358,11 +799,18 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         [formData.countryOfResidence]
     );
 
-    const residenceCities = useMemo(
-        () => {
-            const allCities = selectedResidenceCountries.flatMap(c => getCitiesForCountry(c));
-            return Array.from(new Set(allCities)).sort((a, b) => a.localeCompare(b));
-        },
+    /**
+     * Cities grouped by their source country. Used by <CityAutocomplete /> so
+     * that when the user selects 2+ residence countries, cities are not
+     * interleaved alphabetically (e.g. an Indian city showing up between two
+     * Sri Lankan ones) - instead each country gets its own labelled section.
+     */
+    const residenceCityGroups = useMemo(
+        () =>
+            selectedResidenceCountries.map((country) => ({
+                country,
+                cities: getCitiesForCountry(country),
+            })),
         [selectedResidenceCountries, countryIsoByName]
     );
 
@@ -400,6 +848,25 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         'Other',
     ];
 
+    /**
+     * Canonical option lists for habit / qualification dropdowns.
+     * Both the user-side and partner-side selects render from these so the available
+     * choices never drift out of sync (previously partner dropdowns were missing
+     * options like "Vegan", "Frequently", "Diploma", "Masters", "PHD", "Other").
+     */
+    const qualificationOptions = [
+        'GCE O/L',
+        'GCE A/L',
+        'Diploma',
+        'Degree',
+        'Masters',
+        'PHD',
+        'Other',
+    ];
+    const eatingHabitOptions = ['Vegetarian', 'Non-Veg', 'Vegan'];
+    const drinkingHabitOptions = ['Never', 'Occasionally', 'Frequently'];
+    const smokingHabitOptions = ['Never', 'Occasionally', 'Frequently'];
+
     const safeDate = (val: string | undefined | null): string => {
         if (!val) return '';
         const leadingDate = val.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -435,6 +902,14 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     if (data.result) {
                         const p = data.result;
                         const v = (key: string) => p[key] || p[key.charAt(0).toUpperCase() + key.slice(1)] || '';
+                        // Strip the "-" placeholder we save for empty optional
+                        // parent fields, so the UI shows the empty placeholder
+                        // ("Select Ethnicity" / no chips) rather than a literal
+                        // hyphen pre-filled in the controls.
+                        const vOpt = (key: string) => {
+                            const raw = v(key);
+                            return raw === '-' ? '' : raw;
+                        };
                         setFormData(prev => ({
                             ...prev,
                             gender: v('gender') || prev.gender,
@@ -456,29 +931,29 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             horoscope: v('horoscope') || prev.horoscope,
                             horoscopeDocument: v('horoscopeDocument') || prev.horoscopeDocument,
                             fatherName: v('fatherName') || prev.fatherName,
-                            fatherCountryOfResidence: v('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
+                            fatherCountryOfResidence: vOpt('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
                             fatherOccupation: v('fatherOccupation') || prev.fatherOccupation,
-                            fatherEthnicity: v('fatherEthnicity') || prev.fatherEthnicity,
+                            fatherEthnicity: vOpt('fatherEthnicity') || prev.fatherEthnicity,
                             fatherReligion: v('fatherReligion') || prev.fatherReligion,
-                            fatherCaste: v('fatherCaste') || prev.fatherCaste,
-                            fatherRemarks: v('fatherRemarks') || prev.fatherRemarks,
+                            fatherCaste: vOpt('fatherCaste') || prev.fatherCaste,
+                            fatherRemarks: vOpt('fatherRemarks') || prev.fatherRemarks,
                             motherName: v('motherName') || prev.motherName,
-                            motherCountryOfResidence: v('motherCountryOfResidence') || prev.motherCountryOfResidence,
+                            motherCountryOfResidence: vOpt('motherCountryOfResidence') || prev.motherCountryOfResidence,
                             motherOccupation: v('motherOccupation') || prev.motherOccupation,
-                            motherEthnicity: v('motherEthnicity') || prev.motherEthnicity,
+                            motherEthnicity: vOpt('motherEthnicity') || prev.motherEthnicity,
                             motherReligion: v('motherReligion') || prev.motherReligion,
-                            motherCaste: v('motherCaste') || prev.motherCaste,
-                            motherRemarks: v('motherRemarks') || prev.motherRemarks,
-                            partnerMinAge: String(Math.max(18, parseInt(p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge || '18', 10) || 18)),
+                            motherCaste: vOpt('motherCaste') || prev.motherCaste,
+                            motherRemarks: vOpt('motherRemarks') || prev.motherRemarks,
+                            partnerMinAge: p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge,
                             partnerMaxAge: p.partnerMaxAge || p.PartnerMaxAge || prev.partnerMaxAge,
-                            partnerEatingHabits: v('partnerEatingHabits') || prev.partnerEatingHabits,
-                            partnerDrinkingHabits: v('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
-                            partnerSmokingHabits: v('partnerSmokingHabits') || prev.partnerSmokingHabits,
+                            partnerEatingHabits: vOpt('partnerEatingHabits') || prev.partnerEatingHabits,
+                            partnerDrinkingHabits: vOpt('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
+                            partnerSmokingHabits: vOpt('partnerSmokingHabits') || prev.partnerSmokingHabits,
                             partnerQualificationLevel: v('partnerQualificationLevel') || prev.partnerQualificationLevel,
                             partnerReligion: v('partnerReligion') || prev.partnerReligion,
                             partnerEthnicity: v('partnerEthnicity') || prev.partnerEthnicity,
-                            partnerCountryOfOrigin: v('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
-                            partnerCountryOfResidence: v('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
+                            partnerCountryOfOrigin: vOpt('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
+                            partnerCountryOfResidence: vOpt('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
                             partnerAdditionalRequirements: v('partnerAdditionalRequirements') || prev.partnerAdditionalRequirements,
                             upload1: v('upload1') || prev.upload1,
                             upload2: v('upload2') || prev.upload2,
@@ -499,167 +974,72 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
     }, [user?.id, initialFetchDone]);
 
     useEffect(() => {
-        // Clear city when country changes and selected city is not in that country's city list.
-        if (!formData.countryOfResidence || !formData.cityOfResidence) return;
-        if (residenceCities.length === 0) return;
-        if (!residenceCities.includes(formData.cityOfResidence)) {
+        // If the user removes all residence countries, drop the now-orphaned city.
+        // We deliberately do NOT clear when the typed value is missing from the
+        // suggestion list - that list is incomplete for many regions and free
+        // typing must remain valid (otherwise the city box wipes itself the
+        // moment a user types a small town the dataset doesn't know about).
+        if (!formData.countryOfResidence && formData.cityOfResidence) {
             setFormData((prev) => ({ ...prev, cityOfResidence: '' }));
         }
-    }, [formData.countryOfResidence, residenceCities, formData.cityOfResidence]);
+    }, [formData.countryOfResidence, formData.cityOfResidence]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        if (name === 'height') {
-            const numericOnly = value.replace(/[^\d]/g, '').slice(0, 3);
-            setFormData(prev => ({ ...prev, [name]: numericOnly }));
-            return;
+        let nextValue: string = value;
+        // Name fields must accept letters only (no digits / symbols).
+        // Father / Mother names are the only "name" inputs in this wizard;
+        // own-name lives on AppUser and is edited from profile/page.tsx.
+        if (name === 'fatherName' || name === 'motherName') {
+            nextValue = sanitizeNameInput(value);
         }
-        if (name === 'partnerMinAge') {
-            const numericOnly = value.replace(/[^\d]/g, '').slice(0, 2);
-            if (numericOnly === '') {
-                setFormData(prev => ({ ...prev, [name]: '' }));
-                return;
-            }
-            const normalized = Math.max(18, parseInt(numericOnly, 10) || 18);
-            setFormData(prev => ({ ...prev, [name]: String(normalized) }));
-            return;
+        // Partner age fields must be digits only. type="number" still allows
+        // "e", "+", "-", "." through, and pasting a string slips in - strip
+        // anything that isn't a digit and cap at 3 chars (max 999, plenty).
+        else if (name === 'partnerMinAge' || name === 'partnerMaxAge') {
+            nextValue = value.replace(/\D+/g, '').slice(0, 3);
         }
-        if (name === 'occupation' || name === 'fatherOccupation' || name === 'motherOccupation') {
-            const lettersAndSpacesOnly = value.replace(/[^\p{L}\s]/gu, '');
-            setFormData(prev => ({ ...prev, [name]: lettersAndSpacesOnly }));
-            return;
+        setFormData(prev => ({ ...prev, [name]: nextValue }));
+    };
+
+    // Enforce sequential photo uploads: a gallery slot is only writable
+    // once the prior slot already has a stored URL. The Main Profile Photo
+    // is the gate for Gallery 1, Gallery 1 gates Gallery 2, etc.
+    const photoPrerequisite = (fieldName: string): { ok: boolean; message?: string } => {
+        switch (fieldName) {
+            case 'upload1':
+                if (!formData.profilePhoto) {
+                    return { ok: false, message: 'Please upload your Main Profile Photo first.' };
+                }
+                break;
+            case 'upload2':
+                if (!formData.upload1) {
+                    return { ok: false, message: 'Please upload Gallery Photo 1 before Gallery Photo 2.' };
+                }
+                break;
+            case 'upload3':
+                if (!formData.upload2) {
+                    return { ok: false, message: 'Please upload Gallery Photo 2 before Gallery Photo 3.' };
+                }
+                break;
         }
-        setFormData(prev => ({ ...prev, [name]: value }));
+        return { ok: true };
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
+        const gate = photoPrerequisite(fieldName);
+        if (!gate.ok) {
+            setSubmitError(gate.message || 'Please upload the previous photo first.');
+            // Reset so the user can retry once the prerequisite is satisfied.
+            e.target.value = '';
+            return;
+        }
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
             await uploadFile(file, fieldName);
         }
         // Allow selecting the same file again to re-upload/replace.
         e.target.value = '';
-    };
-
-    const handleRemoveUploadedImage = (fieldName: AnyUploadField) => {
-        setFormData((prev) => ({ ...prev, [fieldName]: '' }));
-        setPreviewBusters((prev) => {
-            if (!(fieldName in prev)) return prev;
-            const next = { ...prev };
-            delete next[fieldName];
-            return next;
-        });
-        if (fieldName === 'profilePhoto') {
-            updateUser({ profilePhoto: '' });
-        }
-        if (fieldName === 'horoscopeDocument') {
-            updateUser({ horoscopeDocument: '' });
-        }
-    };
-
-    const renderPhotoUploadField = (
-        fieldName: UploadField,
-        label: string,
-        alt: string,
-        required?: boolean
-    ) => {
-        const value = formData[fieldName];
-        const inputId = `${fieldName}Input`;
-        const isUploading = !!uploading[fieldName];
-
-        return (
-            <div className="form-group">
-                <label>{label}{required ? '*' : ''}</label>
-                <input
-                    id={inputId}
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => handleFileChange(e, fieldName)}
-                    disabled={isUploading}
-                    style={{ display: 'none' }}
-                />
-                <label
-                    htmlFor={inputId}
-                    style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '0.3rem',
-                        border: '2px dashed #e7d8c9',
-                        borderRadius: '12px',
-                        padding: '1rem',
-                        minHeight: '200px',
-                        background: value ? `linear-gradient(rgba(17, 24, 39, 0.45), rgba(17, 24, 39, 0.45)), url(${previewSrc(fieldName, value)}) center/cover no-repeat` : '#fff',
-                        cursor: isUploading ? 'not-allowed' : 'pointer',
-                        opacity: isUploading ? 0.7 : 1,
-                        transition: 'all 0.2s ease',
-                        position: 'relative',
-                    }}
-                >
-                    {value && (
-                        <button
-                            type="button"
-                            title="Remove image"
-                            aria-label="Remove image"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleRemoveUploadedImage(fieldName);
-                            }}
-                            disabled={isUploading}
-                            style={{
-                                position: 'absolute',
-                                top: '8px',
-                                right: '8px',
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '50%',
-                                border: 'none',
-                                background: '#ef4444',
-                                color: 'white',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.9rem',
-                                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-                                zIndex: 2,
-                            }}
-                        >
-                            ✕
-                        </button>
-                    )}
-                    <div
-                        style={{
-                            width: '44px',
-                            height: '44px',
-                            borderRadius: '50%',
-                            background: 'rgba(255,255,255,0.92)',
-                            color: '#111827',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 1,
-                        }}
-                    >
-                        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden>
-                            <path
-                                fill="currentColor"
-                                d="M9 4l-1.2 1.6c-.2.3-.5.4-.8.4H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-2c-.3 0-.6-.1-.8-.4L15 4H9zm3 4.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm0 2A2.5 2.5 0 1 0 14.5 13 2.5 2.5 0 0 0 12 10.5z"
-                            />
-                        </svg>
-                    </div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: value ? '#fff' : '#374151', textAlign: 'center', zIndex: 1 }}>
-                        {isUploading ? 'Uploading image...' : value ? 'Tap to change image' : 'Drop your image here, or browse'}
-                    </div>
-                    <div style={{ fontSize: '0.72rem', color: value ? 'rgba(255,255,255,0.86)' : '#9ca3af', textAlign: 'center', zIndex: 1 }}>
-                        Supports JPG, PNG, WEBP
-                    </div>
-                </label>
-            </div>
-        );
     };
 
     const withCacheBuster = (url: string) => {
@@ -712,6 +1092,15 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 if (fieldName === 'horoscopeDocument') {
                     updateUser({ horoscopeDocument: cleanUrl });
                 }
+
+                // Persist key file fields to the matrimonial profile *immediately* so the
+                // S3 URL survives the user refreshing, closing the tab or jumping
+                // backwards in the wizard before the final submit. Without this the
+                // upload only lives in local React state until the very last step,
+                // which is what made the horoscope appear "lost" between pages.
+                if (fieldName === 'horoscopeDocument' || fieldName === 'profilePhoto') {
+                    void persistFieldUpdate(fieldName, cleanUrl);
+                }
             } else {
                 const errorText = await response.text().catch(() => '');
                 const statusHint = response.status === 401 ? ' (Unauthorized - please login again)' : '';
@@ -736,11 +1125,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 setSubmitError('Please fill in all mandatory fields (*)');
                 return false;
             }
-            const heightCm = Number(formData.height);
-            if (!Number.isFinite(heightCm) || heightCm < MIN_HEIGHT_CM || heightCm > MAX_HEIGHT_CM) {
-                setSubmitError(`Height must be between ${MIN_HEIGHT_CM} and ${MAX_HEIGHT_CM} cm.`);
-                return false;
-            }
         }
         if (currentStep === 2) {
             const userCountries = formData.countryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
@@ -754,17 +1138,38 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 setSubmitError('Please select Horoscope option (*)');
                 return false;
             }
-            if (formData.horoscope === 'Required' && !formData.horoscopeDocument) {
-                setSubmitError('Please upload Horoscope Document to continue.');
+        }
+        if (currentStep === 4) {
+            // Country of Residence, Ethnicity and Caste for parents are now
+            // optional - the backend payload substitutes "-" for any blanks
+            // so the database still gets a placeholder rather than an empty
+            // string. Religion remains required for matchmaking accuracy.
+            if (!formData.fatherReligion || !formData.motherReligion) {
+                setSubmitError('Please select Religion for both parents (*)');
                 return false;
             }
         }
-        if (currentStep === 4) {
-            const fatherCountries = formData.fatherCountryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
-            const motherCountries = formData.motherCountryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
-            if (fatherCountries.length === 0 || !formData.fatherEthnicity || !formData.fatherReligion ||
-                motherCountries.length === 0 || !formData.motherEthnicity || !formData.motherReligion) {
-                setSubmitError('Please fill in all mandatory fields for parents (*)');
+        if (currentStep === 5) {
+            // Partner age range: both required, Min must be at least 18, and
+            // Max must be strictly greater than Min so the range is meaningful.
+            const minRaw = formData.partnerMinAge.toString().trim();
+            const maxRaw = formData.partnerMaxAge.toString().trim();
+            if (!minRaw || !maxRaw) {
+                setSubmitError('Please enter both Minimum and Maximum partner age (cannot be blank).');
+                return false;
+            }
+            const minAge = parseInt(minRaw, 10);
+            const maxAge = parseInt(maxRaw, 10);
+            if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
+                setSubmitError('Partner age must be a valid number.');
+                return false;
+            }
+            if (minAge < 18) {
+                setSubmitError('Minimum partner age must be at least 18.');
+                return false;
+            }
+            if (maxAge <= minAge) {
+                setSubmitError('Maximum partner age must be greater than Minimum age.');
                 return false;
             }
         }
@@ -773,14 +1178,58 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         return true;
     };
 
-    const buildProfilePayload = () => ({
-        userId: user?.id,
-        ...formData,
-        height: parseFloat(formData.height) || 0,
-        partnerMinAge: Math.max(18, parseInt(formData.partnerMinAge) || 18),
-        partnerMaxAge: parseInt(formData.partnerMaxAge) || 60,
-        dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
-    });
+    /**
+     * Optional string fields that should never be persisted as empty - the
+     * back office expects a literal "-" placeholder for "user did not fill
+     * this in" so that blank cells are visually distinguishable from "still
+     * loading" / "missing column" cases. Covers the parent details block
+     * (Country / Ethnicity / Caste / Remarks) and the partner-preference
+     * habit dropdowns (Eating / Drinking / Smoking) where the user picks
+     * "Any" and the empty value would otherwise reach the DB as "".
+     */
+    const OPTIONAL_PLACEHOLDER_FIELDS = [
+        'fatherCountryOfResidence',
+        'fatherEthnicity',
+        'fatherCaste',
+        'fatherRemarks',
+        'motherCountryOfResidence',
+        'motherEthnicity',
+        'motherCaste',
+        'motherRemarks',
+        'partnerEatingHabits',
+        'partnerDrinkingHabits',
+        'partnerSmokingHabits',
+        'partnerCountryOfResidence',
+        'partnerCountryOfOrigin',
+    ] as const;
+
+    const withOptionalPlaceholders = (data: typeof formData) => {
+        const next: Record<string, string> = { ...data };
+        for (const key of OPTIONAL_PLACEHOLDER_FIELDS) {
+            const current = (next[key] ?? '').toString().trim();
+            if (!current) {
+                next[key] = '-';
+            }
+        }
+        return next as typeof formData;
+    };
+
+    const buildProfilePayload = () => {
+        // Parse age fields without a silent fallback - if they're blank or
+        // invalid the step-5 validator will already have blocked the user;
+        // the 0 default just mirrors the backend's "not specified" semantics
+        // (the entity's int default) without lying about the value.
+        const parsedMin = parseInt(formData.partnerMinAge, 10);
+        const parsedMax = parseInt(formData.partnerMaxAge, 10);
+        return {
+            userId: user?.id,
+            ...withOptionalPlaceholders(formData),
+            height: parseFloat(formData.height) || 0,
+            partnerMinAge: Number.isFinite(parsedMin) ? parsedMin : 0,
+            partnerMaxAge: Number.isFinite(parsedMax) ? parsedMax : 0,
+            dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
+        };
+    };
 
     const saveDraft = async () => {
         if (!user) {
@@ -823,8 +1272,48 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         }
     };
 
+    /**
+     * Silently persist a single freshly-uploaded field (e.g. horoscopeDocument,
+     * profilePhoto) to the matrimonial profile right after the upload completes.
+     *
+     * We hit the same UpdateProfile endpoint as saveDraft() and send the *full*
+     * current payload with the new value spliced in - this matches the behaviour
+     * of the wizard's "Next" button and avoids needing a brand-new partial-update
+     * endpoint. The update is best-effort: failures are logged but never block
+     * the user (the final submit will save again at the end of the wizard).
+     */
+    const persistFieldUpdate = async (fieldName: string, value: string) => {
+        if (!user) return;
+        const token = getStoredToken();
+        if (!token) return;
+        try {
+            const payload = { ...buildProfilePayload(), [fieldName]: value };
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/UpdateProfile`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => '');
+                console.warn(`Auto-save of ${fieldName} failed:`, errorText || response.status);
+            }
+        } catch (err) {
+            console.warn(`Auto-save of ${fieldName} threw:`, err);
+        }
+    };
+
     const handleNext = async () => {
         if (!validateStep(step)) return;
+        // Don't move on while a file is still uploading - otherwise the
+        // intermediate saveDraft below would persist an empty URL and the
+        // upload that finishes seconds later would only live in local state.
+        if (Object.values(uploading).some(Boolean)) {
+            setSubmitError('Please wait for the upload to finish before continuing.');
+            return;
+        }
         const saved = await saveDraft();
         if (!saved) return;
 
@@ -843,6 +1332,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         // Going forward requires current-step validation and auto-save.
         if (targetStep > step) {
             if (!validateStep(step)) return;
+            if (Object.values(uploading).some(Boolean)) {
+                setSubmitError('Please wait for the upload to finish before continuing.');
+                return;
+            }
             const saved = await saveDraft();
             if (!saved) return;
         }
@@ -858,6 +1351,15 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         // Check if uploads are pending
         if (Object.values(uploading).some(Boolean)) {
             setSubmitError('Please wait for images to finish uploading.');
+            return;
+        }
+
+        // Defence-in-depth: re-run the partner age check on final submit so a
+        // user who jumped backwards and re-entered step 5 from a sidebar /
+        // stepper click can't bypass the rule.
+        if (!validateStep(5)) {
+            setStep(5);
+            window.scrollTo(0, 0);
             return;
         }
 
@@ -950,10 +1452,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 {step === 1 && (
                     <div className="step-content">
                         <h3>Personal Details</h3>
-                        <div className="form-grid step6-grid">
+                        <div className="form-grid">
                             <div className="form-group">
                                 <label>Gender*</label>
-                                <select name="gender" value={formData.gender} onChange={handleChange} required disabled>
+                                <select name="gender" value={formData.gender} onChange={handleChange} required>
                                     <option value="">Select Gender</option>
                                     <option value="Male">Male</option>
                                     <option value="Female">Female</option>
@@ -962,17 +1464,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             {/* DOB Removed */}
                             <div className="form-group">
                                 <label>Height (cm)*</label>
-                                <input
-                                    type="number"
-                                    name="height"
-                                    value={formData.height}
-                                    onChange={handleChange}
-                                    required
-                                    min={MIN_HEIGHT_CM}
-                                    max={MAX_HEIGHT_CM}
-                                    step={1}
-                                    placeholder="e.g. 175"
-                                />
+                                <input type="number" name="height" value={formData.height} onChange={handleChange} required placeholder="e.g. 175" />
                             </div>
                             <div className="form-group">
                                 <label>Complexion</label>
@@ -1016,13 +1508,9 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Highest Qualification*</label>
                                 <select name="qualificationLevel" value={formData.qualificationLevel} onChange={handleChange} required>
                                     <option value="">Select Qualification</option>
-                                    <option value="GCE O/L">GCE O/L</option>
-                                    <option value="GCE A/L">GCE A/L</option>
-                                    <option value="Diploma">Diploma</option>
-                                    <option value="Degree">Degree</option>
-                                    <option value="Masters">Masters</option>
-                                    <option value="PHD">PHD</option>
-                                    <option value="Other">Other</option>
+                                    {qualificationOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -1054,20 +1542,15 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             </div>
                             <div className="form-group">
                                 <label>City of Residence*</label>
-                                <input
-                                    type="text"
+                                <CityAutocomplete
                                     name="cityOfResidence"
                                     value={formData.cityOfResidence}
-                                    onChange={handleChange}
-                                    list="country-residence-cities"
+                                    onChange={(next) => setFormData((prev) => ({ ...prev, cityOfResidence: next }))}
+                                    cityGroups={residenceCityGroups}
                                     placeholder={selectedResidenceCountries.length > 0 ? 'Select or type city' : 'Select country first'}
                                     required
+                                    disabled={selectedResidenceCountries.length === 0}
                                 />
-                                <datalist id="country-residence-cities">
-                                    {residenceCities.map((city) => (
-                                        <option key={city} value={city} />
-                                    ))}
-                                </datalist>
                             </div>
                             <div className="form-group">
                                 <label>Residency Status*</label>
@@ -1096,27 +1579,27 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Drinking Habits</label>
                                 <select name="drinkingHabits" value={formData.drinkingHabits} onChange={handleChange}>
                                     <option value="">Select</option>
-                                    <option value="Never">Never</option>
-                                    <option value="Occasionally">Occasionally</option>
-                                    <option value="Frequently">Frequently</option>
+                                    {drinkingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Eating Habits</label>
                                 <select name="eatingHabits" value={formData.eatingHabits} onChange={handleChange}>
                                     <option value="">Select</option>
-                                    <option value="Vegetarian">Vegetarian</option>
-                                    <option value="Non-Veg">Non-Veg</option>
-                                    <option value="Vegan">Vegan</option>
+                                    {eatingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Smoking Habits</label>
                                 <select name="smokingHabits" value={formData.smokingHabits} onChange={handleChange}>
                                     <option value="">Select</option>
-                                    <option value="Never">Never</option>
-                                    <option value="Occasionally">Occasionally</option>
-                                    <option value="Frequently">Frequently</option>
+                                    {smokingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
@@ -1131,101 +1614,30 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                                     <label>Upload Horoscope Document</label>
                                     <input
-                                        id="horoscopeDocumentInput"
                                         type="file"
                                         accept="image/*,.pdf,.doc,.docx"
                                         onChange={(e) => handleFileChange(e, 'horoscopeDocument')}
                                         disabled={uploading['horoscopeDocument']}
-                                        style={{ display: 'none' }}
                                     />
-                                    <label
-                                        htmlFor="horoscopeDocumentInput"
-                                        style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            gap: '0.3rem',
-                                            border: '2px dashed #e7d8c9',
-                                            borderRadius: '12px',
-                                            padding: '1rem',
-                                            minHeight: '200px',
-                                            background: formData.horoscopeDocument ? `linear-gradient(rgba(17, 24, 39, 0.45), rgba(17, 24, 39, 0.45)), url(${previewSrc('horoscopeDocument', formData.horoscopeDocument)}) center/cover no-repeat` : '#fff',
-                                            cursor: uploading['horoscopeDocument'] ? 'not-allowed' : 'pointer',
-                                            opacity: uploading['horoscopeDocument'] ? 0.7 : 1,
-                                            transition: 'all 0.2s ease',
-                                            position: 'relative',
-                                        }}
-                                    >
-                                        {formData.horoscopeDocument && (
-                                            <button
-                                                type="button"
-                                                title="Remove document"
-                                                aria-label="Remove document"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    handleRemoveUploadedImage('horoscopeDocument');
-                                                }}
-                                                disabled={uploading['horoscopeDocument']}
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: '8px',
-                                                    right: '8px',
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '50%',
-                                                    border: 'none',
-                                                    background: '#ef4444',
-                                                    color: 'white',
-                                                    cursor: 'pointer',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    fontSize: '0.9rem',
-                                                    boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
-                                                    zIndex: 2,
-                                                }}
-                                            >
-                                                ✕
-                                            </button>
-                                        )}
-                                        <div
-                                            style={{
-                                                width: '44px',
-                                                height: '44px',
-                                                borderRadius: '50%',
-                                                background: 'rgba(255,255,255,0.92)',
-                                                color: '#111827',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                zIndex: 1,
-                                            }}
-                                        >
-                                            <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden>
-                                                <path
-                                                    fill="currentColor"
-                                                    d="M9 4l-1.2 1.6c-.2.3-.5.4-.8.4H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V9a3 3 0 0 0-3-3h-2c-.3 0-.6-.1-.8-.4L15 4H9zm3 4.5A4.5 4.5 0 1 1 7.5 13 4.5 4.5 0 0 1 12 8.5zm0 2A2.5 2.5 0 1 0 14.5 13 2.5 2.5 0 0 0 12 10.5z"
-                                                />
-                                            </svg>
-                                        </div>
-                                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: formData.horoscopeDocument ? '#fff' : '#374151', textAlign: 'center', zIndex: 1 }}>
-                                            {uploading['horoscopeDocument'] ? 'Uploading document...' : formData.horoscopeDocument ? 'Tap to change document' : 'Drop your document here, or browse'}
-                                        </div>
-                                        <div style={{ fontSize: '0.72rem', color: formData.horoscopeDocument ? 'rgba(255,255,255,0.86)' : '#9ca3af', textAlign: 'center', zIndex: 1 }}>
-                                            Supports JPG, PNG, PDF, DOC, DOCX
-                                        </div>
-                                    </label>
+                                    {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                     {formData.horoscopeDocument && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setHoroscopePopupOpen(true)}
-                                            style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.5rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
-                                        >
-                                            View Full Image
-                                        </button>
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            <img
+                                                src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
+                                                alt="Horoscope"
+                                                onClick={() => setHoroscopePopupOpen(true)}
+                                                style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
+                                            />
+                                            <div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHoroscopePopupOpen(true)}
+                                                    style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.25rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
+                                                >
+                                                    View Full Image
+                                                </button>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -1246,8 +1658,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <CountryMultiSelect
                                     idPrefix="father-residence"
-                                    label={<>Country of Residence*</>}
-                                    hint="(select one or more)"
+                                    label={<>Country of Residence</>}
+                                    hint="(optional - select one or more)"
                                     value={formData.fatherCountryOfResidence}
                                     onChange={(v) => setFormData((prev) => ({ ...prev, fatherCountryOfResidence: v }))}
                                     countries={countryOptions}
@@ -1258,8 +1670,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <input type="text" name="fatherOccupation" value={formData.fatherOccupation} onChange={handleChange} />
                             </div>
                             <div className="form-group">
-                                <label>Ethnicity*</label>
-                                <select name="fatherEthnicity" value={formData.fatherEthnicity} onChange={handleChange} required>
+                                <label>Ethnicity</label>
+                                <select name="fatherEthnicity" value={formData.fatherEthnicity} onChange={handleChange}>
                                     <option value="">Select Ethnicity</option>
                                     {sriLankanEthnicities.map((item) => (
                                         <option key={item} value={item}>{item}</option>
@@ -1299,8 +1711,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <CountryMultiSelect
                                     idPrefix="mother-residence"
-                                    label={<>Country of Residence*</>}
-                                    hint="(select one or more)"
+                                    label={<>Country of Residence</>}
+                                    hint="(optional - select one or more)"
                                     value={formData.motherCountryOfResidence}
                                     onChange={(v) => setFormData((prev) => ({ ...prev, motherCountryOfResidence: v }))}
                                     countries={countryOptions}
@@ -1311,8 +1723,8 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <input type="text" name="motherOccupation" value={formData.motherOccupation} onChange={handleChange} />
                             </div>
                             <div className="form-group">
-                                <label>Ethnicity*</label>
-                                <select name="motherEthnicity" value={formData.motherEthnicity} onChange={handleChange} required>
+                                <label>Ethnicity</label>
+                                <select name="motherEthnicity" value={formData.motherEthnicity} onChange={handleChange}>
                                     <option value="">Select Ethnicity</option>
                                     {sriLankanEthnicities.map((item) => (
                                         <option key={item} value={item}>{item}</option>
@@ -1350,63 +1762,92 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                         <h3>Partner Preferences</h3>
                         <div className="form-grid">
                             <div className="form-group">
-                                <label>Age Range (Years)</label>
+                                <label>Age Range (Years)*</label>
                                 <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <input type="number" name="partnerMinAge" value={formData.partnerMinAge} onChange={handleChange} placeholder="Min" min={18} style={{ width: '50%' }} />
-                                    <input type="number" name="partnerMaxAge" value={formData.partnerMaxAge} onChange={handleChange} placeholder="Max" style={{ width: '50%' }} />
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        name="partnerMinAge"
+                                        value={formData.partnerMinAge}
+                                        onChange={handleChange}
+                                        placeholder="Min (18+)"
+                                        maxLength={3}
+                                        required
+                                        style={{ width: '50%' }}
+                                    />
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        name="partnerMaxAge"
+                                        value={formData.partnerMaxAge}
+                                        onChange={handleChange}
+                                        placeholder="Max (greater than Min)"
+                                        maxLength={3}
+                                        required
+                                        style={{ width: '50%' }}
+                                    />
                                 </div>
+                                <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                    Minimum age must be at least 18. Maximum must be greater than Minimum.
+                                </small>
                             </div>
                             <div className="form-group">
                                 <label>Eating Habits</label>
                                 <select name="partnerEatingHabits" value={formData.partnerEatingHabits} onChange={handleChange}>
                                     <option value="">Any</option>
-                                    <option value="Vegetarian">Vegetarian</option>
-                                    <option value="Non-Veg">Non-Veg</option>
+                                    {eatingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Drinking Habits</label>
                                 <select name="partnerDrinkingHabits" value={formData.partnerDrinkingHabits} onChange={handleChange}>
                                     <option value="">Any</option>
-                                    <option value="Never">Never</option>
-                                    <option value="Occasionally">Occasionally</option>
+                                    {drinkingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Smoking Habits</label>
                                 <select name="partnerSmokingHabits" value={formData.partnerSmokingHabits} onChange={handleChange}>
                                     <option value="">Any</option>
-                                    <option value="Never">Never</option>
-                                    <option value="Occasionally">Occasionally</option>
+                                    {smokingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="form-group">
                                 <label>Min Qualification</label>
                                 <select name="partnerQualificationLevel" value={formData.partnerQualificationLevel} onChange={handleChange}>
                                     <option value="">Any</option>
-                                    <option value="Degree">Degree</option>
-                                    <option value="GCE A/L">GCE A/L</option>
-                                </select>
-                            </div>
-
-                            <div className="form-group">
-                                <label>Religion (Preferred)</label>
-                                <select name="partnerReligion" value={formData.partnerReligion} onChange={handleChange}>
-                                    <option value="">Any</option>
-                                    {sriLankanReligions.map((item) => (
+                                    {qualificationOptions.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
                             </div>
 
                             <div className="form-group">
-                                <label>Ethnicity (Preferred)</label>
-                                <select name="partnerEthnicity" value={formData.partnerEthnicity} onChange={handleChange}>
-                                    <option value="">Any</option>
-                                    {sriLankanEthnicities.map((item) => (
-                                        <option key={item} value={item}>{item}</option>
-                                    ))}
-                                </select>
+                                <OptionMultiSelect
+                                    idPrefix="partner-religion"
+                                    label="Religion (Preferred)"
+                                    value={formData.partnerReligion}
+                                    onChange={(v) => setFormData((prev) => ({ ...prev, partnerReligion: v }))}
+                                    options={sriLankanReligions}
+                                    placeholder="Any"
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <OptionMultiSelect
+                                    idPrefix="partner-ethnicity"
+                                    label="Ethnicity (Preferred)"
+                                    value={formData.partnerEthnicity}
+                                    onChange={(v) => setFormData((prev) => ({ ...prev, partnerEthnicity: v }))}
+                                    options={sriLankanEthnicities}
+                                    placeholder="Any"
+                                />
                             </div>
 
                             <div className="form-group">
@@ -1451,10 +1892,87 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <h4>Profile Photos</h4>
                             </div>
 
-                            {renderPhotoUploadField('profilePhoto', 'Main Profile Photo', 'Profile', true)}
-                            {renderPhotoUploadField('upload1', 'Gallery Photo 1', 'Gallery 1')}
-                            {renderPhotoUploadField('upload2', 'Gallery Photo 2', 'Gallery 2')}
-                            {renderPhotoUploadField('upload3', 'Gallery Photo 3', 'Gallery 3')}
+                            <div className="form-group">
+                                <label>Main Profile Photo*</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileChange(e, 'profilePhoto')}
+                                    disabled={uploading['profilePhoto']}
+                                />
+                                {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                {formData.profilePhoto && (
+                                    <div style={{ marginTop: '0.5rem' }}>
+                                        <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Gallery Photo 1</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileChange(e, 'upload1')}
+                                    disabled={uploading['upload1'] || !formData.profilePhoto}
+                                    title={!formData.profilePhoto ? 'Upload your Main Profile Photo first.' : undefined}
+                                />
+                                {!formData.profilePhoto && (
+                                    <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                        Upload the Main Profile Photo first to unlock this slot.
+                                    </small>
+                                )}
+                                {uploading['upload1'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                {formData.upload1 && (
+                                    <div style={{ marginTop: '0.5rem' }}>
+                                        <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Gallery Photo 2</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileChange(e, 'upload2')}
+                                    disabled={uploading['upload2'] || !formData.upload1}
+                                    title={!formData.upload1 ? 'Upload Gallery Photo 1 first.' : undefined}
+                                />
+                                {!formData.upload1 && (
+                                    <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                        Upload Gallery Photo 1 first to unlock this slot.
+                                    </small>
+                                )}
+                                {uploading['upload2'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                {formData.upload2 && (
+                                    <div style={{ marginTop: '0.5rem' }}>
+                                        <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="form-group">
+                                <label>Gallery Photo 3</label>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileChange(e, 'upload3')}
+                                    disabled={uploading['upload3'] || !formData.upload2}
+                                    title={!formData.upload2 ? 'Upload Gallery Photo 2 first.' : undefined}
+                                />
+                                {!formData.upload2 && (
+                                    <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                        Upload Gallery Photo 2 first to unlock this slot.
+                                    </small>
+                                )}
+                                {uploading['upload3'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                {formData.upload3 && (
+                                    <div style={{ marginTop: '0.5rem' }}>
+                                        <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1499,9 +2017,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     font-size: 1rem;
                     transition: border-color 0.3s;
                 }
-                .step6-grid {
-                    grid-template-columns: repeat(4, minmax(0, 1fr));
-                }
                 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
                     outline: none;
                     border-color: var(--primary);
@@ -1514,27 +2029,11 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                 }
             `}</style>
 
-            {horoscopePopupOpen && formData.horoscopeDocument && (
-                <div
-                    onClick={() => setHoroscopePopupOpen(false)}
-                    style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
-                >
-                    <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }}>
-                        <button
-                            type="button"
-                            onClick={() => setHoroscopePopupOpen(false)}
-                            style={{ position: 'absolute', top: '-12px', right: '-12px', width: '32px', height: '32px', borderRadius: '50%', background: 'white', border: 'none', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 1 }}
-                        >
-                            ✕
-                        </button>
-                        <img
-                            src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
-                            alt="Horoscope"
-                            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: '12px', objectFit: 'contain', background: 'white' }}
-                        />
-                    </div>
-                </div>
-            )}
+            <HoroscopeLightbox
+                open={horoscopePopupOpen && !!formData.horoscopeDocument}
+                src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
+                onClose={() => setHoroscopePopupOpen(false)}
+            />
         </div>
     );
 }

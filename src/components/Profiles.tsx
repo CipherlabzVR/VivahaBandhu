@@ -6,6 +6,10 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
+import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
+import MatchmakerBadge from './MatchmakerBadge';
+import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
+import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 
 interface ProfilesProps {
     onOpenSubscription: () => void;
@@ -21,13 +25,6 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
 
     const [isMatched, setIsMatched] = useState(false);
 
-    const isOwnProfile = (profile: any): boolean => {
-        if (!user?.id) return false;
-        const me = Number(user.id);
-        const profileOwnerId = Number(profile?.userId ?? profile?.UserId ?? profile?.id ?? profile?.Id);
-        return !Number.isNaN(profileOwnerId) && profileOwnerId === me;
-    };
-
     useEffect(() => {
         const fetchProfiles = async () => {
             try {
@@ -36,24 +33,24 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                     if (res.statusCode === 200 && res.result) {
                         const matched = res.result;
                         if (Array.isArray(matched) && matched.length > 0) {
-                            setProfiles(matched.filter((p: any) => !isOwnProfile(p)));
+                            setProfiles(matched);
                             setIsMatched(true);
                         } else {
                             const fallback = await matrimonialService.getRecentProfiles(4);
-                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result.filter((p: any) => !isOwnProfile(p)));
+                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result);
                             setIsMatched(false);
                         }
                     }
                 } else {
                     const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result.filter((p: any) => !isOwnProfile(p)));
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
                     setIsMatched(false);
                 }
             } catch (error) {
                 console.error("Failed to load profiles", error);
                 try {
                     const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result.filter((p: any) => !isOwnProfile(p)));
+                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
                 } catch (e) { /* ignore */ }
             }
         };
@@ -147,34 +144,41 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
             </div>
 
             <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                {profiles.map((profile, index) => {
-                    const isBlurred = index % 2 !== 0; // Simulate blurred subscription view for test
-                    const showVerifiedBadge = profile?.isVerified === true;
-                    const placeholderImg = profile.gender === "Female"
-                        ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400"
-                        : "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400";
-
+                {profiles.map((profile) => {
+                    const isPremium = !!(profile.isPremium || profile.IsPremium);
+                    const isManaged = !!(profile.isMatchmakerManaged || profile.IsMatchmakerManaged);
+                    const photoSrc = profile.profilePhoto || getDefaultAvatarDataUri({
+                        firstName: profile.firstName,
+                        lastName: profile.lastName,
+                        gender: profile.gender,
+                    });
                     return (
-                        <div key={profile.id} onClick={() => { 
+                        <div key={profile.id} onClick={() => {
                             if (user?.isVerified === false) {
                                 window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                 return;
                             }
-                            if (!isBlurred && onOpenProfileDetail) onOpenProfileDetail(profile); 
-                        }} className={`bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative ${!isBlurred ? 'cursor-pointer' : ''}`}>
-                            {showVerifiedBadge && (
-                                <span className="absolute top-4 right-4 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold z-10">{t('verified')}</span>
+                            if (onOpenProfileDetail) onOpenProfileDetail(profile);
+                        }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative cursor-pointer" style={isPremium ? PREMIUM_CARD_FRAME_STYLE : undefined}>
+                            <span className="absolute top-4 right-4 bg-primary text-white px-3 py-1 rounded-full text-xs font-semibold z-10">{t('verified')}</span>
+                            {(isManaged || isPremium) && (
+                                <span style={{ position: 'absolute', top: '16px', left: '16px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                                    {isPremium && <PremiumBadge variant="compact" />}
+                                    {isManaged && (
+                                        <MatchmakerBadge matchmakerName={profile.matchmakerName || profile.MatchmakerName} variant="compact" />
+                                    )}
+                                </span>
                             )}
                             <div className="relative">
-                                <img src={profile.profilePhoto || placeholderImg} alt="Profile" className="w-full h-80 object-cover" />
+                                <img src={photoSrc} alt="Profile" className="w-full h-80 object-cover" />
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-white">
                                     <div className="text-xl font-semibold">{profile.firstName || 'User'}</div>
                                     <div className="text-sm opacity-90">{profile.age || 0} years • {profile.cityOfResidence || 'Unknown'}</div>
                                 </div>
                             </div>
 
-                            <div className={`p-6 relative ${isBlurred ? 'blur-none' : ''}`}>
-                                <div className={`space-y-3 mb-4 ${isBlurred ? 'blur-sm' : ''}`}>
+                            <div className="p-6 relative">
+                                <div className="space-y-3 mb-4">
                                     <div className="flex items-center gap-2 text-text-light">
                                         <span>🎓</span> {profile.qualificationLevel || 'Not Specified'}
                                     </div>
@@ -185,22 +189,38 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                         <span>🙏</span> {profile.religion || 'Not Specified'}
                                     </div>
                                 </div>
-                                <div className={`flex items-center justify-between pt-4 border-t border-gray-200 ${isBlurred ? 'blur-sm' : ''}`}>
+                                <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                                     <span className="text-primary font-semibold">
                                         {isMatched && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                     </span>
                                     <div className="flex gap-2">
-                                        <button onClick={(e) => handleToggleFavorite(e, profile.userId || profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Favorites || []).includes(profile.userId || profile.id) ? 'bg-pink-500 text-white' : 'bg-pink-100 hover:bg-pink-200'}`}>❤️</button>
-                                        <button onClick={(e) => handleToggleShortlist(e, profile.userId || profile.id)} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${(interactions.Shortlists || []).includes(profile.userId || profile.id) ? 'bg-yellow-500 text-white' : 'bg-yellow-100 hover:bg-yellow-200'}`}>⭐</button>
+                                        {(() => {
+                                            const pid = profile.userId || profile.id;
+                                            const isFav = (interactions.Favorites || []).includes(pid);
+                                            const isSaved = (interactions.Shortlists || []).includes(pid);
+                                            return (
+                                                <>
+                                                    <button
+                                                        onClick={(e) => handleToggleFavorite(e, pid)}
+                                                        aria-label={isFav ? 'Remove from favourites' : 'Add to favourites'}
+                                                        title={isFav ? 'Remove from favourites' : 'Add to favourites'}
+                                                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isFav ? 'bg-pink-500 text-white' : 'bg-pink-100 text-pink-600 hover:bg-pink-200'}`}
+                                                    >
+                                                        <HeartIcon filled={isFav} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleToggleShortlist(e, pid)}
+                                                        aria-label={isSaved ? 'Remove from saved' : 'Save profile'}
+                                                        title={isSaved ? 'Remove from saved' : 'Save profile'}
+                                                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isSaved ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
+                                                    >
+                                                        <BookmarkIcon filled={isSaved} />
+                                                    </button>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
-                                {isBlurred && (
-                                    <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 rounded-b-3xl">
-                                        <span className="text-4xl mb-2">🔒</span>
-                                        <p className="text-center text-text-dark mb-4 font-medium">{t('subscribeToView')}</p>
-                                        <button className="px-6 py-2 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors" onClick={(e) => { e.stopPropagation(); onOpenSubscription(); }}>{t('upgradeNow')}</button>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     );
