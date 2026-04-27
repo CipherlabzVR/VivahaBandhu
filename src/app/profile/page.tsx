@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -17,7 +17,7 @@ import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
-export default function ProfilePage() {
+function ProfilePageContent() {
     const { user, loading, updateUser, logout } = useAuth();
     const { language, setLanguage } = useLanguage();
     const router = useRouter();
@@ -1702,5 +1702,13 @@ export default function ProfilePage() {
                 selectedProfile={selectedProfile}
             />
         </main>
+    );
+}
+
+export default function ProfilePage() {
+    return (
+        <Suspense fallback={null}>
+            <ProfilePageContent />
+        </Suspense>
     );
 }
