@@ -45,7 +45,7 @@ function ProfilePageContent() {
             const token = getStoredToken();
             if (!user?.id || !token) return;
 
-            const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+            const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
             const withCacheBuster = (url: string) => {
                 const cb = `cb=${Date.now()}`;
                 return url.includes('?') ? `${url}&${cb}` : `${url}?${cb}`;
@@ -346,7 +346,7 @@ function ProfilePageContent() {
 
     const fetchSubAccounts = async () => {
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/GetSubAccounts?parentUserId=${user?.id}`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api'}/Matrimonial/GetSubAccounts?parentUserId=${user?.id}`, {
                 headers: {
                     'Authorization': `Bearer ${getStoredToken() || ''}`
                 }
@@ -415,7 +415,7 @@ function ProfilePageContent() {
         setIsCreatingSubAccount(true);
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/Register`, {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api'}/Matrimonial/Register`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -860,7 +860,7 @@ function ProfilePageContent() {
                                         }
 
                                         // Fetch existing profile first, then patch only basic details so we don't wipe other fields.
-                                        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+                                        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
                                         const profileRes = await fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}`, {
                                             headers: { 'Authorization': `Bearer ${token}` }
                                         });

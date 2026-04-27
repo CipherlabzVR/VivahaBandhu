@@ -32,7 +32,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
 
     const getUnreadCount = () => interestNotifications.filter(n => !n.isRead).length;
 
