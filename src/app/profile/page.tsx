@@ -274,6 +274,14 @@ function ProfilePageContent() {
     const [subAccountPhotoPreview, setSubAccountPhotoPreview] = useState<string>('');
     const [subAccountTermsAccepted, setSubAccountTermsAccepted] = useState(false);
 
+    /** After Register API returns registrationSessionId, collect OTP — account is created only after VerifyCode. */
+    const [subAccountVerifyStep, setSubAccountVerifyStep] = useState(false);
+    const [subAccountRegistrationSessionId, setSubAccountRegistrationSessionId] = useState<string | null>(null);
+    const [subAccountOtp, setSubAccountOtp] = useState('');
+    const [subAccountVerifyBusy, setSubAccountVerifyBusy] = useState(false);
+    const [subAccountSendCodeBusy, setSubAccountSendCodeBusy] = useState(false);
+    const [subAccountVerificationHint, setSubAccountVerificationHint] = useState<string | null>(null);
+
     useEffect(() => {
         if ((user?.accountType === 'Self' || user?.accountType === 'Matchmaker') && user.id) {
             fetchSubAccounts();
@@ -362,6 +370,57 @@ function ProfilePageContent() {
         }
     };
 
+    const handleSubAccountSendCode = async (method: string) => {
+        if (!subAccountRegistrationSessionId) return;
+        setSubAccountSendCodeBusy(true);
+        setSubAccountVerificationHint(null);
+        try {
+            const res = await matrimonialService.sendVerificationCode({
+                registrationSessionId: subAccountRegistrationSessionId,
+                method,
+            });
+            if (res.statusCode === 200 || res.statusCode === 1) {
+                setSubAccountVerificationHint(`Code sent via ${method}. Enter it below (expires in 10 minutes).`);
+            } else {
+                setSubAccountVerificationHint(res.message || 'Could not send code.');
+            }
+        } catch (err) {
+            setSubAccountVerificationHint(err instanceof Error ? err.message : 'Could not send code.');
+        } finally {
+            setSubAccountSendCodeBusy(false);
+        }
+    };
+
+    const handleSubAccountVerifyComplete = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!subAccountRegistrationSessionId) return;
+        const digits = subAccountOtp.replace(/\D/g, '').slice(0, 6);
+        if (digits.length !== 6) {
+            setSubAccountError('Enter the 6-digit verification code.');
+            return;
+        }
+        setSubAccountVerifyBusy(true);
+        setSubAccountError(null);
+        try {
+            const data = await matrimonialService.verifyCode({
+                registrationSessionId: subAccountRegistrationSessionId,
+                code: digits,
+            });
+            if (data.statusCode === 200 || data.statusCode === 1) {
+                setIsCreateSubAccountModalOpen(false);
+                resetSubAccountForm();
+                showToast('Client profile created successfully.', 'success');
+                fetchSubAccounts();
+            } else {
+                setSubAccountError(data.message || 'Verification failed.');
+            }
+        } catch (err) {
+            setSubAccountError(err instanceof Error ? err.message : 'Verification failed.');
+        } finally {
+            setSubAccountVerifyBusy(false);
+        }
+    };
+
     const handleCreateSubAccount = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubAccountError(null);
@@ -415,38 +474,37 @@ function ProfilePageContent() {
         setIsCreatingSubAccount(true);
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/Register`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    firstName: subAccountForm.firstName,
-                    lastName: subAccountForm.lastName,
-                    nic: subAccountForm.nic,
-                    gender: subAccountForm.gender,
-                    phone: subAccountForm.phone,
-                    whatsapp: effectiveWhatsApp,
-                    email: subAccountForm.email,
-                    password: subAccountForm.password,
-                    accountType: 'Self',
-                    profilePhotoBase64: subAccountPhotoBase64 || undefined,
-                    dateOfBirth: subAccountForm.dob.length === 10 ? `${subAccountForm.dob}T00:00:00` : subAccountForm.dob,
-                    parentUserId: Number(user?.id)
-                })
+            const data = await matrimonialService.register({
+                firstName: subAccountForm.firstName,
+                lastName: subAccountForm.lastName,
+                nic: subAccountForm.nic,
+                gender: subAccountForm.gender,
+                phone: subAccountForm.phone,
+                whatsApp: effectiveWhatsApp,
+                email: subAccountForm.email,
+                password: subAccountForm.password,
+                accountType: 'Self',
+                profilePhotoBase64: subAccountPhotoBase64 || undefined,
+                dateOfBirth: subAccountForm.dob.length === 10 ? `${subAccountForm.dob}T00:00:00` : subAccountForm.dob,
+                parentUserId: Number(user?.id),
             });
 
-            const data = await response.json();
-            if (response.ok && (data.statusCode === 200 || data.statusCode === 1)) {
-                setIsCreateSubAccountModalOpen(false);
-                resetSubAccountForm();
-                showToast('Client profile created successfully.', 'success');
-                fetchSubAccounts();
+            const resultAny = data.result as Record<string, unknown> | undefined;
+            const sid =
+                resultAny?.registrationSessionId ??
+                resultAny?.RegistrationSessionId;
+            if ((data.statusCode === 200 || data.statusCode === 1) && sid) {
+                setSubAccountRegistrationSessionId(String(sid));
+                setSubAccountVerifyStep(true);
+                setSubAccountOtp('');
+                setSubAccountVerificationHint(
+                    'Choose how to receive the verification code for this profile. The account is created only after verification.',
+                );
             } else {
-                setSubAccountError(data.message || 'Failed to create sub-account');
+                setSubAccountError(data.message || 'Failed to start registration');
             }
         } catch (error) {
-            setSubAccountError('An error occurred while creating the sub-account');
+            setSubAccountError(error instanceof Error ? error.message : 'An error occurred while creating the sub-account');
         } finally {
             setIsCreatingSubAccount(false);
         }
@@ -722,6 +780,10 @@ function ProfilePageContent() {
         setSubAccountPhotoPreview('');
         setSubAccountTermsAccepted(false);
         setSubAccountError(null);
+        setSubAccountVerifyStep(false);
+        setSubAccountRegistrationSessionId(null);
+        setSubAccountOtp('');
+        setSubAccountVerificationHint(null);
     };
 
     // Form state for editing (Basic Details)
@@ -1360,6 +1422,69 @@ function ProfilePageContent() {
                                     </p>
                                 </div>
                                 <div className="modal-body">
+                                    {subAccountVerifyStep && subAccountRegistrationSessionId ? (
+                                        <form onSubmit={handleSubAccountVerifyComplete}>
+                                            <p style={{ marginBottom: '1rem', color: '#374151', fontSize: '0.95rem' }}>
+                                                We sent no account to the database yet. Verify the client&apos;s email or WhatsApp to create the profile.
+                                            </p>
+                                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline"
+                                                    disabled={subAccountSendCodeBusy}
+                                                    onClick={() => handleSubAccountSendCode('Email')}
+                                                >
+                                                    Send code via Email
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline"
+                                                    disabled={subAccountSendCodeBusy}
+                                                    onClick={() => handleSubAccountSendCode('WhatsApp')}
+                                                >
+                                                    Send code via WhatsApp
+                                                </button>
+                                            </div>
+                                            {subAccountVerificationHint && (
+                                                <p style={{ fontSize: '0.85rem', color: '#047857', marginBottom: '0.75rem' }}>{subAccountVerificationHint}</p>
+                                            )}
+                                            <div className="form-group">
+                                                <label htmlFor="subAccountOtp">6-digit verification code *</label>
+                                                <input
+                                                    id="subAccountOtp"
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    autoComplete="one-time-code"
+                                                    maxLength={6}
+                                                    value={subAccountOtp}
+                                                    onChange={(ev) => setSubAccountOtp(ev.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                    placeholder="000000"
+                                                    style={{ letterSpacing: '0.25em', fontSize: '1.1rem', maxWidth: '12rem' }}
+                                                />
+                                            </div>
+                                            {subAccountError && (
+                                                <p style={{ color: '#b91c1c', fontSize: '0.9rem', marginBottom: '0.75rem' }}>{subAccountError}</p>
+                                            )}
+                                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+                                                <button type="submit" className="btn btn-primary" disabled={subAccountVerifyBusy}>
+                                                    {subAccountVerifyBusy ? 'Verifying…' : 'Verify and create profile'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline"
+                                                    onClick={() => {
+                                                        setSubAccountVerifyStep(false);
+                                                        setSubAccountRegistrationSessionId(null);
+                                                        setSubAccountOtp('');
+                                                        setSubAccountVerificationHint(null);
+                                                        setSubAccountError(null);
+                                                    }}
+                                                >
+                                                    Back to form
+                                                </button>
+                                            </div>
+                                        </form>
+                                    ) : (
                                     <form onSubmit={handleCreateSubAccount}>
                                         {/* Profile photo */}
                                         <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -1522,9 +1647,10 @@ function ProfilePageContent() {
                                             disabled={isCreatingSubAccount}
                                             style={{ width: '100%', justifyContent: 'center', marginTop: '1rem', opacity: isCreatingSubAccount ? 0.6 : 1, cursor: isCreatingSubAccount ? 'not-allowed' : 'pointer' }}
                                         >
-                                            {isCreatingSubAccount ? 'Creating...' : (isMatchmaker ? 'Create Client Profile →' : 'Create Account')}
+                                            {isCreatingSubAccount ? 'Sending details…' : (isMatchmaker ? 'Continue to verification →' : 'Continue to verification →')}
                                         </button>
                                     </form>
+                                    )}
                                 </div>
                             </div>
                         </div>

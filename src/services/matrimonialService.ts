@@ -20,12 +20,15 @@ export interface MatrimonialRegisterResponse {
     statusCode: number;
     message: string;
     result: {
-        userId: number;
-        email: string;
-        firstName: string;
-        lastName: string;
-        accountType: string;
-        message: string;
+        /** Present until OTP verification completes; account is created only after VerifyCode succeeds. */
+        registrationSessionId?: string;
+        RegistrationSessionId?: string;
+        userId?: number;
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        accountType?: string;
+        message?: string;
     };
 }
 
@@ -94,6 +97,8 @@ export interface ForgotPasswordInitiateRequest {
     email?: string;
     phoneNumber?: string;
     whatsApp?: string;
+    /** Matches forgot-password UI: email | phone | whatsapp */
+    deliveryMethod: 'email' | 'phone' | 'whatsapp';
 }
 
 export interface ForgotPasswordResetRequest {
@@ -189,19 +194,27 @@ export const matrimonialService = {
     },
 
     /**
-     * Send verification code via selected method
+     * Send verification code via selected method (existing user **or** pending registration session).
      */
-    async sendVerificationCode(userId: number, method: string): Promise<{ statusCode: number; message: string }> {
+    async sendVerificationCode(params: {
+        method: string;
+        userId?: number;
+        registrationSessionId?: string;
+    }): Promise<{ statusCode: number; message: string }> {
         try {
+            const body: Record<string, unknown> = { method: params.method };
+            if (params.registrationSessionId) {
+                body.registrationSessionId = params.registrationSessionId;
+            } else if (params.userId != null && params.userId > 0) {
+                body.userId = params.userId;
+            }
+
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SendVerificationCode`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    userId,
-                    method,
-                }),
+                body: JSON.stringify(body),
             });
 
             if (!response.ok) {
@@ -220,19 +233,27 @@ export const matrimonialService = {
     },
 
     /**
-     * Verify the code
+     * Verify the code (existing user **or** complete pending registration and create the account).
      */
-    async verifyCode(userId: number, code: string): Promise<{ statusCode: number; message: string }> {
+    async verifyCode(params: {
+        code: string;
+        userId?: number;
+        registrationSessionId?: string;
+    }): Promise<{ statusCode: number; message: string; result?: { userId?: number; verified?: boolean } }> {
         try {
+            const body: Record<string, unknown> = { code: params.code };
+            if (params.registrationSessionId) {
+                body.registrationSessionId = params.registrationSessionId;
+            } else if (params.userId != null && params.userId > 0) {
+                body.userId = params.userId;
+            }
+
             const response = await fetch(`${API_BASE_URL}/Matrimonial/VerifyCode`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    userId,
-                    code,
-                }),
+                body: JSON.stringify(body),
             });
 
             if (!response.ok) {
@@ -260,17 +281,18 @@ export const matrimonialService = {
                 body: JSON.stringify({ name }),
             });
 
+            const payload = (await response.json().catch(() => ({}))) as { message?: string };
+
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Failed to search accounts: ${response.statusText}`);
+                throw new Error(payload.message?.trim() || `Could not search accounts (${response.status}).`);
             }
 
-            return await response.json();
+            return payload as { statusCode: number; message: string; result: RecoveryAccount[] };
         } catch (error) {
             if (error instanceof Error) {
                 throw error;
             }
-            throw new Error('An unexpected error occurred while searching accounts');
+            throw new Error('An unexpected error occurred while searching accounts.');
         }
     },
 
@@ -284,17 +306,18 @@ export const matrimonialService = {
                 body: JSON.stringify(data),
             });
 
+            const payload = (await response.json().catch(() => ({}))) as { message?: string; statusCode?: number; result?: { userId: number; sentVia: string } };
+
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Failed to start forgot password: ${response.statusText}`);
+                throw new Error(payload.message?.trim() || `Could not send verification code (${response.status}).`);
             }
 
-            return await response.json();
+            return payload as { statusCode: number; message: string; result?: { userId: number; sentVia: string } };
         } catch (error) {
             if (error instanceof Error) {
                 throw error;
             }
-            throw new Error('An unexpected error occurred while starting forgot password');
+            throw new Error('An unexpected error occurred while starting forgot password.');
         }
     },
 
@@ -308,17 +331,18 @@ export const matrimonialService = {
                 body: JSON.stringify(data),
             });
 
+            const payload = (await response.json().catch(() => ({}))) as { message?: string; statusCode?: number };
+
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Failed to reset password: ${response.statusText}`);
+                throw new Error(payload.message?.trim() || `Could not update password (${response.status}).`);
             }
 
-            return await response.json();
+            return payload as { statusCode: number; message: string };
         } catch (error) {
             if (error instanceof Error) {
                 throw error;
             }
-            throw new Error('An unexpected error occurred while resetting password');
+            throw new Error('An unexpected error occurred while resetting password.');
         }
     },
 

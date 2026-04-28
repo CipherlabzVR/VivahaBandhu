@@ -7,6 +7,7 @@ import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
+import { religionFilterMatches } from '../../utils/religionMatch';
 
 function SearchContent() {
     const searchParams = useSearchParams();
@@ -36,7 +37,8 @@ function SearchContent() {
                         }
                         if (ageFrom && profile.age < parseInt(ageFrom)) return false;
                         if (ageTo && profile.age > parseInt(ageTo)) return false;
-                        if (religion && religion !== 'Any' && profile.religion !== religion) return false;
+                        const profRel = profile.religion ?? profile.Religion;
+                        if (religion && religion !== 'Any' && !religionFilterMatches(profRel, religion)) return false;
                         if (district && district !== 'Any' && profile.cityOfResidence !== district) return false;
                         return true;
                     });
@@ -95,7 +97,7 @@ function SearchContent() {
                                     <div style={{ padding: '1.5rem' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', color: '#666', fontSize: '0.9rem' }}>
                                             <span>Religion:</span>
-                                            <span style={{ fontWeight: 500, color: '#333' }}>{profile.religion || 'Not Specified'}</span>
+                                            <span style={{ fontWeight: 500, color: '#333' }}>{(profile.religion ?? profile.Religion) || 'Not Specified'}</span>
                                         </div>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem', color: '#666', fontSize: '0.9rem' }}>
                                             <span>District:</span>

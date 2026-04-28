@@ -5,11 +5,33 @@ import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+
+/** Shown when CMS leaves image empty or uploads nothing — always loads from this site. */
+const SUCCESS_STORY_PLACEHOLDER = '/success-story-placeholder.svg';
+
 const DEFAULT_IMAGES = [
     'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=300&fit=crop',
     'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400&h=300&fit=crop',
     'https://images.unsplash.com/photo-1529634801-b469c85b2bcc?w=400&h=300&fit=crop',
 ];
+
+function resolveStoryImageSrc(raw: unknown): string {
+    if (raw == null) return SUCCESS_STORY_PLACEHOLDER;
+    const s = String(raw).trim();
+    if (
+        s === '' ||
+        s === 'null' ||
+        s === 'undefined' ||
+        s === 'NaN'
+    ) {
+        return SUCCESS_STORY_PLACEHOLDER;
+    }
+    return s;
+}
+
+function needsImageUnoptimized(src: string): boolean {
+    return src.startsWith('http') && !src.includes('unsplash.com');
+}
 const FALLBACK_KEYS = [
     { couple: 'story1Couple' as const, quote: 'story1Quote' as const },
     { couple: 'story2Couple' as const, quote: 'story2Quote' as const },
@@ -31,7 +53,9 @@ interface StoryItem {
     coupleNameSi: string;
     quote: string;
     quoteSi: string;
-    imageUrl: string;
+    imageUrl?: string;
+    /** Some API payloads use PascalCase */
+    ImageUrl?: string;
 }
 
 export default function SuccessStories() {
@@ -158,7 +182,7 @@ export default function SuccessStories() {
                         : stories.map((story, i) => {
                             const name = language === 'si' && story.coupleNameSi ? story.coupleNameSi : story.coupleName;
                             const quoteText = language === 'si' && story.quoteSi ? story.quoteSi : story.quote;
-                            const imgSrc = story.imageUrl || DEFAULT_IMAGES[i] || DEFAULT_IMAGES[0];
+                            const imgSrc = resolveStoryImageSrc(story.imageUrl ?? story.ImageUrl);
                             return (
                                 <article
                                     key={story.id}
@@ -171,7 +195,7 @@ export default function SuccessStories() {
                                             fill
                                             className="object-cover"
                                             sizes="(max-width: 768px) 100vw, 33vw"
-                                            unoptimized={imgSrc.startsWith('http') && !imgSrc.includes('unsplash')}
+                                            unoptimized={needsImageUnoptimized(imgSrc)}
                                         />
                                     </div>
                                     <div className="relative p-6 md:p-8 flex flex-col flex-1">

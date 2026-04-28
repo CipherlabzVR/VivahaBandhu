@@ -3,7 +3,7 @@
 import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import { matrimonialService, type RecoveryAccount } from '../services/matrimonialService';
+import { matrimonialService, type RecoveryAccount, type ForgotPasswordInitiateRequest } from '../services/matrimonialService';
 import { sanitizeNicInput } from '../utils/nicInput';
 import { sanitizeNameInput, nameLettersOnlyError } from '../utils/nameInput';
 import {
@@ -12,6 +12,7 @@ import {
     sriLankanPhoneFormatErrorIfInvalid,
     phonesAreSameSriLankanNumber,
     SL_PHONE_PLACEHOLDER,
+    SL_PHONE_HINT,
     WHATSAPP_REQUIRED_MSG,
     WHATSAPP_SAME_AS_PHONE_MSG,
 } from '../utils/sriLankanPhone';
@@ -22,6 +23,7 @@ import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import { setStoredToken, getStoredToken } from '../utils/authStorage';
 
 interface ModalsProps {
     activeModal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null;
@@ -30,6 +32,43 @@ interface ModalsProps {
     selectedBlogId?: number | null;
     registerAsMatchmaker?: boolean;
     selectedProfile?: any | null;
+}
+
+/** Client-side email checks for forgot-password (clear messages before calling the API). */
+function getForgotPasswordEmailValidationError(raw: string): string | null {
+    const t = raw.trim();
+    if (!t) return null;
+    if (!t.includes('@')) {
+        return 'Email must include @ (example: you@gmail.com).';
+    }
+    if ((t.match(/@/g) || []).length !== 1) {
+        return 'Use exactly one @ in your email address.';
+    }
+    const [local, domain] = t.split('@');
+    if (!local?.length) {
+        return 'Enter the part before @ (your name or mailbox).';
+    }
+    if (!domain?.length) {
+        return 'Enter the part after @ (for example gmail.com).';
+    }
+    if (!domain.includes('.')) {
+        return 'The domain after @ must include a dot (example: gmail.com).';
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(t)) {
+        return 'That email doesn’t look valid. Check for typos or extra spaces.';
+    }
+    return null;
+}
+
+/** Display label for forgot-password delivery (API may return Email, email, whatsapp, …). */
+function formatForgotDeliveryChannel(label: string | undefined | null): string {
+    if (label == null || String(label).trim() === '') return 'your selected method';
+    const s = String(label).trim().toLowerCase();
+    if (s === 'email') return 'Email';
+    if (s === 'whatsapp') return 'WhatsApp';
+    if (s === 'phone') return 'Phone';
+    return String(label).trim();
 }
 
 const toDateOnly = (val: string | undefined | null): string => {
@@ -420,10 +459,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false);
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [loginTermsAccepted, setLoginTermsAccepted] = useState(false);
+    /** Unchecked = session-only auth (cleared when the browser session ends). */
+    const [loginRememberMe, setLoginRememberMe] = useState(false);
+    const [registerRememberMe, setRegisterRememberMe] = useState(false);
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isLoading, setIsLoading] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
     const [loginError, setLoginError] = useState<string | null>(null);
+    const [loginSuccessHint, setLoginSuccessHint] = useState<string | null>(null);
     const [loginEmailError, setLoginEmailError] = useState<string | null>(null);
     const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
@@ -431,6 +474,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
     const [forgotContactMethod, setForgotContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
+    const [forgotSearchDeliveryMethod, setForgotSearchDeliveryMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
     const [forgotContactEmail, setForgotContactEmail] = useState('');
     const [forgotContactPhone, setForgotContactPhone] = useState('');
     const [forgotContactWhatsApp, setForgotContactWhatsApp] = useState('');
@@ -451,7 +495,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     // Verification states
     const [showVerification, setShowVerification] = useState(false);
+    /** Existing user verification (e.g. standalone verify modal). */
     const [registeredUserId, setRegisteredUserId] = useState<number | null>(null);
+    /** Pending registration — account exists only after VerifyCode succeeds. */
+    const [registrationSessionId, setRegistrationSessionId] = useState<string | null>(null);
     const [verificationMethod, setVerificationMethod] = useState<string>('');
     const [verificationDigits, setVerificationDigits] = useState<string[]>(EMPTY_VERIFY_DIGITS);
     const verificationCode = useMemo(() => verificationDigits.join(''), [verificationDigits]);
@@ -675,20 +722,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             // Check if registration was successful
             // Handle different response formats: statusCode can be 200, or result might have userId or id
             const resultAny = response.result as Record<string, unknown>;
-            const userId = resultAny?.userId || resultAny?.id;
+            const regSid = resultAny?.registrationSessionId ?? resultAny?.RegistrationSessionId;
             const statusCode = response.statusCode;
             const hasResult = !!response.result;
 
-            console.log('Registration check - statusCode:', statusCode, 'hasResult:', hasResult, 'userId:', userId);
+            console.log('Registration check - statusCode:', statusCode, 'hasResult:', hasResult, 'registrationSessionId:', regSid);
 
-            // Check for success (statusCode 200 or if result exists with userId)
-            const isSuccess = (statusCode === 200 || statusCode === 1 || (hasResult && userId)) && hasResult && userId;
+            const isSuccess =
+                (statusCode === 200 || statusCode === 1 || (hasResult && regSid)) &&
+                hasResult &&
+                !!regSid;
 
             if (isSuccess) {
-                // Registration successful - show verification screen
-                console.log('Registration successful! Setting verification screen, userId:', userId);
+                // Pending registration — verify OTP before account is created on server
+                console.log('Registration pending verification, session:', regSid);
                 setRegisteredFirstName(firstName);
-                setRegisteredUserId(Number(userId));
+                setRegistrationSessionId(String(regSid));
+                setRegisteredUserId(null);
                 setShowVerification(true);
                 setCodeSent(false); // Reset code sent state - user must select method first
                 setVerificationMethod(''); // Reset verification method
@@ -724,6 +774,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleLogin = async () => {
+        setLoginSuccessHint(null);
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         let hasError = false;
 
@@ -777,11 +828,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     isVerified: response.result.status === 1,
                 };
 
-                login(user);
+                login(user, loginRememberMe);
 
-                // Store token
                 if (response.result.accessToken) {
-                    localStorage.setItem('token', response.result.accessToken);
+                    setStoredToken(response.result.accessToken, loginRememberMe);
                 }
 
                 onClose();
@@ -812,6 +862,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setShowForgotPassword(false);
         setForgotMode('contact');
         setForgotContactMethod('email');
+        setForgotSearchDeliveryMethod('email');
         setForgotContactEmail('');
         setForgotContactPhone('');
         setForgotContactWhatsApp('');
@@ -833,8 +884,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleSearchRecoveryAccounts = async () => {
-        if (forgotSearchName.trim().length < 2) {
-            setForgotError('Please type at least 2 characters to search by name.');
+        const raw = forgotSearchName.trim();
+        setForgotSearchResults([]);
+
+        if (raw.length < 2) {
+            setForgotError('Enter at least 2 letters of a first or last name to search.');
+            return;
+        }
+
+        const lettersOnlyErr = nameLettersOnlyError(raw, 'Name');
+        if (lettersOnlyErr) {
+            setForgotError(lettersOnlyErr);
+            return;
+        }
+
+        const letterCount = (raw.match(/\p{L}/gu) ?? []).length;
+        if (letterCount < 2) {
+            setForgotError('Enter at least 2 letters (numbers and symbols are not allowed).');
             return;
         }
 
@@ -844,15 +910,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotSelectedAccount(null);
 
         try {
-            const response = await matrimonialService.searchRecoveryAccounts(forgotSearchName.trim());
+            const response = await matrimonialService.searchRecoveryAccounts(raw);
             const accounts = Array.isArray(response?.result) ? response.result : [];
             setForgotSearchResults(accounts);
 
             if (accounts.length === 0) {
-                setForgotError('No matching account found. Try a different name.');
+                setForgotError(
+                    'No account matched that name. Try a different spelling, or use registered email / phone / WhatsApp above.'
+                );
             }
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Failed to search accounts.');
+            setForgotError(error instanceof Error ? error.message : 'Could not search accounts. Check your connection and try again.');
             setForgotSearchResults([]);
         } finally {
             setIsForgotSubmitting(false);
@@ -860,47 +928,44 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleInitiateForgotByContact = async () => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-        let payload: { email?: string; phoneNumber?: string; whatsApp?: string } = {};
-        let notFoundMsg = '';
+        let payload: ForgotPasswordInitiateRequest;
 
         if (forgotContactMethod === 'email') {
             const emailVal = forgotContactEmail.trim();
             if (!emailVal) {
-                setForgotError('Please enter your registered email address.');
+                setForgotError('Enter the email address you used when you registered.');
                 return;
             }
-            if (!emailRegex.test(emailVal)) {
-                setForgotError('Please enter a valid email address (e.g. yourname@email.com).');
+            const emailFmtErr = getForgotPasswordEmailValidationError(emailVal);
+            if (emailFmtErr) {
+                setForgotError(emailFmtErr);
                 return;
             }
-            payload = { email: emailVal };
-            notFoundMsg = 'No account is registered with this email address. Please check and try again.';
+            payload = { email: emailVal, deliveryMethod: forgotContactMethod };
         } else if (forgotContactMethod === 'phone') {
             const phoneVal = forgotContactPhone.trim();
             if (!phoneVal) {
-                setForgotError('Please enter your registered phone number.');
+                setForgotError('Enter the mobile number saved on your profile.');
                 return;
             }
-            if (!isValidSriLankanPhone(phoneVal)) {
-                setForgotError('Please enter a valid phone number (e.g. 0771234567 or +94771234567).');
+            const phoneFmtErr = sriLankanPhoneFormatErrorIfInvalid(phoneVal, 'Phone number');
+            if (phoneFmtErr) {
+                setForgotError(phoneFmtErr);
                 return;
             }
-            payload = { phoneNumber: phoneVal };
-            notFoundMsg = 'No account is registered with this phone number. Please check and try again.';
+            payload = { phoneNumber: phoneVal, deliveryMethod: forgotContactMethod };
         } else {
             const waVal = forgotContactWhatsApp.trim();
             if (!waVal) {
-                setForgotError('Please enter your registered WhatsApp number.');
+                setForgotError('Enter the WhatsApp number saved on your profile.');
                 return;
             }
-            if (!isValidSriLankanPhone(waVal)) {
-                setForgotError('Please enter a valid WhatsApp number (e.g. 0771234567 or +94771234567).');
+            const waFmtErr = sriLankanPhoneFormatErrorIfInvalid(waVal, 'WhatsApp number');
+            if (waFmtErr) {
+                setForgotError(waFmtErr);
                 return;
             }
-            payload = { whatsApp: waVal };
-            notFoundMsg = 'No account is registered with this WhatsApp number. Please check and try again.';
+            payload = { whatsApp: waVal, deliveryMethod: forgotContactMethod };
         }
 
         setIsForgotSubmitting(true);
@@ -911,19 +976,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             const response = await matrimonialService.initiateForgotPassword(payload);
             const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
             const userId = response?.result?.userId;
-            const sentVia = response?.result?.sentVia || forgotContactMethod;
+            const sentVia = formatForgotDeliveryChannel(response?.result?.sentVia ?? forgotContactMethod);
 
             if (!statusOk || !userId) {
-                setForgotError(response?.message || notFoundMsg);
+                setForgotError(response?.message || 'We couldn’t send a code. Check what you entered and try again.');
                 return;
             }
 
             setForgotRecoveryUserId(Number(userId));
             setForgotSentVia(sentVia);
             setForgotStep('verify');
-            setForgotSuccess(`A verification code has been sent to your ${sentVia}. Please check and enter the code below.`);
+            setForgotSuccess(`We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`);
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Could not verify your account details. Please try again.');
+            setForgotError(
+                error instanceof Error ? error.message : 'We couldn’t send a verification code. Try again in a moment.'
+            );
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -936,22 +1003,25 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotSelectedAccount(account);
 
         try {
-            const response = await matrimonialService.initiateForgotPassword({ userId: account.userId });
+            const response = await matrimonialService.initiateForgotPassword({
+                userId: account.userId,
+                deliveryMethod: forgotSearchDeliveryMethod,
+            });
             const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
             const userId = response?.result?.userId;
-            const sentVia = response?.result?.sentVia || account.verifiedBy || 'Email';
+            const sentVia = formatForgotDeliveryChannel(response?.result?.sentVia ?? forgotSearchDeliveryMethod);
 
             if (!statusOk || !userId) {
-                setForgotError(response?.message || 'Could not send a verification code to this account. Please try again.');
+                setForgotError(response?.message || 'We couldn’t send a code for this account. Try another delivery method or contact support.');
                 return;
             }
 
             setForgotRecoveryUserId(Number(userId));
-            setForgotSentVia(String(sentVia));
+            setForgotSentVia(sentVia);
             setForgotStep('verify');
-            setForgotSuccess(`A verification code has been sent to your ${sentVia}. Please check and enter the code below.`);
+            setForgotSuccess(`We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`);
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Could not send verification code. Please try again.');
+            setForgotError(error instanceof Error ? error.message : 'We couldn’t send a verification code. Try again shortly.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -959,22 +1029,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
     const handleForgotPasswordReset = async () => {
         if (!forgotRecoveryUserId) {
-            setForgotError('Recovery session is missing. Please restart forgot password.');
+            setForgotError('Your reset session expired. Close this window and start “Forgot password” again.');
             return;
         }
 
-        if (!forgotCode || forgotCode.length !== 6) {
-            setForgotError('Enter the 6-digit verification code.');
+        const codeDigits = forgotCode.replace(/\D/g, '');
+        if (!codeDigits || codeDigits.length !== 6) {
+            setForgotError('Enter the 6-digit code we sent (numbers only).');
             return;
         }
 
         if (!forgotNewPassword || forgotNewPassword.length < 6) {
-            setForgotError('New password must be at least 6 characters.');
+            setForgotError('Choose a new password with at least 6 characters.');
             return;
         }
 
         if (forgotNewPassword !== forgotConfirmPassword) {
-            setForgotError('Confirm password does not match.');
+            setForgotError('New password and confirmation must match exactly.');
             return;
         }
 
@@ -985,22 +1056,24 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         try {
             const response = await matrimonialService.resetForgotPasswordWithCode({
                 userId: forgotRecoveryUserId,
-                code: forgotCode,
+                code: codeDigits,
                 newPassword: forgotNewPassword,
                 confirmPassword: forgotConfirmPassword,
             });
 
             if (response.statusCode === 200 || response.statusCode === 1) {
-                setForgotSuccess(response.message || 'Password reset successfully.');
-                alert('Password reset successfully. Please login with your new password.');
+                const msg =
+                    response.message ||
+                    'Your password was updated. Sign in with your email and new password.';
                 resetForgotPasswordState();
                 setLoginTab('login');
+                setLoginSuccessHint(msg);
+                setLoginPassword('');
             } else {
-                setForgotError(response.message || 'Failed to reset password.');
+                setForgotError(response.message || 'Your password could not be updated. Try again.');
             }
         } catch (error) {
-            setForgotError(error instanceof Error ? error.message : 'Failed to reset password.');
-            alert(error instanceof Error ? error.message : 'Failed to reset password.');
+            setForgotError(error instanceof Error ? error.message : 'Your password could not be updated. Try again.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -1051,9 +1124,25 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         return { dob: formattedDate, gender };
     };
 
+    /** Valid NIC: DOB/gender come from ID and are locked. Passport / partial NIC: editable after ID field has input. */
+    const hasNicInput = nic.trim().length > 0;
+    const nicLocksDobGender = !!parseNIC(nic);
+    const dobGenderDisabled = !hasNicInput || nicLocksDobGender;
+
+    const dobGenderTitle = !hasNicInput
+        ? 'Enter National ID / Passport number first'
+        : nicLocksDobGender
+          ? 'Locked — values match your NIC. Clear or change ID to edit manually.'
+          : 'Enter manually for passport; a valid NIC replaces these from your ID and locks them.';
+
     const handleNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = sanitizeNicInput(e.target.value);
         setNic(value);
+        if (!value.trim()) {
+            setDob('');
+            setGender('');
+            return;
+        }
         const result = parseNIC(value);
         if (result) {
             setDob(result.dob);
@@ -1065,6 +1154,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setShowWelcomePopup(false);
         // Reset all registration/verification state after welcome popup closes
         setRegisteredUserId(null);
+        setRegistrationSessionId(null);
         setRegisteredFirstName('');
         setProfilePhotoBase64('');
         setPhotoPreview('');
@@ -1089,6 +1179,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             resetForgotPasswordState();
             setShowVerification(false);
             setRegisteredUserId(null);
+            setRegistrationSessionId(null);
             setVerificationMethod('');
             setVerificationDigits(EMPTY_VERIFY_DIGITS());
             setVerificationError(null);
@@ -1111,8 +1202,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleSendVerificationCode = async (method: string) => {
-        if (!registeredUserId) {
-            setSendCodeError('User ID not found');
+        if (!registrationSessionId && !registeredUserId) {
+            setSendCodeError('Verification session not found. Please try registering again.');
             return;
         }
 
@@ -1121,7 +1212,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setVerificationError(null);
 
         try {
-            const response = await matrimonialService.sendVerificationCode(registeredUserId, method);
+            const response = registrationSessionId
+                ? await matrimonialService.sendVerificationCode({ registrationSessionId, method })
+                : await matrimonialService.sendVerificationCode({ userId: registeredUserId!, method });
             if (response.statusCode === 200 || response.statusCode === 1) {
                 setVerificationMethod(method);
                 setCodeSent(true);
@@ -1138,8 +1231,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleVerifyCode = async () => {
-        if (!registeredUserId) {
-            setVerificationError('User ID not found');
+        if (!registrationSessionId && !registeredUserId) {
+            setVerificationError('Verification session not found. Please try registering again.');
             return;
         }
 
@@ -1152,15 +1245,24 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setVerificationError(null);
 
         try {
-            const response = await matrimonialService.verifyCode(registeredUserId, verificationCode);
+            const response = registrationSessionId
+                ? await matrimonialService.verifyCode({ registrationSessionId, code: verificationCode })
+                : await matrimonialService.verifyCode({ userId: registeredUserId!, code: verificationCode });
             if (response.statusCode === 200 || response.statusCode === 1) {
                 // Verification successful.
                 // Ensure we have a token for authorized APIs (uploads, profile updates).
-                const existingToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+                const existingToken = typeof window !== 'undefined' ? getStoredToken() : null;
+
+                const vr = response.result as Record<string, unknown> | undefined;
+                const createdUserId = vr?.userId ?? vr?.UserId;
+                const resolvedUserId =
+                    registrationSessionId && createdUserId != null
+                        ? Number(createdUserId)
+                        : registeredUserId;
 
                 const fallbackUser = user || undefined;
                 let userToLogin = {
-                    id: registeredUserId.toString(),
+                    id: (resolvedUserId ?? registeredUserId ?? '').toString(),
                     firstName: firstName || fallbackUser?.firstName || '',
                     lastName: lastName || fallbackUser?.lastName || '',
                     email: email || fallbackUser?.email || '',
@@ -1190,11 +1292,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         return;
                     }
 
-                    localStorage.setItem('token', token);
+                    setStoredToken(token, registerRememberMe);
 
                     const r = loginResponse.result;
                     userToLogin = {
-                        id: (r.id ?? registeredUserId).toString(),
+                        id: (r.id ?? resolvedUserId ?? registeredUserId).toString(),
                         firstName: r.firstName || userToLogin.firstName,
                         lastName: r.lastName || userToLogin.lastName,
                         email: r.email || r.username || userToLogin.email,
@@ -1210,7 +1312,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     };
                 }
 
-                login(userToLogin);
+                login(userToLogin, registerRememberMe);
 
                 // Ensure firstName is set for welcome popup (use firstName from form if registeredFirstName is not set)
                 const firstNameToUse = registeredFirstName || firstName;
@@ -1499,6 +1601,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             checked={forgotMode === 'contact'}
                                                             onChange={() => {
                                                                 setForgotMode('contact');
+                                                                setForgotSearchResults([]);
                                                                 setForgotError(null);
                                                                 setForgotSuccess(null);
                                                             }}
@@ -1511,6 +1614,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             checked={forgotMode === 'search'}
                                                             onChange={() => {
                                                                 setForgotMode('search');
+                                                                setForgotSearchResults([]);
                                                                 setForgotError(null);
                                                                 setForgotSuccess(null);
                                                             }}
@@ -1564,7 +1668,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                     placeholder="your@email.com"
                                                                     autoComplete="email"
                                                                 />
-                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code to this email.</span>
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', display: 'block', marginTop: '0.25rem' }}>
+                                                                    Same email as on your profile — complete address with @ (example: name@gmail.com).
+                                                                </span>
                                                             </div>
                                                         )}
                                                         {forgotContactMethod === 'phone' && (
@@ -1576,7 +1682,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                     onChange={(e) => { setForgotContactPhone(sanitizeSriLankanPhoneInput(e.target.value)); setForgotError(null); }}
                                                                     placeholder={SL_PHONE_PLACEHOLDER}
                                                                 />
-                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code to this phone number.</span>
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', display: 'block', marginTop: '0.25rem' }}>
+                                                                    Same mobile as on your profile. {SL_PHONE_HINT}
+                                                                </span>
                                                             </div>
                                                         )}
                                                         {forgotContactMethod === 'whatsapp' && (
@@ -1588,7 +1696,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                     onChange={(e) => { setForgotContactWhatsApp(sanitizeSriLankanPhoneInput(e.target.value)); setForgotError(null); }}
                                                                     placeholder={SL_PHONE_PLACEHOLDER}
                                                                 />
-                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)' }}>We will send a recovery code via WhatsApp to this number.</span>
+                                                                <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', display: 'block', marginTop: '0.25rem' }}>
+                                                                    Same WhatsApp as on your profile. {SL_PHONE_HINT}
+                                                                </span>
                                                             </div>
                                                         )}
 
@@ -1603,15 +1713,51 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
-                                                            Search your account by name, choose your profile, and we will send the code automatically to your verified method.
+                                                        <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginBottom: '0.75rem' }}>
+                                                            Choose how you want to receive the recovery code, then search your account by name.
                                                         </p>
+                                                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                                                            {(['email', 'phone', 'whatsapp'] as const).map((m) => {
+                                                                const label = m === 'email' ? '📧 Email' : m === 'phone' ? '📞 Phone' : '💬 WhatsApp';
+                                                                const active = forgotSearchDeliveryMethod === m;
+                                                                return (
+                                                                    <button
+                                                                        key={m}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setForgotSearchDeliveryMethod(m);
+                                                                            setForgotError(null);
+                                                                            setForgotSuccess(null);
+                                                                        }}
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            padding: '0.45rem 0.25rem',
+                                                                            borderRadius: '6px',
+                                                                            border: active ? '2px solid var(--primary)' : '1px solid #d1d5db',
+                                                                            background: active ? 'var(--primary)' : '#fff',
+                                                                            color: active ? '#fff' : '#374151',
+                                                                            fontWeight: active ? 700 : 400,
+                                                                            fontSize: '0.8rem',
+                                                                            cursor: 'pointer',
+                                                                            transition: 'all 0.15s ease',
+                                                                        }}
+                                                                    >
+                                                                        {label}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
                                                         <div className="form-group">
                                                             <label>Type your name</label>
                                                             <input
                                                                 type="text"
                                                                 value={forgotSearchName}
-                                                                onChange={(e) => setForgotSearchName(sanitizeNameInput(e.target.value))}
+                                                                onChange={(e) => {
+                                                                    setForgotSearchName(sanitizeNameInput(e.target.value));
+                                                                    setForgotSearchResults([]);
+                                                                    setForgotError(null);
+                                                                    setForgotSuccess(null);
+                                                                }}
                                                                 placeholder="First name or full name"
                                                             />
                                                         </div>
@@ -1631,9 +1777,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                         <div style={{ fontWeight: 600 }}>{account.fullName}</div>
                                                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-light)' }}>
                                                                             {account.email || account.phoneNumber || account.whatsApp || 'No contact details'}
-                                                                        </div>
-                                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginTop: '0.2rem' }}>
-                                                                            Verified by: {account.verifiedBy || 'Email'}
                                                                         </div>
                                                                         <button
                                                                             type="button"
@@ -1746,9 +1889,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             )}
                                         </div>
                                         <div className="checkbox-group">
-                                            <input type="checkbox" id="remember" />
+                                            <input
+                                                type="checkbox"
+                                                id="remember"
+                                                checked={loginRememberMe}
+                                                onChange={(e) => setLoginRememberMe(e.target.checked)}
+                                            />
                                             <label htmlFor="remember">Remember me</label>
                                         </div>
+                                        {loginSuccessHint && (
+                                            <div
+                                                style={{
+                                                    color: '#166534',
+                                                    fontSize: '0.85rem',
+                                                    marginBottom: '1rem',
+                                                    padding: '0.6rem 0.75rem',
+                                                    backgroundColor: '#dcfce7',
+                                                    borderRadius: '6px',
+                                                    borderLeft: '3px solid #22c55e',
+                                                }}
+                                            >
+                                                {loginSuccessHint}
+                                            </div>
+                                        )}
                                         {loginError && (
                                             <div style={{
                                                 color: '#b91c1c',
@@ -1776,6 +1939,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 style={{ color: 'var(--primary)' }}
                                                 onClick={(e) => {
                                                     e.preventDefault();
+                                                    setLoginSuccessHint(null);
                                                     setShowForgotPassword(true);
                                                     setForgotError(null);
                                                     setForgotSuccess(null);
@@ -1811,12 +1975,31 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Date of Birth *</label>
-                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} disabled={!!parseNIC(nic)} />
+                                        <input
+                                            type="date"
+                                            value={dob}
+                                            onChange={(e) => setDob(e.target.value)}
+                                            disabled={dobGenderDisabled}
+                                            title={dobGenderTitle}
+                                            style={{
+                                                borderColor: errors.dob ? 'red' : '',
+                                                ...(dobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                            }}
+                                        />
                                         {errors.dob && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.dob}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Gender *</label>
-                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }} disabled={!!parseNIC(nic)}>
+                                        <select
+                                            value={gender}
+                                            onChange={(e) => setGender(e.target.value)}
+                                            disabled={dobGenderDisabled}
+                                            title={dobGenderTitle}
+                                            style={{
+                                                borderColor: errors.gender ? 'red' : '',
+                                                ...(dobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                            }}
+                                        >
                                             <option value="">Select Gender</option>
                                             <option value="Male">Male</option>
                                             <option value="Female">Female</option>
@@ -1824,6 +2007,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {errors.gender && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.gender}</span>}
                                     </div>
                                 </div>
+                                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 0.75rem' }}>
+                                    {!hasNicInput && 'Enter National ID or passport number first — then date of birth and gender.'}
+                                    {hasNicInput && nicLocksDobGender &&
+                                        'Date of birth and gender are set from your NIC. Clear the ID field or use passport format to change them manually.'}
+                                    {hasNicInput && !nicLocksDobGender &&
+                                        'Enter DOB and gender manually for passport. Typing a valid NIC updates both fields from your ID and locks them.'}
+                                </p>
                                 <div className="form-group">
                                     <label>Phone Number *</label>
                                     <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
@@ -1915,6 +2105,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     </div>
                                 )}
+                                <div className="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        id="registerRememberLoginTab"
+                                        checked={registerRememberMe}
+                                        onChange={(e) => setRegisterRememberMe(e.target.checked)}
+                                    />
+                                    <label htmlFor="registerRememberLoginTab">Remember me on this device</label>
+                                </div>
                                 <div className="checkbox-group">
                                     <input
                                         type="checkbox"
@@ -2217,12 +2416,31 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Date of Birth *</label>
-                                        <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} style={{ borderColor: errors.dob ? 'red' : '' }} disabled={!!parseNIC(nic)} />
+                                        <input
+                                            type="date"
+                                            value={dob}
+                                            onChange={(e) => setDob(e.target.value)}
+                                            disabled={dobGenderDisabled}
+                                            title={dobGenderTitle}
+                                            style={{
+                                                borderColor: errors.dob ? 'red' : '',
+                                                ...(dobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                            }}
+                                        />
                                         {errors.dob && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.dob}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Gender *</label>
-                                        <select value={gender} onChange={(e) => setGender(e.target.value)} style={{ borderColor: errors.gender ? 'red' : '' }} disabled={!!parseNIC(nic)}>
+                                        <select
+                                            value={gender}
+                                            onChange={(e) => setGender(e.target.value)}
+                                            disabled={dobGenderDisabled}
+                                            title={dobGenderTitle}
+                                            style={{
+                                                borderColor: errors.gender ? 'red' : '',
+                                                ...(dobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                            }}
+                                        >
                                             <option value="">Select Gender</option>
                                             <option value="Male">Male</option>
                                             <option value="Female">Female</option>
@@ -2230,6 +2448,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {errors.gender && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.gender}</span>}
                                     </div>
                                 </div>
+                                <p style={{ fontSize: '0.78rem', color: '#64748b', margin: '0 0 0.75rem' }}>
+                                    {!hasNicInput && 'Enter National ID or passport number first — then date of birth and gender.'}
+                                    {hasNicInput && nicLocksDobGender &&
+                                        'Date of birth and gender are set from your NIC. Clear the ID field or use passport format to change them manually.'}
+                                    {hasNicInput && !nicLocksDobGender &&
+                                        'Enter DOB and gender manually for passport. Typing a valid NIC updates both fields from your ID and locks them.'}
+                                </p>
                                 <div className="form-group">
                                     <label>Phone Number *</label>
                                     <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
@@ -2286,6 +2511,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             ))}
                                         </div>
                                     )}
+                                </div>
+                                <div className="checkbox-group">
+                                    <input
+                                        type="checkbox"
+                                        id="registerRememberStandalone"
+                                        checked={registerRememberMe}
+                                        onChange={(e) => setRegisterRememberMe(e.target.checked)}
+                                    />
+                                    <label htmlFor="registerRememberStandalone">Remember me on this device</label>
                                 </div>
                                 <div className="checkbox-group">
                                     <input

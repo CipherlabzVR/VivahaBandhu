@@ -225,11 +225,11 @@ export default function Hero({ onOpenRegister, onOpenLogin }: HeroProps) {
                                 onChange={handleChange}
                                 options={[
                                     { value: 'Any', label: 'Any' },
-                                    { value: 'Buddhist', label: 'Buddhist' },
-                                    { value: 'Hindu', label: 'Hindu' },
-                                    { value: 'Christian', label: 'Christian' },
+                                    { value: 'Buddhism', label: 'Buddhism' },
+                                    { value: 'Hinduism', label: 'Hinduism' },
+                                    { value: 'Islam', label: 'Islam' },
+                                    { value: 'Christianity', label: 'Christianity' },
                                     { value: 'Catholic', label: 'Catholic' },
-                                    { value: 'Muslim', label: 'Muslim' },
                                     { value: 'Other', label: 'Other' }
                                 ]}
                                 label={t('religion')}
