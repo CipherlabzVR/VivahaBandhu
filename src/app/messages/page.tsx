@@ -88,7 +88,7 @@ function MessagesContent() {
         let activeConnection: signalR.HubConnection | null = null;
 
         const connectSignalR = async (attempt = 0) => {
-            const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
+            const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
             // The hub mapped to /chathub inside API folder path or root (e.g. https://.../chathub)
             const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
 

@@ -1,5 +1,5 @@
 import { getStoredToken } from '../utils/authStorage';
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
 export interface MatrimonialRegisterRequest {
     firstName: string;
@@ -751,6 +751,23 @@ export const matrimonialService = {
             return await response.json();
         } catch {
             return { statusCode: 0, result: [] };
+        }
+    },
+
+    /**
+     * Register this site's origin with the backend CORS allowlist (called from the landing page).
+     */
+    async saveCorsLink(webLink: string, isActive: boolean = true): Promise<void> {
+        try {
+            await fetch(`${API_BASE_URL}/AppSetting/SaveCorsLink`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ webLink, isActive }),
+            });
+        } catch {
+            // Non-blocking: landing page must render even if registration fails (offline, CORS during dev, etc.)
         }
     },
 

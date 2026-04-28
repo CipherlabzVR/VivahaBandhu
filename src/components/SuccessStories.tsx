@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://thumali1.clovesis.com/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 const DEFAULT_IMAGES = [
     'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=300&fit=crop',
     'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400&h=300&fit=crop',
