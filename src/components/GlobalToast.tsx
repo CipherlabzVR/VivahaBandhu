@@ -23,7 +23,7 @@ export default function GlobalToast() {
             const durationMs = customEvent.detail?.durationMs ?? 2800;
             const id = nextIdRef.current++;
 
-            setToasts((prev) => [...prev, { id, message, type }]);
+            setToasts((prev) => [{ id, message, type }, ...prev]);
 
             window.setTimeout(() => {
                 setToasts((prev) => prev.filter((toast) => toast.id !== id));

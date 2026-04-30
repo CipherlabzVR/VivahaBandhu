@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode, type CSSProperties, type RefObject } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Country, City } from 'country-state-city';
 import { getStoredToken } from '../../utils/authStorage';
 import { sanitizeNameInput } from '../../utils/nameInput';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
+import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -689,7 +690,16 @@ function CountryMultiSelect({
     );
 }
 
-export default function ProfileCompletionForm({ onClose, onComplete }: { onClose?: () => void, onComplete?: () => void }) {
+export default function ProfileCompletionForm({
+    onClose,
+    onComplete,
+    scrollContainerRef,
+}: {
+    onClose?: () => void;
+    onComplete?: () => void;
+    /** Scroll host for the full-screen detailed profile modal (step changes scroll this to top). */
+    scrollContainerRef?: RefObject<HTMLElement | null>;
+}) {
     const { user, updateUser } = useAuth();
     const router = useRouter();
     const [step, setStep] = useState(1);
@@ -699,10 +709,22 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
     const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
     const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
     const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
+    const horoscopeFileInputRef = useRef<HTMLInputElement>(null);
+    const profilePhotoFileInputRef = useRef<HTMLInputElement>(null);
+    const upload1FileInputRef = useRef<HTMLInputElement>(null);
+    const upload2FileInputRef = useRef<HTMLInputElement>(null);
+    const upload3FileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (horoscopePopupOpen) setHoroscopePopupOpen(false);
     }, [step]);
+
+    useEffect(() => {
+        scrollContainerRef?.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        if (typeof window !== 'undefined') {
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+    }, [step, scrollContainerRef]);
 
     const [formData, setFormData] = useState({
         // Personal
@@ -813,15 +835,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             })),
         [selectedResidenceCountries, countryIsoByName]
     );
-
-    const sriLankanReligions = [
-        'Buddhism',
-        'Hinduism',
-        'Islam',
-        'Christianity',
-        'Catholic',
-        'Other',
-    ];
 
     const sriLankanEthnicities = [
         'Sinhalese',
@@ -1090,7 +1103,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     updateUser({ profilePhoto: withCacheBuster(cleanUrl) });
                 }
                 if (fieldName === 'horoscopeDocument') {
-                    updateUser({ horoscopeDocument: cleanUrl });
+                    updateUser({ horoscopeDocument: withCacheBuster(cleanUrl) });
                 }
 
                 // Persist key file fields to the matrimonial profile *immediately* so the
@@ -1305,6 +1318,75 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         }
     };
 
+    const imageActionBtn: CSSProperties = {
+        fontSize: '0.82rem',
+        padding: '0.4rem 0.75rem',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        border: '1px solid #ccc',
+        background: '#fff',
+        color: '#333',
+    };
+
+    const clearUploadedField = async (
+        fieldName: 'horoscopeDocument' | 'profilePhoto' | 'upload1' | 'upload2' | 'upload3',
+    ) => {
+        if (fieldName === 'upload1' || fieldName === 'upload2' || fieldName === 'upload3') {
+            const cascadeFields =
+                fieldName === 'upload1'
+                    ? (['upload1', 'upload2', 'upload3'] as const)
+                    : fieldName === 'upload2'
+                      ? (['upload2', 'upload3'] as const)
+                      : (['upload3'] as const);
+            const msg =
+                fieldName === 'upload1'
+                    ? 'Remove Gallery Photo 1? Photos 2 and 3 will be removed too, since they depend on this slot.'
+                    : fieldName === 'upload2'
+                      ? 'Remove Gallery Photo 2? Gallery Photo 3 will be removed too.'
+                      : 'Remove Gallery Photo 3?';
+            if (!window.confirm(msg)) return;
+
+            setFormData((prev) => {
+                const next = { ...prev };
+                for (const f of cascadeFields) next[f] = '';
+                return next;
+            });
+            setPreviewBusters((prev) => {
+                const next = { ...prev };
+                for (const f of cascadeFields) delete next[f];
+                return next;
+            });
+            setSubmitError('');
+            for (const f of cascadeFields) {
+                await persistFieldUpdate(f, '');
+            }
+            return;
+        }
+
+        const msg =
+            fieldName === 'profilePhoto'
+                ? 'Remove your main profile photo? Gallery photos stay on your profile until you change them; you can upload a new main photo afterwards.'
+                : 'Remove the uploaded horoscope document?';
+        if (!window.confirm(msg)) return;
+
+        setFormData((prev) => ({ ...prev, [fieldName]: '' }));
+        setPreviewBusters((prev) => {
+            const next = { ...prev };
+            delete next[fieldName];
+            return next;
+        });
+        setSubmitError('');
+
+        if (fieldName === 'profilePhoto') {
+            updateUser({ profilePhoto: '' });
+        } else {
+            updateUser({ horoscopeDocument: '' });
+            setHoroscopePopupOpen(false);
+        }
+
+        await persistFieldUpdate(fieldName, '');
+    };
+
     const handleNext = async () => {
         if (!validateStep(step)) return;
         // Don't move on while a file is still uploading - otherwise the
@@ -1318,12 +1400,10 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         if (!saved) return;
 
         setStep(prev => prev + 1);
-        window.scrollTo(0, 0);
     };
 
     const handlePrev = () => {
         setStep(prev => prev - 1);
-        window.scrollTo(0, 0);
     };
 
     const handleStepClick = async (targetStep: number) => {
@@ -1341,7 +1421,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         }
 
         setStep(targetStep);
-        window.scrollTo(0, 0);
     };
 
     const saveProfile = async () => {
@@ -1359,7 +1438,6 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
         // stepper click can't bypass the rule.
         if (!validateStep(5)) {
             setStep(5);
-            window.scrollTo(0, 0);
             return;
         }
 
@@ -1399,7 +1477,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                     updateUser({ profilePhoto: withCacheBuster(formData.profilePhoto) });
                 }
                 if (formData.horoscopeDocument) {
-                    updateUser({ horoscopeDocument: formData.horoscopeDocument });
+                    updateUser({ horoscopeDocument: withCacheBuster(formData.horoscopeDocument) });
                 }
                 setSuccessMessage('Profile updated successfully!');
                 setTimeout(() => {
@@ -1481,7 +1559,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Religion*</label>
                                 <select name="religion" value={formData.religion} onChange={handleChange} required>
                                     <option value="">Select Religion</option>
-                                    {sriLankanReligions.map((item) => (
+                                    {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
@@ -1614,20 +1692,41 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                                     <label>Upload Horoscope Document</label>
                                     <input
+                                        ref={horoscopeFileInputRef}
                                         type="file"
                                         accept="image/*,.pdf,.doc,.docx"
                                         onChange={(e) => handleFileChange(e, 'horoscopeDocument')}
                                         disabled={uploading['horoscopeDocument']}
+                                        style={formData.horoscopeDocument ? { display: 'none' } : undefined}
                                     />
                                     {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                     {formData.horoscopeDocument && (
                                         <div style={{ marginTop: '0.5rem' }}>
                                             <img
+                                                key={`${formData.horoscopeDocument}-${previewBusters['horoscopeDocument'] ?? 'n'}`}
                                                 src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
                                                 alt="Horoscope"
                                                 onClick={() => setHoroscopePopupOpen(true)}
                                                 style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
                                             />
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => horoscopeFileInputRef.current?.click()}
+                                                    disabled={uploading['horoscopeDocument']}
+                                                    style={imageActionBtn}
+                                                >
+                                                    Replace file
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void clearUploadedField('horoscopeDocument')}
+                                                    disabled={uploading['horoscopeDocument']}
+                                                    style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
                                             <div>
                                                 <button
                                                     type="button"
@@ -1682,7 +1781,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Religion*</label>
                                 <select name="fatherReligion" value={formData.fatherReligion} onChange={handleChange} required>
                                     <option value="">Select</option>
-                                    {sriLankanReligions.map((item) => (
+                                    {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
@@ -1735,7 +1834,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 <label>Religion*</label>
                                 <select name="motherReligion" value={formData.motherReligion} onChange={handleChange} required>
                                     <option value="">Select</option>
-                                    {sriLankanReligions.map((item) => (
+                                    {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
@@ -1834,7 +1933,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                     label="Religion (Preferred)"
                                     value={formData.partnerReligion}
                                     onChange={(v) => setFormData((prev) => ({ ...prev, partnerReligion: v }))}
-                                    options={sriLankanReligions}
+                                    options={MATRIMONIAL_RELIGION_OPTIONS}
                                     placeholder="Any"
                                 />
                             </div>
@@ -1883,7 +1982,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                         <h3>Profile Verification & Uploads</h3>
                         <div className="form-grid">
                             <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                                <label>General Remarks</label>
+                                <label>About yourself</label>
                                 <textarea name="remarks" value={formData.remarks} onChange={handleChange} rows={3}></textarea>
                             </div>
 
@@ -1895,15 +1994,35 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <label>Main Profile Photo*</label>
                                 <input
+                                    ref={profilePhotoFileInputRef}
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => handleFileChange(e, 'profilePhoto')}
                                     disabled={uploading['profilePhoto']}
+                                    style={formData.profilePhoto ? { display: 'none' } : undefined}
                                 />
                                 {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.profilePhoto && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => profilePhotoFileInputRef.current?.click()}
+                                                disabled={uploading['profilePhoto']}
+                                                style={imageActionBtn}
+                                            >
+                                                Replace photo
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void clearUploadedField('profilePhoto')}
+                                                disabled={uploading['profilePhoto']}
+                                                style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1911,11 +2030,13 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <label>Gallery Photo 1</label>
                                 <input
+                                    ref={upload1FileInputRef}
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => handleFileChange(e, 'upload1')}
                                     disabled={uploading['upload1'] || !formData.profilePhoto}
                                     title={!formData.profilePhoto ? 'Upload your Main Profile Photo first.' : undefined}
+                                    style={formData.upload1 ? { display: 'none' } : undefined}
                                 />
                                 {!formData.profilePhoto && (
                                     <small style={{ color: '#888', fontSize: '0.78rem' }}>
@@ -1925,7 +2046,25 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload1'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload1 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => upload1FileInputRef.current?.click()}
+                                                disabled={uploading['upload1'] || !formData.profilePhoto}
+                                                style={imageActionBtn}
+                                            >
+                                                Replace photo
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void clearUploadedField('upload1')}
+                                                disabled={uploading['upload1']}
+                                                style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1933,11 +2072,13 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <label>Gallery Photo 2</label>
                                 <input
+                                    ref={upload2FileInputRef}
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => handleFileChange(e, 'upload2')}
                                     disabled={uploading['upload2'] || !formData.upload1}
                                     title={!formData.upload1 ? 'Upload Gallery Photo 1 first.' : undefined}
+                                    style={formData.upload2 ? { display: 'none' } : undefined}
                                 />
                                 {!formData.upload1 && (
                                     <small style={{ color: '#888', fontSize: '0.78rem' }}>
@@ -1947,7 +2088,25 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload2'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload2 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => upload2FileInputRef.current?.click()}
+                                                disabled={uploading['upload2'] || !formData.upload1}
+                                                style={imageActionBtn}
+                                            >
+                                                Replace photo
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void clearUploadedField('upload2')}
+                                                disabled={uploading['upload2']}
+                                                style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1955,11 +2114,13 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                             <div className="form-group">
                                 <label>Gallery Photo 3</label>
                                 <input
+                                    ref={upload3FileInputRef}
                                     type="file"
                                     accept="image/*"
                                     onChange={(e) => handleFileChange(e, 'upload3')}
                                     disabled={uploading['upload3'] || !formData.upload2}
                                     title={!formData.upload2 ? 'Upload Gallery Photo 2 first.' : undefined}
+                                    style={formData.upload3 ? { display: 'none' } : undefined}
                                 />
                                 {!formData.upload2 && (
                                     <small style={{ color: '#888', fontSize: '0.78rem' }}>
@@ -1969,7 +2130,25 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
                                 {uploading['upload3'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 {formData.upload3 && (
                                     <div style={{ marginTop: '0.5rem' }}>
-                                        <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px' }} />
+                                        <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => upload3FileInputRef.current?.click()}
+                                                disabled={uploading['upload3'] || !formData.upload2}
+                                                style={imageActionBtn}
+                                            >
+                                                Replace photo
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void clearUploadedField('upload3')}
+                                                disabled={uploading['upload3']}
+                                                style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -2030,6 +2209,7 @@ export default function ProfileCompletionForm({ onClose, onComplete }: { onClose
             `}</style>
 
             <HoroscopeLightbox
+                key={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
                 open={horoscopePopupOpen && !!formData.horoscopeDocument}
                 src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
                 onClose={() => setHoroscopePopupOpen(false)}

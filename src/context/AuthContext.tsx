@@ -15,9 +15,20 @@ interface User {
     phone?: string;
     whatsapp?: string;
     accountType?: string;
+    /** Set when this login is a managed sub-account (created under a parent user). */
+    parentUserId?: number | null;
     profilePhoto?: string;
     isVerified?: boolean;
     isSubscribed?: boolean;
+    /** Matchmaker: FREE | GOLD | DIAMOND (from sign-in / profile). */
+    matchmakerTier?: string;
+    matchmakerMaxClientProfiles?: number;
+    matchmakerClientProfileCount?: number;
+    matchmakerCanAddClients?: boolean;
+    /** Gold: full-detail views remaining today (-1 = not applicable). */
+    matchmakerDailyFullProfileViewsRemaining?: number;
+    /** Whether Self user has classic premium (not used for Matchmaker billing). */
+    isPremiumSelfSubscribed?: boolean;
     /** Whether the user wants an email when someone shows interest. Server-authoritative. */
     emailOnInterest?: boolean;
     horoscopeDocument?: string;

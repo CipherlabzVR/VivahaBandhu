@@ -10,13 +10,18 @@ const config: Config = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#F97316',
-          dark: '#EA580C',
-          light: '#FB923C',
+          DEFAULT: '#ffa20d',
+          dark: '#d98809',
+          light: '#ffb84d',
         },
         gold: {
-          DEFAULT: '#F97316',
-          light: '#FB923C',
+          DEFAULT: '#ffa20d',
+          light: '#ffb84d',
+        },
+        /* Brand orange for `orange-500` / `orange-600` utilities (rest keep default palette) */
+        orange: {
+          500: '#ffa20d',
+          600: '#d98809',
         },
         cream: {
           DEFAULT: '#FDF8F3',
@@ -40,7 +45,7 @@ const config: Config = {
         sinhala: ['"Noto Sans Sinhala"', 'sans-serif'],
       },
       boxShadow: {
-        'gold': '0 2px 20px rgba(249, 115, 22, 0.25)',
+        'gold': '0 2px 20px rgba(255, 162, 13, 0.25)',
       },
       keyframes: {
         'heart-pulse': {
@@ -80,7 +85,7 @@ const config: Config = {
         },
         'glass-shine': {
           '0%, 100%': { boxShadow: '0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.6)' },
-          '50%': { boxShadow: '0 8px 40px rgba(249,115,22,0.15), inset 0 1px 0 rgba(255,255,255,0.8)' },
+          '50%': { boxShadow: '0 8px 40px rgba(255,162,13,0.15), inset 0 1px 0 rgba(255,255,255,0.8)' },
         },
       },
       animation: {

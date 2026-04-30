@@ -129,6 +129,7 @@ export default function HoroscopeLightbox({ open, src, alt = 'Horoscope', onClos
                 >
                     {isImage && !imgError ? (
                         <img
+                            key={src}
                             src={src}
                             alt={alt}
                             onError={() => setImgError(true)}

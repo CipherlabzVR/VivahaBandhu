@@ -68,12 +68,11 @@ export default function Home() {
         onOpenRegister={() => openModal('register')}
         onOpenVerify={() => openModal('verify')}
       />
-      <AnimateIn delay={0}>
-        <Hero
-          onOpenLogin={() => openModal('login')}
-          onOpenRegister={() => openModal('register')}
-        />
-      </AnimateIn>
+      <Hero
+        onOpenLogin={() => openModal('login')}
+        onOpenRegister={() => openModal('register')}
+        onOpenSubscription={() => openModal('subscription')}
+      />
       <AnimateIn delay={100}>
         <Features onOpenRegister={() => openModal('register')} />
       </AnimateIn>

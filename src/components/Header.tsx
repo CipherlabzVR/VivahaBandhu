@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { matrimonialService } from '../services/matrimonialService';
 import { getStoredToken } from '../utils/authStorage';
-import { BookmarkIcon } from './icons/InteractionIcons';
+import { isManagedSubAccount } from '../utils/managedSubAccount';
+import { connectMatrimonialHub } from '../utils/signalrHub';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
@@ -18,21 +20,97 @@ interface HeaderProps {
     onOpenVerify?: () => void;
 }
 
+function referenceIdFromNotification(notification: any): number {
+    const raw = notification?.referenceId ?? notification?.ReferenceId;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** True when API / live payload indicates reciprocal interest (“interest back”), not a first-time “interested”. */
+function isInterestBackNotification(notification: any): boolean {
+    const title = String(notification?.title ?? notification?.Title ?? '').toLowerCase();
+    const desc = String(notification?.description ?? notification?.Description ?? '').toLowerCase();
+    if (title.includes('interest back')) return true;
+    if (desc.includes('interest back')) return true;
+    if (/\bsent\s+interest\s+back\b/i.test(desc)) return true;
+    if (/\breciprocated\b/i.test(desc)) return true;
+    return false;
+}
+
+function senderLabelFromDescription(description: string | undefined): string {
+    if (!description?.trim()) return 'Someone';
+    const trimmed = description.trim();
+
+    const interested = trimmed.match(/^(.+?)\s+is\s+interested\b/i);
+    if (interested?.[1]) return interested[1].trim();
+
+    const ibEm = trimmed.match(/^Interest back —\s*(.+?)\s+reciprocated\b/i);
+    if (ibEm?.[1]) {
+        const inner = ibEm[1].replace(/\s*\([^)]*\)\s*$/, '').trim();
+        return inner || 'Someone';
+    }
+
+    const sentBack = trimmed.match(/^(.+?)\s+sent interest back\b/i);
+    if (sentBack?.[1]) return sentBack[1].trim();
+
+    return trimmed;
+}
+
+function notificationTitleFallback(notification: any): string {
+    return isInterestBackNotification(notification) ? 'Interest back' : 'New interest';
+}
+
+function notificationDescriptionFallback(notification: any): string {
+    return isInterestBackNotification(notification)
+        ? 'A member reciprocated — interest back.'
+        : 'Someone is interested in your profile.';
+}
+
+function initialsFromName(label: string): string {
+    const parts = label.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    const a = parts[0]?.[0];
+    const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : '';
+    return `${a || ''}${b || ''}`.toUpperCase() || '?';
+}
+
 export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: HeaderProps) {
+    const router = useRouter();
     const { user, logout, updateUser } = useAuth();
     const { language, setLanguage, t } = useLanguage();
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
     const [notificationOpen, setNotificationOpen] = useState(false);
     const [interestNotifications, setInterestNotifications] = useState<any[]>([]);
     const [loadingNotifications, setLoadingNotifications] = useState(false);
-    const [selectedInterestProfile, setSelectedInterestProfile] = useState<any | null>(null);
-    const [interestProfileOpen, setInterestProfileOpen] = useState(false);
-    const [isSavingInterestProfile, setIsSavingInterestProfile] = useState(false);
+    const [interestBackLoadingKey, setInterestBackLoadingKey] = useState<string | null>(null);
     const [actionToast, setActionToast] = useState('');
 
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+    const notificationMenuRef = useRef<HTMLDivElement>(null);
+    const profileMenuRef = useRef<HTMLDivElement>(null);
+
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+
+    useEffect(() => {
+        if (!notificationOpen && !profileMenuOpen) return;
+
+        const closeOnOutside = (e: MouseEvent | TouchEvent) => {
+            const target = e.target as Node | null;
+            if (!target) return;
+            if (notificationMenuRef.current?.contains(target)) return;
+            if (profileMenuRef.current?.contains(target)) return;
+            setNotificationOpen(false);
+            setProfileMenuOpen(false);
+        };
+
+        document.addEventListener('mousedown', closeOnOutside);
+        document.addEventListener('touchstart', closeOnOutside, { passive: true });
+        return () => {
+            document.removeEventListener('mousedown', closeOnOutside);
+            document.removeEventListener('touchstart', closeOnOutside);
+        };
+    }, [notificationOpen, profileMenuOpen]);
 
     const getUnreadCount = () => interestNotifications.filter(n => !n.isRead).length;
 
@@ -49,7 +127,18 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
             const data = await response.json();
             const all = data?.result || data?.Result || [];
-            setInterestNotifications(Array.isArray(all) ? all : []);
+            const list = Array.isArray(all) ? all : [];
+            setInterestNotifications(
+                list.map((n: any) => ({
+                    ...n,
+                    id: n?.id ?? n?.Id,
+                    title: n?.title ?? n?.Title ?? notificationTitleFallback(n),
+                    description: n?.description ?? n?.Description ?? '',
+                    isRead: n?.isRead ?? n?.IsRead ?? false,
+                    referenceId: n?.referenceId ?? n?.ReferenceId,
+                    createdOn: n?.createdOn ?? n?.CreatedOn,
+                }))
+            );
         } catch {
             // Silent fail to keep header lightweight
         } finally {
@@ -109,23 +198,24 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!user?.id) return;
         let disposed = false;
         let retryTimeout: ReturnType<typeof setTimeout>;
-        const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl(HUB_URL)
-            .configureLogging(signalR.LogLevel.None)
-            .withAutomaticReconnect()
-            .build();
+        let connection: signalR.HubConnection | null = null;
 
         const startConnection = async (attempt = 0) => {
             if (disposed) return;
             try {
-                await connection.start();
+                connection = await connectMatrimonialHub(API_BASE_URL);
                 if (disposed) {
                     await connection.stop();
                     return;
                 }
                 await connection.invoke('JoinUserGroup', String(user.id));
             } catch (error) {
+                if (connection) {
+                    connection.off('ReceiveInterestNotification');
+                    connection.off('InterestWithdrawn');
+                    await connection.stop().catch(() => {});
+                    connection = null;
+                }
                 if (disposed) return;
                 if (!isNegotiationStoppedError(error)) {
                     console.error('Header SignalR connection failed:', error);
@@ -135,20 +225,42 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 return;
             }
 
+            if (!connection) return;
+
             connection.on('ReceiveInterestNotification', (payload) => {
                 const now = new Date().toISOString();
+                const liveTitle = payload?.title ?? payload?.Title;
+                const liveDesc = payload?.description ?? payload?.Description;
+                const inferred = { title: liveTitle, description: liveDesc };
                 setInterestNotifications(prev => [
                     {
                         id: `live-${Date.now()}`,
-                        title: payload?.title || 'New Interest',
-                        description: payload?.description || 'Someone is interested in your profile.',
-                        referenceId: payload?.referenceId || payload?.interestedUserId,
+                        title: liveTitle || notificationTitleFallback(inferred),
+                        description:
+                            liveDesc ||
+                            (isInterestBackNotification(inferred)
+                                ? 'A member reciprocated — interest back.'
+                                : 'Someone is interested in your profile.'),
+                        referenceId:
+                            payload?.referenceId ??
+                            payload?.ReferenceId ??
+                            payload?.interestedUserId ??
+                            payload?.InterestedUserId,
                         referenceType: 'MatrimonialInterest',
                         isRead: false,
                         createdOn: payload?.createdOn || now,
                     },
                     ...prev
                 ]);
+            });
+
+            connection.on('InterestWithdrawn', (payload) => {
+                const refRaw = payload?.referenceId ?? payload?.ReferenceId ?? payload?.interestedUserId ?? payload?.InterestedUserId;
+                const refNum = Number(refRaw);
+                if (!Number.isFinite(refNum) || refNum <= 0) return;
+                setInterestNotifications((prev) =>
+                    prev.filter((n) => referenceIdFromNotification(n) !== refNum)
+                );
             });
         };
 
@@ -157,73 +269,109 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         return () => {
             disposed = true;
             clearTimeout(retryTimeout);
-            connection.off('ReceiveInterestNotification');
-            connection.stop();
+            if (connection) {
+                connection.off('ReceiveInterestNotification');
+                connection.off('InterestWithdrawn');
+                connection.stop();
+            }
         };
     }, [user?.id, API_BASE_URL]);
 
-    const openInterestProfile = async (notification: any) => {
+    const markInterestNotificationRead = async (notification: any) => {
         const notificationId = notification?.id;
         if (user?.id && notificationId && !String(notificationId).startsWith('live-')) {
             try {
-                await fetch(`${API_BASE_URL}/Matrimonial/MarkInterestNotificationRead?notificationId=${notificationId}&userId=${user.id}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                await fetch(
+                    `${API_BASE_URL}/Matrimonial/MarkInterestNotificationRead?notificationId=${notificationId}&userId=${user.id}`,
+                    { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+                );
             } catch {
                 // no-op
             }
         }
-
-        setInterestNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, isRead: true } : n));
-
-        const senderUserId = Number(notification?.referenceId);
-        if (!senderUserId) return;
-
-        try {
-            const profileRes = await matrimonialService.getProfile(senderUserId);
-            if (profileRes?.statusCode === 200 && profileRes?.result) {
-                const p = profileRes.result;
-                setSelectedInterestProfile({
-                    id: p.UserId || p.userId || senderUserId,
-                    firstName: p.FirstName || p.firstName || 'User',
-                    lastName: p.LastName || p.lastName || '',
-                    age: p.Age || p.age || '-',
-                    city: p.CityOfResidence || p.cityOfResidence || 'Unknown',
-                    qualificationLevel: p.QualificationLevel || p.qualificationLevel || 'Not Specified',
-                    occupation: p.Occupation || p.occupation || 'Not Specified',
-                    religion: p.Religion || p.religion || 'Not Specified',
-                    profilePhoto: p.ProfilePhoto || p.profilePhoto || p.ProfilePhotoFromProfile || p.profilePhotoFromProfile || '',
-                });
-                setInterestProfileOpen(true);
-                setNotificationOpen(false);
-            }
-        } catch {
-            // no-op
-        }
+        setInterestNotifications((prev) =>
+            prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
+        );
     };
 
-    const handleSaveInterestedProfile = async () => {
-        if (!user?.id || !selectedInterestProfile?.id) return;
-        setIsSavingInterestProfile(true);
+    const handleViewInterestProfile = async (notification: any) => {
+        if (user?.isVerified === false) {
+            if (onOpenVerify) onOpenVerify();
+            else window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+        const senderUserId = referenceIdFromNotification(notification);
+        if (!senderUserId) return;
+        await markInterestNotificationRead(notification);
+        setNotificationOpen(false);
+        router.push(`/profiles?viewUser=${senderUserId}`);
+    };
+
+    const handleMessageFromInterestNotification = async (notification: any) => {
+        if (user?.isVerified === false) {
+            if (onOpenVerify) onOpenVerify();
+            else window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+        const otherUserId = referenceIdFromNotification(notification);
+        if (!otherUserId) return;
+        await markInterestNotificationRead(notification);
+        setNotificationOpen(false);
+        router.push(`/messages?userId=${otherUserId}`);
+    };
+
+    const handleInterestBack = async (notification: any) => {
+        if (user?.isVerified === false) {
+            if (onOpenVerify) onOpenVerify();
+            else window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+        const senderUserId = referenceIdFromNotification(notification);
+        if (!user?.id || !senderUserId) return;
+
+        const key = String(notification?.id ?? '');
+        setInterestBackLoadingKey(key);
         try {
+            await markInterestNotificationRead(notification);
             const interactionsRes = await matrimonialService.getUserInteractions(Number(user.id));
             const favorites = interactionsRes?.result?.Favorites || interactionsRes?.result?.favorites || [];
             const favoriteIds = (Array.isArray(favorites) ? favorites : [])
-                .map((x: any) => (typeof x === 'number' ? x : x?.favoriteProfileId ?? x?.profileId ?? x?.id))
+                .map((x: any) =>
+                    typeof x === 'number' ? x : x?.favoriteProfileId ?? x?.profileId ?? x?.id
+                )
                 .filter((x: any) => Number.isFinite(Number(x)))
                 .map((x: any) => Number(x));
 
-            if (!favoriteIds.includes(Number(selectedInterestProfile.id))) {
-                await matrimonialService.toggleFavorite(Number(user.id), Number(selectedInterestProfile.id));
+            const alreadyFavoursSender = favoriteIds.includes(senderUserId);
+
+            if (alreadyFavoursSender) {
+                const res = await matrimonialService.notifyInterestBack(Number(user.id), senderUserId);
+                if (res?.statusCode === 200 || res?.StatusCode === 200) {
+                    setActionToast('Interest back sent — they have been notified');
+                } else {
+                    const msg =
+                        res?.message || res?.Message || 'Could not send interest back. Try again.';
+                    setActionToast(msg);
+                }
+            } else {
+                const res = await matrimonialService.toggleFavorite(Number(user.id), senderUserId);
+                if (res?.statusCode === 200 || res?.StatusCode === 200) {
+                    setActionToast('Interest sent back');
+                } else {
+                    const msg =
+                        res?.message || res?.Message || 'Could not send interest back. Try again.';
+                    setActionToast(msg);
+                }
             }
-            setActionToast('Saved profile successfully');
-            setTimeout(() => setActionToast(''), 2000);
+
+            fetchInterestNotifications();
+            setTimeout(() => setActionToast(''), 2500);
+            setNotificationOpen(false);
         } catch {
-            // no-op
+            setActionToast('Could not send interest. Try again.');
+            setTimeout(() => setActionToast(''), 2500);
         } finally {
-            setIsSavingInterestProfile(false);
-            setInterestProfileOpen(false);
+            setInterestBackLoadingKey(null);
         }
     };
 
@@ -247,13 +395,13 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 </div>
             )}
             <header className={`fixed w-full bg-white shadow-gold z-[1000] ${user && user.isVerified === false ? 'top-[36px]' : 'top-0'}`}>
-            <div className="max-w-[1400px] mx-auto px-8 py-3 flex justify-between items-center">
-                <Link href="/" className="flex items-center h-[50px]">
+            <div className="max-w-[1400px] mx-auto px-6 sm:px-8 py-2 flex justify-between items-center">
+                <Link href="/" className="flex items-center h-11 md:h-14">
                     <Image 
-                        src="/logo3.png" 
+                        src="/logo4.png" 
                         alt="MyMatch.lk Logo" 
-                        width={200} 
-                        height={100}
+                        width={240} 
+                        height={120}
                         className="h-full w-auto object-contain"
                         priority
                     />
@@ -262,9 +410,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     <Link href="/" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('home')}
                     </Link>
+                    {(!user || !isManagedSubAccount(user)) && (
                     <Link href="/profiles" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('browseProfiles')}
                     </Link>
+                    )}
                     <Link href="/about" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('aboutUs')}
                     </Link>
@@ -300,12 +450,16 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     </div>
 
                     {user ? (
-                        <div className="relative hidden md:block">
+                        <div ref={notificationMenuRef} className="relative hidden md:block">
                             <button
+                                type="button"
                                 onClick={() => {
                                     const next = !notificationOpen;
                                     setNotificationOpen(next);
-                                    if (next) fetchInterestNotifications();
+                                    if (next) {
+                                        setProfileMenuOpen(false);
+                                        fetchInterestNotifications();
+                                    }
                                 }}
                                 className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center relative"
                                 aria-label="Notifications"
@@ -318,24 +472,100 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                 )}
                             </button>
                             {notificationOpen && (
-                                <div className="absolute top-full right-0 mt-2 bg-white p-3 rounded-lg shadow-lg z-[1000] w-[320px] max-h-[420px] overflow-auto border border-gray-100">
-                                    <div className="font-semibold text-sm mb-2">Notifications</div>
+                                <div className="absolute top-full right-0 mt-2 bg-gradient-to-b from-amber-50/40 to-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-auto border border-amber-100/80 ring-1 ring-black/5">
+                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-100/80">
+                                        <span className="text-lg" aria-hidden>✨</span>
+                                        <div className="font-semibold text-sm text-gray-900">Notifications</div>
+                                        {getUnreadCount() > 0 && (
+                                            <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-white bg-primary px-2 py-0.5 rounded-full">
+                                                {getUnreadCount()} new
+                                            </span>
+                                        )}
+                                    </div>
                                     {loadingNotifications ? (
-                                        <div className="text-xs text-gray-500 py-3">Loading...</div>
+                                        <div className="text-xs text-gray-500 py-6 text-center">Loading...</div>
                                     ) : interestNotifications.length === 0 ? (
-                                        <div className="text-xs text-gray-500 py-3">No new interests yet.</div>
+                                        <div className="text-xs text-gray-500 py-6 text-center">No new interests yet.</div>
                                     ) : (
-                                        <div className="flex flex-col gap-2">
-                                            {interestNotifications.map((n) => (
-                                                <button
-                                                    key={String(n.id)}
-                                                    onClick={() => openInterestProfile(n)}
-                                                    className={`text-left p-2 rounded-md border ${n.isRead ? 'bg-white border-gray-100' : 'bg-rose-50 border-rose-100'} hover:bg-gray-50 transition-colors`}
-                                                >
-                                                    <div className="text-sm font-medium text-gray-900">{n.title || 'New Interest'}</div>
-                                                    <div className="text-xs text-gray-600 mt-0.5">{n.description || 'Someone is interested in your profile.'}</div>
-                                                </button>
-                                            ))}
+                                        <div className="flex flex-col gap-3">
+                                            {interestNotifications.map((n) => {
+                                                const senderName = senderLabelFromDescription(n.description);
+                                                const initials = initialsFromName(senderName);
+                                                const unread = !n.isRead;
+                                                const rowKey = String(n.id);
+
+                                                return (
+                                                    <div
+                                                        key={rowKey}
+                                                        className={`relative overflow-hidden rounded-xl border transition-shadow ${
+                                                            unread
+                                                                ? 'border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15'
+                                                                : 'border-gray-200/90 bg-white/90'
+                                                        }`}
+                                                    >
+                                                        <div
+                                                            className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl"
+                                                            aria-hidden
+                                                        />
+                                                        <div className="flex gap-3 pl-4 pr-3 py-3">
+                                                            <div
+                                                                className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-br from-primary/25 via-amber-100/90 to-orange-50 flex items-center justify-center text-[13px] font-bold text-amber-900/90 ring-2 ring-white shadow-sm"
+                                                                aria-hidden
+                                                            >
+                                                                {initials}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-start gap-2">
+                                                                    {unread && (
+                                                                        <span
+                                                                            className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(255,162,13,0.25)]"
+                                                                            title="Unread"
+                                                                        />
+                                                                    )}
+                                                                    <div>
+                                                                        <div className="text-sm font-semibold text-gray-900 leading-tight">
+                                                                            {n.title || notificationTitleFallback(n)}
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                                                            {n.description ||
+                                                                                notificationDescriptionFallback(n)}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex flex-wrap gap-2 mt-3">
+                                                                    {isInterestBackNotification(n) ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleMessageFromInterestNotification(n)}
+                                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
+                                                                        >
+                                                                            Message
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleInterestBack(n)}
+                                                                            disabled={interestBackLoadingKey === rowKey}
+                                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-60 shadow-sm transition-colors"
+                                                                        >
+                                                                            {interestBackLoadingKey === rowKey
+                                                                                ? 'Sending…'
+                                                                                : 'Interest back'}
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleViewInterestProfile(n)}
+                                                                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary text-amber-900/90 bg-white hover:bg-amber-50/80 transition-colors"
+                                                                    >
+                                                                        View profile
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>
@@ -344,9 +574,27 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     ) : null}
 
                     {user ? (
-                        <div className="relative hidden md:block">
+                        <div ref={profileMenuRef} className="relative hidden md:block">
                             <div
-                                onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                    setProfileMenuOpen((prev) => {
+                                        const next = !prev;
+                                        if (next) setNotificationOpen(false);
+                                        return next;
+                                    });
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        setProfileMenuOpen((prev) => {
+                                            const next = !prev;
+                                            if (next) setNotificationOpen(false);
+                                            return next;
+                                        });
+                                    }
+                                }}
                                 className="flex items-center gap-2 cursor-pointer"
                             >
                                 <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold overflow-hidden shrink-0">
@@ -428,9 +676,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         <Link href="/" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                             {t('home')}
                         </Link>
+                        {(!user || !isManagedSubAccount(user)) && (
                         <Link href="/profiles" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                             {t('browseProfiles')}
                         </Link>
+                        )}
                         <Link href="/about" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
                             {t('aboutUs')}
                         </Link>
@@ -514,55 +764,8 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 </div>
             )}
 
-            {interestProfileOpen && selectedInterestProfile && (
-                <div
-                    className="fixed inset-0 z-[1200] bg-black/60 flex items-center justify-center p-4"
-                    onClick={() => setInterestProfileOpen(false)}
-                >
-                    <div className="bg-white w-full max-w-md rounded-2xl p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-14 h-14 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center">
-                                {selectedInterestProfile.profilePhoto ? (
-                                    <img src={selectedInterestProfile.profilePhoto} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    <span className="font-bold text-gray-600">
-                                        {(selectedInterestProfile.firstName?.[0] || 'U')}{(selectedInterestProfile.lastName?.[0] || '')}
-                                    </span>
-                                )}
-                            </div>
-                            <div>
-                                <div className="font-semibold text-text-dark">{selectedInterestProfile.firstName} {selectedInterestProfile.lastName}</div>
-                                <div className="text-sm text-text-light">{selectedInterestProfile.age} years • {selectedInterestProfile.city}</div>
-                            </div>
-                        </div>
-
-                        <div className="text-sm text-text-light space-y-1 mb-5">
-                            <div>🎓 {selectedInterestProfile.qualificationLevel}</div>
-                            <div>💼 {selectedInterestProfile.occupation}</div>
-                            <div>🙏 {selectedInterestProfile.religion}</div>
-                        </div>
-
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setInterestProfileOpen(false)}
-                                className="flex-1 px-4 py-2 rounded-full border border-gray-300 text-text-dark hover:bg-gray-50"
-                            >
-                                Close
-                            </button>
-                            <button
-                                onClick={handleSaveInterestedProfile}
-                                disabled={isSavingInterestProfile}
-                                className="flex-1 px-4 py-2 rounded-full bg-primary text-white hover:bg-primary-dark disabled:opacity-60 inline-flex items-center justify-center gap-2"
-                            >
-                                {isSavingInterestProfile ? 'Saving...' : (<><BookmarkIcon filled size={16} /> Save Profile</>)}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {actionToast && (
-                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 3000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 3000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
                     {actionToast}
                 </div>
             )}

@@ -10,7 +10,12 @@ interface MatchmakerProps {
 export default function Matchmaker({ onOpenRegister }: MatchmakerProps) {
     const { user } = useAuth();
     const { t } = useLanguage();
-    const isMatchmaker = user && user.accountType === 'Matchmaker';
+
+    /** Logged-in matchmakers already use the dashboard; recruiting CTA is not shown. */
+    if (user?.accountType === 'Matchmaker') {
+        return null;
+    }
+
     return (
         <section className="py-24 px-4 bg-cream" id="matchmaker">
             <div className="max-w-[1400px] mx-auto grid lg:grid-cols-2 gap-12 items-center">
@@ -108,37 +113,6 @@ export default function Matchmaker({ onOpenRegister }: MatchmakerProps) {
                         {t('registerAsMatchmaker')}
                     </button>
                 </div>
-                {isMatchmaker && (
-                    <div className="bg-white rounded-3xl p-8 shadow-xl">
-                        <h4 className="text-2xl font-playfair font-bold text-text-dark mb-6">{t('yourClientProfiles')}</h4>
-                        <div className="space-y-4 mb-6">
-                            <div className="flex items-center gap-4 p-4 bg-cream rounded-xl">
-                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" className="w-16 h-16 rounded-full object-cover" alt="Client" />
-                                <div>
-                                    <h5 className="font-semibold text-text-dark">Amaya Fernando</h5>
-                                    <p className="text-text-light text-sm">26 years • Bride • Colombo</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-4 p-4 bg-cream rounded-xl">
-                                <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" className="w-16 h-16 rounded-full object-cover" alt="Client" />
-                                <div>
-                                    <h5 className="font-semibold text-text-dark">Ravindu Silva</h5>
-                                    <p className="text-text-light text-sm">29 years • Groom • Kandy</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-4 p-4 bg-cream rounded-xl">
-                                <img src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" className="w-16 h-16 rounded-full object-cover" alt="Client" />
-                                <div>
-                                    <h5 className="font-semibold text-text-dark">Ishara Perera</h5>
-                                    <p className="text-text-light text-sm">24 years • Bride • Galle</p>
-                                </div>
-                            </div>
-                        </div>
-                        <button className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors flex items-center justify-center gap-2">
-                            <span>+</span> {t('addNewProfile')}
-                        </button>
-                    </div>
-                )}
             </div>
         </section>
     );

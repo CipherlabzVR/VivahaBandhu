@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
@@ -8,14 +8,32 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
-import { sanitizeNicInput } from '../../utils/nicInput';
+import { sanitizeNicInput, nicOrPassportFormatError, NIC_PASSPORT_HINT } from '../../utils/nicInput';
 import { sanitizeNameInput } from '../../utils/nameInput';
-import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
+import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, canonicalSriLankanPhoneDigits } from '../../utils/sriLankanPhone';
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
+import { isMatchmakerPaidTier } from '../../constants/subscription';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
+import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
+import { isManagedSubAccount } from '../../utils/managedSubAccount';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
+
+/** Matches .NET ApiResponse: property is PascalCase (`StatusCode`) unless server uses camelCase policy. */
+function apiResponseBusinessCode(body: Record<string, unknown> | null | undefined): number | undefined {
+    if (!body) return undefined;
+    const raw = body.statusCode ?? body.StatusCode;
+    return typeof raw === 'number' ? raw : undefined;
+}
+
+/** Treat missing body status as OK when HTTP succeeded (backward compatible). */
+function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | undefined, httpOk: boolean): boolean {
+    if (!httpOk) return false;
+    const code = apiResponseBusinessCode(body);
+    if (code === undefined) return true;
+    return code === 200 || code === 1;
+}
 
 function ProfilePageContent() {
     const { user, loading, updateUser, logout } = useAuth();
@@ -115,6 +133,13 @@ function ProfilePageContent() {
                     if (u.userRoleName && u.userRoleName.length > 0) {
                         profileUpdates.accountType = u.userRoleName;
                     }
+                    const rawParent = u.parentUserId ?? u.ParentUserId;
+                    if (rawParent != null && rawParent !== '') {
+                        const pid = typeof rawParent === 'number' ? rawParent : Number(rawParent);
+                        if (Number.isFinite(pid) && pid > 0) {
+                            profileUpdates.parentUserId = pid;
+                        }
+                    }
                 }
             }
 
@@ -170,11 +195,34 @@ function ProfilePageContent() {
                     
                     const horoscopeDocument = r.horoscopeDocument || r.HoroscopeDocument;
                     if (horoscopeDocument && horoscopeDocument.length > 0) {
-                        profileUpdates.horoscopeDocument = horoscopeDocument;
+                        profileUpdates.horoscopeDocument = withCacheBuster(horoscopeDocument);
                     }
 
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
+
+                    const vwTier = r.viewerMatchmakerTier ?? r.ViewerMatchmakerTier;
+                    if (vwTier != null && String(vwTier).trim() !== '') {
+                        profileUpdates.matchmakerTier = String(vwTier);
+                    }
+                    const mpc = r.matchmakerPlanMaxClients ?? r.MatchmakerPlanMaxClients;
+                    const mcc = r.matchmakerManagedClientCount ?? r.MatchmakerManagedClientCount;
+                    if (mpc !== undefined && mpc !== null && String(mpc).trim() !== '') {
+                        profileUpdates.matchmakerMaxClientProfiles = Number(mpc);
+                    }
+                    if (mcc !== undefined && mcc !== null && String(mcc).trim() !== '') {
+                        profileUpdates.matchmakerClientProfileCount = Number(mcc);
+                    }
+                    const acctMm = ((profileUpdates.accountType || user?.accountType || '') === 'Matchmaker');
+                    if (acctMm) {
+                        const tierStr = profileUpdates.matchmakerTier ?? user?.matchmakerTier;
+                        const maxSlots = Number(profileUpdates.matchmakerMaxClientProfiles ?? user?.matchmakerMaxClientProfiles ?? NaN);
+                        const usedSlots = Number(profileUpdates.matchmakerClientProfileCount ?? NaN);
+                        if (Number.isFinite(maxSlots) && maxSlots > 0 && Number.isFinite(usedSlots)) {
+                            profileUpdates.matchmakerCanAddClients =
+                                isMatchmakerPaidTier(tierStr) && usedSlots < maxSlots;
+                        }
+                    }
 
                     // Notification preference (server-authoritative). Defaults to true
                     // when missing so existing users keep getting interest emails.
@@ -245,10 +293,19 @@ function ProfilePageContent() {
     };
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    /** Canonical 94… digits for the phone saved when Edit Basic Details was opened; used to require OTP when the number changes. */
+    const [editModalPhoneBaselineCanonical, setEditModalPhoneBaselineCanonical] = useState('');
+    const [phoneChangeCode, setPhoneChangeCode] = useState('');
+    const [phoneChangeBusy, setPhoneChangeBusy] = useState<'send' | 'confirm' | null>(null);
+    /** After successful ConfirmPhoneChange, canonical digits that are allowed without re-verify until the field changes again. */
+    const [phoneVerifiedCanonical, setPhoneVerifiedCanonical] = useState<string | null>(null);
     const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
+    const profileCompletionModalScrollRef = useRef<HTMLDivElement>(null);
 
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
     const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
+    const [interestProfiles, setInterestProfiles] = useState<any[]>([]);
+    const [recentActivity, setRecentActivity] = useState<any[]>([]);
     const [loadingSavedProfiles, setLoadingSavedProfiles] = useState(false);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
     const [subAccountForm, setSubAccountForm] = useState({
@@ -289,67 +346,206 @@ function ProfilePageContent() {
     }, [user]);
 
     useEffect(() => {
-        const fetchSavedProfiles = async () => {
+        const fetchSavedAndActivity = async () => {
             if (!user?.id) {
                 setSavedProfiles([]);
+                setInterestProfiles([]);
+                setRecentActivity([]);
                 return;
             }
 
             setLoadingSavedProfiles(true);
             try {
-                const interactionsRes = await matrimonialService.getUserInteractions(Number(user.id));
+                const [interactionsRes, notifRes] = await Promise.all([
+                    matrimonialService.getUserInteractions(Number(user.id)),
+                    matrimonialService.getInterestNotifications(Number(user.id)),
+                ]);
+
                 const rawFavorites = interactionsRes?.result?.Favorites || interactionsRes?.result?.favorites || [];
                 const rawShortlists = interactionsRes?.result?.Shortlists || interactionsRes?.result?.shortlists || [];
-                const mergedSaved = [...(Array.isArray(rawFavorites) ? rawFavorites : []), ...(Array.isArray(rawShortlists) ? rawShortlists : [])];
 
-                const favoriteIds = Array.isArray(mergedSaved)
-                    ? mergedSaved
-                        .map((x: any) => (typeof x === 'number' ? x : x?.favoriteProfileId ?? x?.shortlistedProfileId ?? x?.profileId ?? x?.id))
-                        .filter((x: any) => Number.isFinite(Number(x)))
-                        .map((x: any) => Number(x))
-                    : [];
+                const parseIdList = (raw: unknown): number[] =>
+                    Array.isArray(raw)
+                        ? raw
+                              .map((x: any) =>
+                                  typeof x === 'number' ? x : x?.favoriteProfileId ?? x?.shortlistedProfileId ?? x?.profileId ?? x?.id
+                              )
+                              .filter((x: any) => Number.isFinite(Number(x)))
+                              .map((x: any) => Number(x))
+                        : [];
 
-                if (favoriteIds.length === 0) {
-                    setSavedProfiles([]);
-                    return;
+                const shortlistIdList = parseIdList(rawShortlists);
+                const favoriteIdList = parseIdList(rawFavorites);
+                const uniqueIds = Array.from(new Set([...shortlistIdList, ...favoriteIdList]));
+
+                const formatListTime = (v: unknown): string => {
+                    if (v == null || v === '') return '';
+                    const d = new Date(v as string);
+                    if (Number.isNaN(d.getTime())) return '';
+                    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+                };
+                const details =
+                    uniqueIds.length === 0
+                        ? []
+                        : await Promise.all(
+                              uniqueIds.map(async (profileId) => {
+                                  try {
+                                      const profileRes = await matrimonialService.getProfile(profileId);
+                                      if (profileRes?.statusCode === 200 && profileRes?.result) {
+                                          const p = profileRes.result;
+                                          const resolvedUserId = p.UserId || p.userId || profileId;
+                                          return {
+                                              requestedId: profileId,
+                                              id: resolvedUserId,
+                                              userId: resolvedUserId,
+                                              firstName: p.FirstName || p.firstName || 'User',
+                                              lastName: p.LastName || p.lastName || '',
+                                              age: p.Age || p.age || 0,
+                                              cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
+                                              profilePhoto:
+                                                  p.ProfilePhoto ||
+                                                  p.profilePhoto ||
+                                                  p.ProfilePhotoFromProfile ||
+                                                  p.profilePhotoFromProfile ||
+                                                  '',
+                                              phoneNumber: p.PhoneNumber || p.phoneNumber || '',
+                                          };
+                                      }
+                                  } catch {
+                                      // Ignore one-off profile fetch failures.
+                                  }
+                                  return null;
+                              })
+                          );
+
+                const filled = details.filter(Boolean) as any[];
+
+                const byUserId = new Map<number, any>();
+                const byRequestedId = new Map<number, any>();
+                for (const pr of filled) {
+                    if (pr?.userId != null) byUserId.set(Number(pr.userId), pr);
+                    if (pr?.requestedId != null) byRequestedId.set(Number(pr.requestedId), pr);
                 }
 
-                const uniqueIds = Array.from(new Set(favoriteIds));
-                const details = await Promise.all(
-                    uniqueIds.map(async (profileId) => {
-                        try {
-                            const profileRes = await matrimonialService.getProfile(profileId);
-                            if (profileRes?.statusCode === 200 && profileRes?.result) {
-                                const p = profileRes.result;
-                                const userId = p.UserId || p.userId || profileId;
-                                return {
-                                    id: userId,
-                                    userId,
-                                    firstName: p.FirstName || p.firstName || 'User',
-                                    lastName: p.LastName || p.lastName || '',
-                                    age: p.Age || p.age || 0,
-                                    cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
-                                    profilePhoto: p.ProfilePhoto || p.profilePhoto || p.ProfilePhotoFromProfile || p.profilePhotoFromProfile || '',
-                                    phoneNumber: p.PhoneNumber || p.phoneNumber || '',
-                                };
-                            }
-                        } catch {
-                            // Ignore one-off profile fetch failures.
-                        }
-                        return null;
-                    })
-                );
+                const toMs = (v: unknown): number => {
+                    if (v == null) return 0;
+                    const t = new Date(v as string).getTime();
+                    return Number.isFinite(t) ? t : 0;
+                };
 
-                setSavedProfiles(details.filter(Boolean));
+                const favAct = interactionsRes?.result?.FavoriteActivity || interactionsRes?.result?.favoriteActivity || [];
+                const shortAct = interactionsRes?.result?.ShortlistActivity || interactionsRes?.result?.shortlistActivity || [];
+
+                const sortedShort = Array.isArray(shortAct)
+                    ? [...shortAct].sort((a, b) => toMs(b.createdAt ?? b.CreatedAt) - toMs(a.createdAt ?? a.CreatedAt))
+                    : [];
+                const savedList: any[] = [];
+                for (const row of sortedShort) {
+                    const pid = Number(row.profileId ?? row.ProfileId);
+                    if (!Number.isFinite(pid)) continue;
+                    const pr = byRequestedId.get(pid) ?? byUserId.get(pid);
+                    if (!pr) continue;
+                    savedList.push({
+                        ...pr,
+                        savedAtLabel: formatListTime(row.createdAt ?? row.CreatedAt),
+                    });
+                }
+                setSavedProfiles(savedList);
+
+                const sortedFav = Array.isArray(favAct)
+                    ? [...favAct].sort((a, b) => toMs(b.createdAt ?? b.CreatedAt) - toMs(a.createdAt ?? a.CreatedAt))
+                    : [];
+                const interestList: any[] = [];
+                for (const row of sortedFav) {
+                    const uid = Number(row.profileUserId ?? row.ProfileUserId);
+                    if (!Number.isFinite(uid)) continue;
+                    const pr = byUserId.get(uid);
+                    if (!pr) continue;
+                    const isMutual = !!(row.isMutual ?? row.IsMutual);
+                    interestList.push({
+                        ...pr,
+                        isMutual,
+                        interestedAtLabel: formatListTime(row.createdAt ?? row.CreatedAt),
+                    });
+                }
+                setInterestProfiles(interestList);
+
+                const formatActivityWhen = (v: unknown): string => {
+                    if (v == null || v === '') return '';
+                    const d = new Date(v as string);
+                    if (Number.isNaN(d.getTime())) return '';
+                    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+                };
+
+                const rows: any[] = [];
+
+                if (Array.isArray(favAct)) {
+                    for (const row of favAct) {
+                        const uid = Number(row.profileUserId ?? row.ProfileUserId);
+                        const at = row.createdAt ?? row.CreatedAt;
+                        if (!Number.isFinite(uid)) continue;
+                        const name = byUserId.get(uid);
+                        const who = name ? `${name.firstName} ${name.lastName}`.trim() : `Member #${uid}`;
+                        const isMutualInterest = !!(row.isMutual ?? row.IsMutual);
+                        rows.push({
+                            key: `out-interest-${uid}-${String(at)}`,
+                            atMs: toMs(at),
+                            title: 'You expressed interest',
+                            detail: isMutualInterest ? `${who} · Mutual interest` : who,
+                            timeLabel: formatActivityWhen(at),
+                            modalProfile: name || { userId: uid, id: uid, firstName: 'Member', lastName: '' },
+                        });
+                    }
+                }
+
+                if (Array.isArray(shortAct)) {
+                    for (const row of shortAct) {
+                        const pid = Number(row.profileId ?? row.ProfileId);
+                        const at = row.createdAt ?? row.CreatedAt;
+                        if (!Number.isFinite(pid)) continue;
+                        const pr = byRequestedId.get(pid) ?? byUserId.get(pid);
+                        const who = pr ? `${pr.firstName} ${pr.lastName}`.trim() : `Profile #${pid}`;
+                        rows.push({
+                            key: `shortlist-${pid}-${String(at)}`,
+                            atMs: toMs(at),
+                            title: 'You saved a profile (shortlist)',
+                            detail: who,
+                            timeLabel: formatActivityWhen(at),
+                            modalProfile: pr || { userId: pid, id: pid, firstName: 'Member', lastName: '' },
+                        });
+                    }
+                }
+
+                const rawNotifs = notifRes?.result ?? notifRes?.Result ?? [];
+                const notifList = Array.isArray(rawNotifs) ? rawNotifs : [];
+                for (const n of notifList) {
+                    const at = n.createdOn ?? n.CreatedOn;
+                    const refId = n.referenceId ?? n.ReferenceId;
+                    const nid = n.id ?? n.Id;
+                    rows.push({
+                        key: `in-${nid}`,
+                        atMs: toMs(at),
+                        title: n.title || n.Title || 'Interest in your profile',
+                        detail: n.description || n.Description || '',
+                        timeLabel: formatActivityWhen(at),
+                        modalProfile:
+                            refId != null && Number(refId) > 0 ? { userId: Number(refId), id: Number(refId) } : undefined,
+                    });
+                }
+
+                rows.sort((a, b) => b.atMs - a.atMs);
+                setRecentActivity(rows.slice(0, 40));
             } catch (error) {
-                console.error("Failed to fetch saved profiles", error);
+                console.error('Failed to fetch saved profiles', error);
                 setSavedProfiles([]);
+                setInterestProfiles([]);
+                setRecentActivity([]);
             } finally {
                 setLoadingSavedProfiles(false);
             }
         };
 
-        fetchSavedProfiles();
+        fetchSavedAndActivity();
     }, [user?.id]);
 
     const fetchSubAccounts = async () => {
@@ -433,6 +629,11 @@ function ProfilePageContent() {
         }
         if (!subAccountForm.nic.trim()) {
             setSubAccountError('NIC or passport number is required.');
+            return;
+        }
+        const nicFormatErr = nicOrPassportFormatError(subAccountForm.nic);
+        if (nicFormatErr) {
+            setSubAccountError(nicFormatErr);
             return;
         }
         if (!subAccountForm.dob) {
@@ -829,14 +1030,44 @@ function ProfilePageContent() {
     const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         let nextValue = value;
-        if (name === 'nic') nextValue = sanitizeNicInput(value);
-        else if (name === 'phone' || name === 'whatsapp') nextValue = sanitizeSriLankanPhoneInput(value);
+        if (name === 'phone' || name === 'whatsapp') nextValue = sanitizeSriLankanPhoneInput(value);
         else if (name === 'firstName' || name === 'lastName') nextValue = sanitizeNameInput(value);
         setEditForm(prev => ({
             ...prev,
             [name]: nextValue
         }));
+        if (name === 'phone') {
+            setPhoneVerifiedCanonical((prev) => {
+                if (prev == null) return null;
+                return canonicalSriLankanPhoneDigits(nextValue) === prev ? prev : null;
+            });
+        }
     };
+
+    /** Tracks whether Edit Basic Details is already open so we only reset OTP state when the modal opens, not when user.phone updates after verify. */
+    const editModalWasOpenRef = useRef(false);
+
+    useEffect(() => {
+        if (isEditModalOpen) {
+            if (!editModalWasOpenRef.current) {
+                setEditModalPhoneBaselineCanonical(canonicalSriLankanPhoneDigits(user?.phone || ''));
+                setPhoneChangeCode('');
+                setPhoneVerifiedCanonical(null);
+            }
+            editModalWasOpenRef.current = true;
+        } else {
+            editModalWasOpenRef.current = false;
+        }
+    }, [isEditModalOpen, user?.phone]);
+
+    useEffect(() => {
+        if (!isCompletionModalOpen) return;
+        const el = profileCompletionModalScrollRef.current;
+        if (el) {
+            el.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, [isCompletionModalOpen]);
 
     // In a real app, you would have a save function here that calls an API and updates the User Context
 
@@ -845,6 +1076,15 @@ function ProfilePageContent() {
     }
 
     if (!user) return null;
+
+    const canMatchmakerCreateClient =
+        user.accountType !== 'Matchmaker'
+            ? true
+            : isMatchmakerPaidTier(user.matchmakerTier) &&
+              (user.matchmakerMaxClientProfiles ?? 0) > 0 &&
+              (typeof user.matchmakerClientProfileCount === 'number'
+                  ? user.matchmakerClientProfileCount
+                  : subAccounts.length) < (user.matchmakerMaxClientProfiles ?? 0);
 
     return (
         <main>
@@ -873,8 +1113,14 @@ function ProfilePageContent() {
 
                 {/* Detailed Profile Completion Modal — not shown for Matchmaker accounts */}
                 {isCompletionModalOpen && user?.accountType !== 'Matchmaker' && (
-                    <div className="modal-overlay active" style={{ zIndex: 1000 }}>
-                        <div className="modal" style={{ maxWidth: '900px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
+                    <div
+                        className="modal-overlay active profile-completion-overlay"
+                        style={{ zIndex: 1000, alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
+                    >
+                        <div
+                            ref={profileCompletionModalScrollRef}
+                            className="modal profile-completion-modal-full"
+                        >
                             <button className="modal-close" onClick={() => setIsCompletionModalOpen(false)}>✕</button>
                             <div className="modal-header">
                                 <h2>{profileCompleted ? 'Edit Detailed Profile' : 'Complete Your Profile'}</h2>
@@ -882,6 +1128,7 @@ function ProfilePageContent() {
                             </div>
                             <div className="modal-body">
                                 <ProfileCompletionForm
+                                    scrollContainerRef={profileCompletionModalScrollRef}
                                     onClose={() => setIsCompletionModalOpen(false)}
                                     onComplete={() => {
                                         setProfileCompleted(true);
@@ -916,6 +1163,16 @@ function ProfilePageContent() {
                                             return;
                                         }
 
+                                        const canonicalNow = canonicalSriLankanPhoneDigits(editForm.phone);
+                                        const phoneNeedsVerify = canonicalNow !== editModalPhoneBaselineCanonical;
+                                        if (phoneNeedsVerify && phoneVerifiedCanonical !== canonicalNow) {
+                                            showToast(
+                                                'Verify your new phone number with the WhatsApp code sent to that number before saving.',
+                                                'error'
+                                            );
+                                            return;
+                                        }
+
                                         const token = getStoredToken();
                                         if (!token || !user?.id) {
                                             throw new Error('Please login again to save changes');
@@ -945,15 +1202,52 @@ function ProfilePageContent() {
                                             body: JSON.stringify(updatePayload)
                                         });
 
+                                        const updateBody = (await updateRes.json().catch(() => ({}))) as Record<
+                                            string,
+                                            unknown
+                                        > & { message?: string; Message?: string };
+                                        const updMsgFail =
+                                            (typeof updateBody.message === 'string' && updateBody.message.trim()) ||
+                                            (typeof updateBody.Message === 'string' && updateBody.Message.trim()) ||
+                                            '';
                                         if (!updateRes.ok) {
-                                            const errText = await updateRes.text().catch(() => '');
-                                            throw new Error(errText || 'Failed to update profile');
+                                            throw new Error(updMsgFail || 'Failed to update profile');
+                                        }
+                                        const updBiz = apiResponseBusinessCode(updateBody);
+                                        if (typeof updBiz === 'number' && updBiz !== 200 && updBiz !== 1) {
+                                            throw new Error(updMsgFail || 'Failed to update profile.');
+                                        }
+
+                                        const myProfileRes = await fetch(`${apiBase}/User/UpdateMyProfile`, {
+                                            method: 'POST',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                                'Authorization': `Bearer ${token}`,
+                                            },
+                                            body: JSON.stringify({
+                                                firstName: editForm.firstName,
+                                                lastName: editForm.lastName,
+                                                email: editForm.email,
+                                                mobileNumber: editForm.phone,
+                                                whatsApp: editForm.whatsapp,
+                                            }),
+                                        });
+                                        const myProfileJson = (await myProfileRes.json().catch(() => ({}))) as Record<
+                                            string,
+                                            unknown
+                                        > & { message?: string; Message?: string };
+                                        if (!apiResponseIndicatesSuccess(myProfileJson, myProfileRes.ok)) {
+                                            const msgCandidate =
+                                                (typeof myProfileJson.message === 'string' && myProfileJson.message.trim()) ||
+                                                (typeof myProfileJson.Message === 'string' && myProfileJson.Message.trim());
+                                            throw new Error(
+                                                msgCandidate || 'Failed to save your account details.',
+                                            );
                                         }
 
                                         updateUser({
                                             firstName: editForm.firstName,
                                             lastName: editForm.lastName,
-                                            nic: editForm.nic,
                                             dob: editForm.dob,
                                             gender: editForm.gender,
                                             phone: editForm.phone,
@@ -961,6 +1255,7 @@ function ProfilePageContent() {
                                         });
                                         setProfileFetched(false);
                                         setIsEditModalOpen(false);
+                                        showToast('Your details were saved.', 'success');
                                     } catch (error) {
                                         showToast(error instanceof Error ? error.message : 'Failed to save changes', 'error');
                                     }
@@ -976,17 +1271,37 @@ function ProfilePageContent() {
                                         </div>
                                     </div>
                                     <div className="form-group">
-                                        <label>NIC / Passport</label>
-                                        <input type="text" name="nic" value={editForm.nic} onChange={handleEditChange} />
+                                        <label>National ID / Passport</label>
+                                        <input
+                                            type="text"
+                                            name="nic"
+                                            value={editForm.nic}
+                                            disabled
+                                            title="Cannot be changed here"
+                                            style={{ backgroundColor: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }}
+                                        />
                                     </div>
                                     <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
                                         <div className="form-group" style={{ flex: 1 }}>
                                             <label>Date of Birth</label>
-                                            <input type="date" name="dob" value={editForm.dob} onChange={handleEditChange} />
+                                            <input
+                                                type="date"
+                                                name="dob"
+                                                value={editForm.dob}
+                                                disabled
+                                                title="Cannot be changed here"
+                                                style={{ backgroundColor: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }}
+                                            />
                                         </div>
                                         <div className="form-group" style={{ flex: 1 }}>
                                             <label>Gender</label>
-                                            <select name="gender" value={editForm.gender} onChange={handleEditChange}>
+                                            <select
+                                                name="gender"
+                                                value={editForm.gender}
+                                                disabled
+                                                title="Cannot be changed here"
+                                                style={{ backgroundColor: '#f1f5f9', color: '#475569', cursor: 'not-allowed' }}
+                                            >
                                                 <option value="">Select Gender</option>
                                                 <option value="Male">Male</option>
                                                 <option value="Female">Female</option>
@@ -996,6 +1311,78 @@ function ProfilePageContent() {
                                     <div className="form-group">
                                         <label>Phone Number</label>
                                         <input type="tel" name="phone" value={editForm.phone} onChange={handleEditChange} />
+                                        {(() => {
+                                            const cNow = canonicalSriLankanPhoneDigits(editForm.phone);
+                                            const needsVerify = cNow !== editModalPhoneBaselineCanonical;
+                                            if (!needsVerify || !editForm.phone.trim()) return null;
+                                            const verified = phoneVerifiedCanonical === cNow;
+                                            const phoneInvalid = !!sriLankanPhoneFormatErrorIfInvalid(editForm.phone, 'Phone number');
+                                            return (
+                                                <div style={{ marginTop: '0.6rem', padding: '0.75rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: '#334155' }}>
+                                                        {verified
+                                                            ? 'New number verified. You can save your changes.'
+                                                            : 'A 6-digit code is sent to this number on WhatsApp. Confirm it before you save.'}
+                                                    </p>
+                                                    {!verified && (
+                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-secondary"
+                                                                disabled={phoneChangeBusy !== null || phoneInvalid}
+                                                                onClick={async () => {
+                                                                    setPhoneChangeBusy('send');
+                                                                    try {
+                                                                        await matrimonialService.requestPhoneChangeOtp(editForm.phone);
+                                                                        showToast('Code sent to the new number on WhatsApp.', 'success');
+                                                                    } catch (err) {
+                                                                        showToast(err instanceof Error ? err.message : 'Could not send code', 'error');
+                                                                    } finally {
+                                                                        setPhoneChangeBusy(null);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {phoneChangeBusy === 'send' ? 'Sending…' : 'Send WhatsApp code'}
+                                                            </button>
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                autoComplete="one-time-code"
+                                                                placeholder="6-digit code"
+                                                                value={phoneChangeCode}
+                                                                onChange={(e) => setPhoneChangeCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                                                style={{ width: '7.5rem', padding: '0.35rem 0.5rem' }}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-primary"
+                                                                disabled={phoneChangeBusy !== null || phoneChangeCode.length !== 6}
+                                                                onClick={async () => {
+                                                                    setPhoneChangeBusy('confirm');
+                                                                    try {
+                                                                        const res = await matrimonialService.confirmPhoneChange(phoneChangeCode);
+                                                                        const raw = res.result?.phoneNumber ?? '';
+                                                                        setPhoneVerifiedCanonical(canonicalSriLankanPhoneDigits(raw || editForm.phone));
+                                                                        if (raw) {
+                                                                            setEditForm((p) => ({ ...p, phone: raw }));
+                                                                        }
+                                                                        updateUser({ phone: raw || editForm.phone });
+                                                                        showToast(res.message || 'Phone number verified.', 'success');
+                                                                        setPhoneChangeCode('');
+                                                                    } catch (err) {
+                                                                        showToast(err instanceof Error ? err.message : 'Invalid code', 'error');
+                                                                    } finally {
+                                                                        setPhoneChangeBusy(null);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {phoneChangeBusy === 'confirm' ? 'Checking…' : 'Confirm'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                     <div className="form-group">
                                         <label>WhatsApp Number</label>
@@ -1128,6 +1515,24 @@ function ProfilePageContent() {
                                 setIsCompletionModalOpen(true);
                             }}>Edit Detailed Profile</button>
                         )}
+                        {user.accountType !== 'Matchmaker' && user?.id && (
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                onClick={() =>
+                                    openModal('profile', undefined, {
+                                        userId: Number(user.id),
+                                        firstName: user.firstName,
+                                        lastName: user.lastName,
+                                        profilePhoto: user.profilePhoto,
+                                        gender: user.gender,
+                                        viewAsOthers: true,
+                                    })
+                                }
+                            >
+                                View as others see
+                            </button>
+                        )}
                         <button className="btn btn-outline" onClick={() => {
                             if (user?.isVerified === false) {
                                 window.dispatchEvent(new CustomEvent('open-verify-modal'));
@@ -1246,6 +1651,44 @@ function ProfilePageContent() {
                         {/* Subscription */}
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
+                            {user.accountType === 'Matchmaker' ? (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : '#374151' }}>
+                                            {user.isSubscribed ? `Matchmaker ${(user.matchmakerTier || '').toUpperCase()} — active` : 'Matchmaker free'}
+                                        </div>
+                                        <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
+                                            {user.isSubscribed
+                                                ? user.matchmakerTier?.toUpperCase() === 'GOLD'
+                                                    ? '50 full-detail profile views per day. Up to 5 client profiles.'
+                                                    : user.matchmakerTier?.toUpperCase() === 'DIAMOND'
+                                                        ? 'Unlimited full-detail views. Up to 10 client profiles.'
+                                                        : 'Paid matchmaker subscription active.'
+                                                : 'Browse basic listings only — no contacts, messaging, or client profiles until you upgrade.'}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                        {user.isSubscribed ? (
+                                            <button
+                                                type="button"
+                                                onClick={handleCancelSubscription}
+                                                disabled={isCancellingSubscription}
+                                                style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
+                                            >
+                                                {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="btn btn-primary"
+                                                onClick={() => openModal('subscription')}
+                                            >
+                                                Upgrade plan
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
                                 <div>
                                     <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : '#374151' }}>
@@ -1276,6 +1719,7 @@ function ProfilePageContent() {
                                     </button>
                                 )}
                             </div>
+                            )}
                         </section>
 
                         {/* Danger zone */}
@@ -1409,6 +1853,9 @@ function ProfilePageContent() {
                 {isCreateSubAccountModalOpen && (() => {
                     const isMatchmaker = user?.accountType === 'Matchmaker';
                     const nicParsed = !!parseSubAccountNIC(subAccountForm.nic);
+                    const subAccountNicFormatErrorMsg = subAccountForm.nic.trim()
+                        ? nicOrPassportFormatError(subAccountForm.nic)
+                        : null;
                     return (
                         <div className="modal-overlay active" style={{ zIndex: 1000 }}>
                             <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '640px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -1525,9 +1972,23 @@ function ProfilePageContent() {
 
                                         <div className="form-group">
                                             <label>National ID / Passport No *</label>
-                                            <input type="text" name="nic" required maxLength={12} placeholder="e.g. 199012345678 or 901234567V" value={subAccountForm.nic} onChange={handleSubAccountChange} />
+                                            <input
+                                                type="text"
+                                                name="nic"
+                                                required
+                                                maxLength={12}
+                                                placeholder="e.g. 200012345678, 901234567V, or N1234567"
+                                                value={subAccountForm.nic}
+                                                onChange={handleSubAccountChange}
+                                                style={subAccountNicFormatErrorMsg ? { borderColor: '#b91c1c' } : undefined}
+                                                aria-invalid={!!subAccountNicFormatErrorMsg}
+                                            />
+                                            <p style={{ color: '#6B6560', fontSize: '0.75rem', margin: '0.25rem 0 0', lineHeight: 1.35 }}>{NIC_PASSPORT_HINT}</p>
+                                            {subAccountNicFormatErrorMsg && (
+                                                <span style={{ color: '#b91c1c', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>{subAccountNicFormatErrorMsg}</span>
+                                            )}
                                             {nicParsed && (
-                                                <span style={{ color: '#059669', fontSize: '0.8rem' }}>Date of birth and gender auto-filled from NIC.</span>
+                                                <span style={{ color: '#059669', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>Date of birth and gender auto-filled from NIC.</span>
                                             )}
                                         </div>
 
@@ -1579,45 +2040,45 @@ function ProfilePageContent() {
                                         </div>
 
                                         <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                                                 <label>Password *</label>
-                                                <input
-                                                    type={subAccountShowPassword ? 'text' : 'password'}
-                                                    name="password"
-                                                    required
-                                                    minLength={6}
-                                                    value={subAccountForm.password}
-                                                    onChange={handleSubAccountChange}
-                                                    style={{ paddingRight: '40px' }}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSubAccountShowPassword(v => !v)}
-                                                    aria-label={subAccountShowPassword ? 'Hide password' : 'Show password'}
-                                                    style={{ position: 'absolute', right: '8px', top: '34px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem', padding: '4px 8px' }}
-                                                >
-                                                    {subAccountShowPassword ? 'Hide' : 'Show'}
-                                                </button>
+                                                <div style={{ position: 'relative' }}>
+                                                    <input
+                                                        type={subAccountShowPassword ? 'text' : 'password'}
+                                                        name="password"
+                                                        required
+                                                        minLength={6}
+                                                        value={subAccountForm.password}
+                                                        onChange={handleSubAccountChange}
+                                                        style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                    />
+                                                    <PasswordVisibilityToggle
+                                                        passwordVisible={subAccountShowPassword}
+                                                        onToggle={() => setSubAccountShowPassword((v) => !v)}
+                                                        style={modalPasswordToggleStyle}
+                                                    />
+                                                </div>
                                             </div>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px', position: 'relative' }}>
+                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                                                 <label>Confirm Password *</label>
-                                                <input
-                                                    type={subAccountShowConfirmPassword ? 'text' : 'password'}
-                                                    name="confirmPassword"
-                                                    required
-                                                    minLength={6}
-                                                    value={subAccountForm.confirmPassword}
-                                                    onChange={handleSubAccountChange}
-                                                    style={{ paddingRight: '40px' }}
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSubAccountShowConfirmPassword(v => !v)}
-                                                    aria-label={subAccountShowConfirmPassword ? 'Hide password' : 'Show password'}
-                                                    style={{ position: 'absolute', right: '8px', top: '34px', background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', fontSize: '0.8rem', padding: '4px 8px' }}
-                                                >
-                                                    {subAccountShowConfirmPassword ? 'Hide' : 'Show'}
-                                                </button>
+                                                <div style={{ position: 'relative' }}>
+                                                    <input
+                                                        type={subAccountShowConfirmPassword ? 'text' : 'password'}
+                                                        name="confirmPassword"
+                                                        required
+                                                        minLength={6}
+                                                        value={subAccountForm.confirmPassword}
+                                                        onChange={handleSubAccountChange}
+                                                        style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                    />
+                                                    <PasswordVisibilityToggle
+                                                        passwordVisible={subAccountShowConfirmPassword}
+                                                        onToggle={() => setSubAccountShowConfirmPassword((v) => !v)}
+                                                        ariaLabelWhenHidden="Show confirm password"
+                                                        ariaLabelWhenVisible="Hide confirm password"
+                                                        style={modalPasswordToggleStyle}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1663,13 +2124,20 @@ function ProfilePageContent() {
                             <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', margin: 0 }}>
                                 Your Client Profiles{subAccounts.length > 0 ? ` (${subAccounts.length})` : ''}
                             </h3>
-                            <button className="btn btn-primary" onClick={() => {
+                            <button type="button" className="btn btn-primary" onClick={() => {
+                                if (!canMatchmakerCreateClient) {
+                                    showToast('Upgrade to Matchmaker Gold or Diamond to add client profiles.', 'error', 5000);
+                                    router.push('/#pricing');
+                                    return;
+                                }
                                 if (user?.isVerified === false) {
                                     window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                     return;
                                 }
                                 setIsCreateSubAccountModalOpen(true);
-                            }}>+ Add New Profile</button>
+                            }}>
+                                {canMatchmakerCreateClient ? '+ Add New Profile' : 'Upgrade to add clients'}
+                            </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
                             Profiles you have created on behalf of clients. You can remove a profile at any time and all of its data will be permanently deleted.
@@ -1743,69 +2211,270 @@ function ProfilePageContent() {
                 <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem', marginTop: '2rem' }}>
                     <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
                         <h3>Recent Activity</h3>
-                        <p style={{ color: '#666', marginTop: '1rem' }}>No recent activity to show.</p>
-                    </div>
-                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
-                        <h3>Saved Profiles{savedProfiles.length > 0 ? ` (${savedProfiles.length})` : ''}</h3>
                         {loadingSavedProfiles ? (
-                            <p style={{ color: '#666', marginTop: '1rem' }}>Loading saved profiles...</p>
-                        ) : savedProfiles.length > 0 ? (
-                            <>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem', maxHeight: '420px', overflowY: 'auto', paddingRight: '0.25rem' }}>
-                                    {savedProfiles.map((p) => (
-                                        <div
-                                            key={p.id}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => {
+                            <p style={{ color: '#666', marginTop: '1rem' }}>Loading activity…</p>
+                        ) : recentActivity.length === 0 ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>No recent activity yet. Saved profiles and expressions of interest will appear here with the date and time.</p>
+                        ) : (
+                            <ul style={{ listStyle: 'none', margin: '1rem 0 0 0', padding: 0, maxHeight: '420px', overflowY: 'auto' }}>
+                                {recentActivity.map((item) => (
+                                    <li
+                                        key={item.key}
+                                        style={{
+                                            padding: '0.85rem 0',
+                                            borderBottom: '1px solid #eee',
+                                            cursor: item.modalProfile ? 'pointer' : 'default',
+                                        }}
+                                        role={item.modalProfile ? 'button' : undefined}
+                                        tabIndex={item.modalProfile ? 0 : undefined}
+                                        onClick={() => {
+                                            if (!item.modalProfile || user?.isVerified === false) {
+                                                if (user?.isVerified === false) {
+                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                }
+                                                return;
+                                            }
+                                            openModal('profile', undefined, item.modalProfile);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (!item.modalProfile) return;
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
                                                 if (user?.isVerified === false) {
                                                     window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                                     return;
                                                 }
-                                                openModal('profile', undefined, p);
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                    e.preventDefault();
-                                                    if (user?.isVerified === false) {
-                                                        window.dispatchEvent(new CustomEvent('open-verify-modal'));
-                                                        return;
-                                                    }
-                                                    openModal('profile', undefined, p);
-                                                }
-                                            }}
-                                            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
-                                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
-                                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
-                                            title={`View ${p.firstName} ${p.lastName}'s profile`}
-                                        >
-                                            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
-                                                {p.profilePhoto ? (
-                                                    <img src={p.profilePhoto} alt={`${p.firstName} ${p.lastName}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
-                                                        {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div style={{ minWidth: 0, flex: 1 }}>
-                                                <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
-                                                <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
-                                            </div>
-                                            <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                <button className="btn btn-outline" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }} onClick={() => router.push('/profiles')}>
-                                    Browse More Profiles
-                                </button>
-                            </>
+                                                openModal('profile', undefined, item.modalProfile);
+                                            }
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 600, color: '#333', fontSize: '0.95rem' }}>{item.title}</div>
+                                        {item.detail ? (
+                                            <div style={{ fontSize: '0.88rem', color: '#555', marginTop: '0.25rem', lineHeight: 1.4 }}>{item.detail}</div>
+                                        ) : null}
+                                        <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '0.35rem' }}>{item.timeLabel || '—'}</div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                        <h3 style={{ marginBottom: '0.25rem' }}>Saved &amp; interest</h3>
+                        <p style={{ color: '#666', fontSize: '0.875rem', margin: 0 }}>
+                            Shortlist for later and members you clicked interest on. <strong>Mutual</strong> means they showed interest back.
+                        </p>
+                        {loadingSavedProfiles ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>Loading…</p>
                         ) : (
                             <>
-                                <p style={{ color: '#666', marginTop: '1rem' }}>You haven't saved any profiles yet.</p>
-                                <button className="btn btn-outline" style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }} onClick={() => router.push('/profiles')}>
-                                    Browse Profiles
-                                </button>
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '1.5rem',
+                                        marginTop: '1rem',
+                                        alignItems: 'flex-start',
+                                    }}
+                                >
+                                    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                                        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.75rem 0', color: '#374151' }}>
+                                            Saved{savedProfiles.length > 0 ? ` (${savedProfiles.length})` : ''}
+                                        </h4>
+                                        {savedProfiles.length === 0 ? (
+                                            <>
+                                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>You haven&apos;t saved any profiles yet.</p>
+                                                {!isManagedSubAccount(user) &&
+                                                    !(savedProfiles.length === 0 && interestProfiles.length === 0) && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline"
+                                                        style={{ marginTop: '0.75rem', width: '100%', justifyContent: 'center' }}
+                                                        onClick={() => router.push('/profiles')}
+                                                    >
+                                                        Browse Profiles
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '0.75rem',
+                                                    maxHeight: '320px',
+                                                    overflowY: 'auto',
+                                                    paddingRight: '0.25rem',
+                                                }}
+                                            >
+                                                {savedProfiles.map((p) => (
+                                                    <div
+                                                        key={`saved-${p.userId ?? p.id}`}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={() => {
+                                                            if (user?.isVerified === false) {
+                                                                window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                                return;
+                                                            }
+                                                            openModal('profile', undefined, p);
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                e.preventDefault();
+                                                                if (user?.isVerified === false) {
+                                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                                    return;
+                                                                }
+                                                                openModal('profile', undefined, p);
+                                                            }
+                                                        }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
+                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                                        title={`View ${p.firstName} ${p.lastName}'s profile`}
+                                                    >
+                                                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
+                                                            {p.profilePhoto ? (
+                                                                <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ) : (
+                                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
+                                                                    {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                                            <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
+                                                            <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
+                                                            {p.savedAtLabel ? (
+                                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>Saved {p.savedAtLabel}</div>
+                                                            ) : null}
+                                                        </div>
+                                                        <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                                        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.75rem 0', color: '#374151' }}>
+                                            Interest{interestProfiles.length > 0 ? ` (${interestProfiles.length})` : ''}
+                                        </h4>
+                                        {interestProfiles.length === 0 ? (
+                                            <>
+                                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>You haven&apos;t expressed interest in anyone yet.</p>
+                                                {!isManagedSubAccount(user) &&
+                                                    !(savedProfiles.length === 0 && interestProfiles.length === 0) && (
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-outline"
+                                                        style={{ marginTop: '0.75rem', width: '100%', justifyContent: 'center' }}
+                                                        onClick={() => router.push('/profiles')}
+                                                    >
+                                                        Browse Profiles
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '0.75rem',
+                                                    maxHeight: '320px',
+                                                    overflowY: 'auto',
+                                                    paddingRight: '0.25rem',
+                                                }}
+                                            >
+                                                {interestProfiles.map((p) => (
+                                                    <div
+                                                        key={`interest-${p.userId ?? p.id}`}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={() => {
+                                                            if (user?.isVerified === false) {
+                                                                window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                                return;
+                                                            }
+                                                            openModal('profile', undefined, p);
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                e.preventDefault();
+                                                                if (user?.isVerified === false) {
+                                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                                    return;
+                                                                }
+                                                                openModal('profile', undefined, p);
+                                                            }
+                                                        }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                                        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
+                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                                        title={`View ${p.firstName} ${p.lastName}'s profile`}
+                                                    >
+                                                        <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
+                                                            {p.profilePhoto ? (
+                                                                <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ) : (
+                                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
+                                                                    {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                                                                <span style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</span>
+                                                                {p.isMutual ? (
+                                                                    <span
+                                                                        style={{
+                                                                            fontSize: '0.7rem',
+                                                                            fontWeight: 700,
+                                                                            letterSpacing: '0.02em',
+                                                                            color: '#047857',
+                                                                            background: '#d1fae5',
+                                                                            padding: '0.12rem 0.5rem',
+                                                                            borderRadius: '999px',
+                                                                        }}
+                                                                    >
+                                                                        Mutual
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
+                                                            {p.interestedAtLabel ? (
+                                                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>Interest sent {p.interestedAtLabel}</div>
+                                                            ) : null}
+                                                        </div>
+                                                        <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                {!isManagedSubAccount(user) &&
+                                    savedProfiles.length === 0 &&
+                                    interestProfiles.length === 0 &&
+                                    !loadingSavedProfiles && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
+                                            onClick={() => router.push('/profiles')}
+                                        >
+                                            Browse Profiles
+                                        </button>
+                                    )}
+                                {!isManagedSubAccount(user) && (savedProfiles.length > 0 || interestProfiles.length > 0) && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
+                                        onClick={() => router.push('/profiles')}
+                                    >
+                                        Browse more profiles
+                                    </button>
+                                )}
                             </>
                         )}
                     </div>
@@ -1813,6 +2482,7 @@ function ProfilePageContent() {
             </div>
 
             <HoroscopeLightbox
+                key={user?.horoscopeDocument || ''}
                 open={horoscopePopupOpen && !!user?.horoscopeDocument}
                 src={user?.horoscopeDocument || ''}
                 onClose={() => setHoroscopePopupOpen(false)}

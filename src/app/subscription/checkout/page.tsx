@@ -4,14 +4,41 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
-import { PREMIUM_SUBSCRIPTION_LKR } from '../../../constants/subscription';
+import {
+    PREMIUM_SUBSCRIPTION_LKR,
+    MATCHMAKER_GOLD_LKR,
+    MATCHMAKER_DIAMOND_LKR,
+    CHECKOUT_PLAN_PREMIUM_SELF,
+    CHECKOUT_PLAN_MATCHMAKER_GOLD,
+    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
+} from '../../../constants/subscription';
+import {
+    BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY,
+    PENDING_BANK_PREMIUM_STORAGE_KEY,
+    PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
+} from '../../../constants/premiumActivation';
 import { sanitizeNameInput } from '../../../utils/nameInput';
+import { PasswordVisibilityToggle } from '../../../components/PasswordVisibilityToggle';
+import { showToast } from '../../../utils/toast';
 
 type PaymentMethod = 'card' | 'bank';
 
+function planLabel(plan: string, isMatchmaker: boolean): string {
+    switch (plan) {
+        case CHECKOUT_PLAN_MATCHMAKER_GOLD:
+            return 'Matchmaker Gold';
+        case CHECKOUT_PLAN_MATCHMAKER_DIAMOND:
+            return 'Matchmaker Diamond';
+        case CHECKOUT_PLAN_PREMIUM_SELF:
+        default:
+            return isMatchmaker ? 'Matchmaker checkout' : 'Premium (Self)';
+    }
+}
+
 export default function SubscriptionCheckoutPage() {
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, updateUser } = useAuth();
+    const [checkoutPlan, setCheckoutPlan] = useState<string>(CHECKOUT_PLAN_PREMIUM_SELF);
     const [amount, setAmount] = useState(String(PREMIUM_SUBSCRIPTION_LKR));
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
 
@@ -19,6 +46,7 @@ export default function SubscriptionCheckoutPage() {
     const [cardHolder, setCardHolder] = useState('');
     const [expiry, setExpiry] = useState('');
     const [cvv, setCvv] = useState('');
+    const [showCvv, setShowCvv] = useState(false);
 
     const [bankSlipFile, setBankSlipFile] = useState<File | null>(null);
     const [bankSlipPreview, setBankSlipPreview] = useState<string | null>(null);
@@ -29,13 +57,33 @@ export default function SubscriptionCheckoutPage() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
 
+    const isMatchmakerAccount = user?.accountType === 'Matchmaker';
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const url = new URL(window.location.href);
         const queryAmount = url.searchParams.get('amount');
-        if (queryAmount) {
+        const queryPlan =
+            url.searchParams.get('plan') ||
+            url.searchParams.get('Plan') ||
+            CHECKOUT_PLAN_PREMIUM_SELF;
+
+        setCheckoutPlan(queryPlan.trim().toLowerCase());
+
+        if (queryAmount && queryAmount.trim() !== '') {
             setAmount(queryAmount);
+            return;
         }
+
+        if (queryPlan === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
+            setAmount(String(MATCHMAKER_GOLD_LKR));
+            return;
+        }
+        if (queryPlan === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
+            setAmount(String(MATCHMAKER_DIAMOND_LKR));
+            return;
+        }
+        setAmount(String(PREMIUM_SUBSCRIPTION_LKR));
     }, []);
 
     const formatCardNumber = (value: string) => {
@@ -83,9 +131,47 @@ export default function SubscriptionCheckoutPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    const applySuccessUserPatch = () => {
+        const p = checkoutPlan;
+        if (isMatchmakerAccount) {
+            if (p === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
+                updateUser({
+                    isSubscribed: true,
+                    matchmakerTier: 'DIAMOND',
+                    matchmakerMaxClientProfiles: 10,
+                    matchmakerCanAddClients: true,
+                });
+            } else if (p === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
+                updateUser({
+                    isSubscribed: true,
+                    matchmakerTier: 'GOLD',
+                    matchmakerMaxClientProfiles: 5,
+                    matchmakerCanAddClients: true,
+                });
+            }
+        } else {
+            updateUser({ isSubscribed: true, matchmakerTier: undefined });
+        }
+    };
+
     const handleMockPayment = async () => {
         if (!user?.id) {
             setError('Please log in first.');
+            return;
+        }
+
+        let subscriptionPlan =
+            checkoutPlan.trim().length > 0 ? checkoutPlan.trim().toLowerCase() : CHECKOUT_PLAN_PREMIUM_SELF;
+
+        if (subscriptionPlan.startsWith('matchmaker_') && user.accountType !== 'Matchmaker') {
+            setError('This checkout is only for Matchmaker accounts. Open pricing while logged in as a matchmaker.');
+            return;
+        }
+        if (
+            subscriptionPlan === CHECKOUT_PLAN_PREMIUM_SELF &&
+            user.accountType === 'Matchmaker'
+        ) {
+            setError('Choose Matchmaker Gold or Diamond (use the Pricing section or reopen checkout from Matchmaker Gold/Diamond).');
             return;
         }
 
@@ -100,14 +186,24 @@ export default function SubscriptionCheckoutPage() {
 
         try {
             const mockReference = `${cardNumber}|${cardHolder}|${expiry}|${cvv}|MOCK`;
-            const res = await matrimonialService.activateMockSubscription(Number(user.id), mockReference);
+            const res = await matrimonialService.activateMockSubscription(
+                Number(user.id),
+                mockReference,
+                subscriptionPlan
+            );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                setSuccess('Payment successful. Premium features are now unlocked for your account.');
-                setTimeout(() => {
-                    router.push('/profile');
-                }, 1200);
+                applySuccessUserPatch();
+                setSuccess(
+                    isMatchmakerAccount
+                        ? 'Payment successful. Your matchmaker subscription is active.'
+                        : 'Payment successful. Premium membership is now active.'
+                );
+                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
+                window.setTimeout(() => {
+                    router.push('/search');
+                }, 800);
             } else {
-                setError(res?.message || 'Failed to activate premium.');
+                setError(res?.message || 'Failed to activate subscription.');
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Payment failed.');
@@ -131,6 +227,8 @@ export default function SubscriptionCheckoutPage() {
         setSuccess('');
         setIsSubmitting(true);
 
+        const parsedAmount = parseFloat(amount);
+
         try {
             const reader = new FileReader();
             reader.onload = async (ev) => {
@@ -138,20 +236,22 @@ export default function SubscriptionCheckoutPage() {
                     const base64 = ev.target?.result as string;
                     const res = await matrimonialService.submitBankTransfer(
                         Number(user.id),
-                        parseFloat(amount),
+                        parsedAmount,
                         base64,
                         bankRemarks
                     );
                     if (res?.statusCode === 200 || res?.statusCode === 1) {
+                        if (typeof window !== 'undefined') {
+                            localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
+                            sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+                        }
                         setSuccess(
-                            'Slip received! Our admin team will review your payment and approve your premium membership shortly. ' +
+                            'Slip received! Our admin team will review your payment and activate your subscription shortly. ' +
                             'You will be redirected to your profile in a moment.'
                         );
                         setBankSlipFile(null);
                         setBankSlipPreview(null);
                         setBankRemarks('');
-                        // Keep the confirmation visible for 2 seconds so the user can read it,
-                        // then take them back to their profile page.
                         window.setTimeout(() => {
                             router.push('/profile');
                         }, 2000);
@@ -171,15 +271,20 @@ export default function SubscriptionCheckoutPage() {
         }
     };
 
+    const planTitle = planLabel(checkoutPlan, isMatchmakerAccount);
+
     return (
         <div className="min-h-screen bg-cream pt-28 px-4 pb-10">
             <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8">
                 <h1 className="text-3xl font-playfair font-bold text-text-dark mb-2">Complete Your Payment</h1>
-                <p className="text-text-light mb-6">Plan: Premium | Amount: LKR {amount}</p>
+                <p className="text-text-light mb-6">
+                    Plan: {planTitle} | Amount: LKR {amount}
+                </p>
 
                 {/* Payment Method Selection */}
                 <div className="flex gap-3 mb-6">
                     <button
+                        type="button"
                         className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all duration-200 font-semibold text-sm ${
                             paymentMethod === 'card'
                                 ? 'border-primary bg-primary/5 text-primary'
@@ -195,6 +300,7 @@ export default function SubscriptionCheckoutPage() {
                         </div>
                     </button>
                     <button
+                        type="button"
                         className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all duration-200 font-semibold text-sm ${
                             paymentMethod === 'bank'
                                 ? 'border-primary bg-primary/5 text-primary'
@@ -211,7 +317,6 @@ export default function SubscriptionCheckoutPage() {
                     </button>
                 </div>
 
-                {/* Card Payment Form */}
                 {paymentMethod === 'card' && (
                     <div className="rounded-2xl border border-cream-dark bg-[#fffaf6] p-5 md:p-6">
                         <div className="flex items-center justify-between mb-5">
@@ -266,22 +371,31 @@ export default function SubscriptionCheckoutPage() {
                                 </div>
                                 <div>
                                     <label className="text-sm text-text-dark font-semibold">CVV</label>
-                                    <input
-                                        type="password"
-                                        value={cvv}
-                                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                        placeholder="123"
-                                        className="w-full border border-cream-dark rounded-xl px-3 py-3 mt-2"
-                                        inputMode="numeric"
-                                        maxLength={4}
-                                    />
+                                    <div className="relative mt-2">
+                                        <input
+                                            type={showCvv ? 'text' : 'password'}
+                                            value={cvv}
+                                            onChange={(e) => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                                            placeholder="123"
+                                            className="w-full border border-cream-dark rounded-xl px-3 py-3 pr-11 box-border"
+                                            inputMode="numeric"
+                                            maxLength={4}
+                                            autoComplete="cc-csc"
+                                        />
+                                        <PasswordVisibilityToggle
+                                            passwordVisible={showCvv}
+                                            onToggle={() => setShowCvv((v) => !v)}
+                                            ariaLabelWhenHidden="Show CVV"
+                                            ariaLabelWhenVisible="Hide CVV"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md border-0 bg-transparent cursor-pointer text-stone-500 hover:text-stone-800 inline-flex items-center justify-center leading-none"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Bank Transfer Form */}
                 {paymentMethod === 'bank' && (
                     <div className="rounded-2xl border border-cream-dark bg-[#fffaf6] p-5 md:p-6">
                         <h2 className="text-lg font-semibold text-text-dark mb-4">Bank Transfer</h2>
@@ -309,6 +423,13 @@ export default function SubscriptionCheckoutPage() {
                                     <span className="text-text-light">Amount:</span>
                                     <span className="font-bold text-primary">LKR {amount}</span>
                                 </div>
+                                {user?.accountType === 'Matchmaker' ? (
+                                    <p className="text-xs text-amber-800 mt-3 leading-relaxed">
+                                        Matchmaker plans: transfer exactly{' '}
+                                        <strong>{MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')} LKR (Gold)</strong> or{' '}
+                                        <strong>{MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')} LKR (Diamond)</strong> so admin approval activates the correct tier.
+                                    </p>
+                                ) : null}
                             </div>
                         </div>
 
@@ -386,7 +507,7 @@ export default function SubscriptionCheckoutPage() {
 
                         <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
                             <p className="text-sm text-amber-800">
-                                <strong>Note:</strong> After uploading the slip, your subscription will be activated within 24 hours once our admin verifies the payment.
+                                <strong>Note:</strong> After uploading the slip, your subscription will be activated once our admin verifies the payment.
                             </p>
                         </div>
                     </div>
@@ -405,6 +526,7 @@ export default function SubscriptionCheckoutPage() {
 
                 <div className="mt-6 flex gap-3">
                     <button
+                        type="button"
                         className="btn btn-primary"
                         style={{ padding: '0.9rem 1.4rem' }}
                         onClick={paymentMethod === 'card' ? handleMockPayment : handleBankTransfer}
@@ -418,6 +540,7 @@ export default function SubscriptionCheckoutPage() {
                         }
                     </button>
                     <button
+                        type="button"
                         className="btn btn-outline"
                         style={{ padding: '0.9rem 1.4rem' }}
                         onClick={() => router.push('/search')}
