@@ -5,13 +5,13 @@
 @layer base {
     :root {
         /* Primary Orange */
-        --primary: #F97316;
-        --primary-dark: #EA580C;
-        --primary-light: #FB923C;
+        --primary: #ffa20d;
+        --primary-dark: #d98809;
+        --primary-light: #ffb84d;
 
         /* Secondary/Accent Orange */
-        --gold: #F97316;
-        --gold-light: #FB923C;
+        --gold: #ffa20d;
+        --gold-light: #ffb84d;
 
         --cream: #FDF8F3;
         --cream-dark: #F5EDE3;
@@ -20,7 +20,7 @@
         --white: #FFFFFF;
 
         /* Updated shadow to match Orange theme */
-        --shadow: rgba(249, 115, 22, 0.25);
+        --shadow: rgba(255, 162, 13, 0.25);
         --overlay: rgba(45, 42, 38, 0.7);
     }
 
@@ -1312,6 +1312,27 @@
             transform: translateY(0);
         }
 
+        /* Full-viewport detailed profile wizard (profile page) */
+        .modal-overlay.profile-completion-overlay {
+            align-items: stretch;
+            justify-content: stretch;
+            padding: 0;
+        }
+
+        .modal.profile-completion-modal-full {
+            max-width: none;
+            width: 100%;
+            height: 100vh;
+            max-height: 100vh;
+            margin: 0;
+            border-radius: 0;
+            transform: none;
+        }
+
+        .modal-overlay.active .modal.profile-completion-modal-full {
+            transform: none;
+        }
+
         .modal-close {
             position: absolute;
             top: 1rem;
@@ -1366,6 +1387,9 @@
         #registerModal .modal-body {
             overflow-y: auto;
             overflow-x: hidden;
+            /* Flex child must shrink below content height so scrollbar appears; otherwise bottom is clipped */
+            flex: 1 1 auto;
+            min-height: 0;
             max-height: calc(90vh - 8rem);
             scrollbar-width: thin;
             scrollbar-color: #c9c9c9 transparent;
@@ -1373,6 +1397,10 @@
 
         #loginModal .modal-body {
             padding-top: 0;
+        }
+
+        #registerModal .modal-body {
+            padding-bottom: 2rem;
         }
 
         #loginModal .modal-body::-webkit-scrollbar,
@@ -1773,7 +1801,7 @@
         }
 
         .method-icon.email-icon {
-            background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: var(--white);
         }
 
@@ -3784,8 +3812,9 @@
 
 .global-toast-container {
     position: fixed;
-    right: 16px;
-    bottom: 16px;
+    top: calc(72px + env(safe-area-inset-top, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: auto;
     z-index: 5000;
     display: flex;
     flex-direction: column;

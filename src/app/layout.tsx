@@ -5,6 +5,7 @@ import { LanguageProvider } from '../context/LanguageContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
 import MessageFloatingButton from '../components/MessageFloatingButton';
 import GlobalToast from '../components/GlobalToast';
+import PremiumActivationListener from '../components/PremiumActivationListener';
 import "./globals.css";
 
 
@@ -31,6 +32,7 @@ const pacifico = Pacifico({
 export const metadata: Metadata = {
   title: "MyMatch.lk - Find your Perfect Match",
   description: "Join thousands of families who found meaningful connections through our trusted matrimonial platform.",
+  themeColor: "#ffa20d",
   icons: {
     icon: "/favicon.png",
   },
@@ -54,6 +56,7 @@ export default function RootLayout({
             <LoadingScreenWrapper>
               {children}
               <MessageFloatingButton />
+              <PremiumActivationListener />
               <GlobalToast />
             </LoadingScreenWrapper>
           </LanguageProvider>

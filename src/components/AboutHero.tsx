@@ -36,7 +36,7 @@ export default function AboutHero() {
 
             {/* --- Animated Glassmorphism Heart 1 (Top Left) --- */}
             <div 
-                className="absolute top-[10%] left-[5%] w-40 md:w-56 aspect-[1.15/1] bg-orange-500/30 backdrop-blur-md z-10 shadow-[0_8px_32px_0_rgba(251,146,60,0.2)] border border-orange-300/30"
+                className="absolute top-[10%] left-[5%] w-40 md:w-56 aspect-[1.15/1] bg-orange-500/30 backdrop-blur-md z-10 shadow-[0_8px_32px_0_rgba(255,162,13,0.2)] border border-orange-300/30"
                 style={{ 
                     clipPath: 'url(#standard-heart)',
                     animation: 'float-slow 8s ease-in-out infinite'
@@ -79,7 +79,7 @@ export default function AboutHero() {
                     </p>
                     <Link
                         href="/"
-                        className="inline-flex items-center justify-center px-10 py-4 bg-orange-500 text-white rounded-full font-semibold hover:bg-orange-600 transition-all duration-300 w-fit shadow-[0_8px_20px_-6px_rgba(249,115,22,0.6)] hover:shadow-[0_12px_25px_-6px_rgba(249,115,22,0.8)] hover:-translate-y-1"
+                        className="inline-flex items-center justify-center px-10 py-4 bg-orange-500 text-white rounded-full font-semibold hover:bg-orange-600 transition-all duration-300 w-fit shadow-[0_8px_20px_-6px_rgba(255,162,13,0.6)] hover:shadow-[0_12px_25px_-6px_rgba(255,162,13,0.8)] hover:-translate-y-1"
                     >
                         {t('backToHome')}
                     </Link>

@@ -1,15 +1,82 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
 import * as signalR from '@microsoft/signalr';
+import { connectMatrimonialHub } from '@/utils/signalrHub';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
     error.message.toLowerCase().includes('stopped during negotiation');
+
+/** Hub / API payloads may use camelCase or PascalCase. */
+function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
+    if (!raw || typeof raw !== 'object') return null;
+    const id = Number((raw as any).id ?? (raw as any).Id ?? 0);
+    const senderId = Number((raw as any).senderId ?? (raw as any).SenderId ?? 0);
+    const receiverId = Number((raw as any).receiverId ?? (raw as any).ReceiverId ?? 0);
+    const content = String((raw as any).content ?? (raw as any).Content ?? '');
+    const sentAtRaw = (raw as any).sentAt ?? (raw as any).SentAt;
+    const sentAt =
+        typeof sentAtRaw === 'string' ? sentAtRaw : sentAtRaw instanceof Date ? sentAtRaw.toISOString() : new Date().toISOString();
+    const isRead = !!((raw as any).isRead ?? (raw as any).IsRead);
+    if (!Number.isFinite(senderId) || !Number.isFinite(receiverId)) return null;
+    return { id, senderId, receiverId, content, sentAt, isRead };
+}
+
+function normalizeMessageContent(s: string) {
+    return s.trim().replace(/\s+/g, ' ');
+}
+
+type PresenceInfo = { isOnline: boolean; lastSeen: string | null };
+
+function toIsoLastSeen(raw: unknown): string | null {
+    if (raw == null) return null;
+    if (typeof raw === 'string') {
+        const d = new Date(raw);
+        return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+    }
+    if (raw instanceof Date && Number.isFinite(raw.getTime())) {
+        return raw.toISOString();
+    }
+    return null;
+}
+
+/** Hub invoke + broadcast payloads (camelCase / PascalCase). */
+function normalizeHubPresencePayload(p: Record<string, unknown> | null | undefined, fallbackUserId: string): PresenceInfo & { userId: string } {
+    const userId = String((p as any)?.userId ?? (p as any)?.UserId ?? fallbackUserId);
+    const isOnline = !!((p as any)?.isOnline ?? (p as any)?.IsOnline);
+    const lastSeen = toIsoLastSeen((p as any)?.lastSeen ?? (p as any)?.LastSeen);
+    return { userId, isOnline, lastSeen };
+}
+
+function getPresenceFor(map: Record<string, PresenceInfo>, contactId: number | undefined | null): PresenceInfo {
+    if (contactId == null || !Number.isFinite(Number(contactId))) return { isOnline: false, lastSeen: null };
+    return map[String(contactId)] ?? { isOnline: false, lastSeen: null };
+}
+
+/** Sidebar + header line (online vs relative last seen). Recomputed over time via presenceClockTick. */
+function formatLastSeenLabel(lastSeen: string | null, isOnline: boolean, presenceClockTick: number): string {
+    void presenceClockTick;
+    if (isOnline) return 'Online';
+    if (!lastSeen) return 'Offline';
+    const d = new Date(lastSeen);
+    const t = d.getTime();
+    if (!Number.isFinite(t)) return 'Offline';
+    const diffMs = Date.now() - t;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Last seen just now';
+    if (mins < 60) return `Last seen ${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `Last seen ${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'Last seen yesterday';
+    if (days < 7) return `Last seen ${days}d ago`;
+    return `Last seen ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
 
 function MessagesContent() {
     const { user } = useAuth();
@@ -40,7 +107,10 @@ function MessagesContent() {
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
     const [chatEnabled, setChatEnabled] = useState(true);
     const [chatStatusToast, setChatStatusToast] = useState('');
-    const [contactPresence, setContactPresence] = useState<{ isOnline: boolean; lastSeen: string | null }>({ isOnline: false, lastSeen: null });
+    /** Per contact (App user id string) — from GetPresence batch + ReceivePresenceUpdate. */
+    const [presenceMap, setPresenceMap] = useState<Record<string, PresenceInfo>>({});
+    /** Bumps once per minute so "Last seen Xm ago" refreshes without leaving the page. */
+    const [presenceClockTick, setPresenceClockTick] = useState(0);
 
     // Use Refs for callbacks
     useEffect(() => {
@@ -60,6 +130,11 @@ function MessagesContent() {
             setChatEnabled(stored === 'true');
         }
     }, [user?.id]);
+
+    useEffect(() => {
+        const id = window.setInterval(() => setPresenceClockTick((x) => x + 1), 60_000);
+        return () => window.clearInterval(id);
+    }, []);
 
     const handleToggleChatEnabled = () => {
         if (!user?.id || typeof window === 'undefined') return;
@@ -88,29 +163,24 @@ function MessagesContent() {
         let activeConnection: signalR.HubConnection | null = null;
 
         const connectSignalR = async (attempt = 0) => {
-            const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
-            // The hub mapped to /chathub inside API folder path or root (e.g. https://.../chathub)
-            const HUB_URL = API_BASE_URL.replace('/api', '') + '/chathub';
+            const API_BASE_URL =
+                process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
-            const newConnection = new signalR.HubConnectionBuilder()
-                .withUrl(HUB_URL)
-                .configureLogging(signalR.LogLevel.None)
-                .withAutomaticReconnect()
-                .build();
-
+            let connAttempt: signalR.HubConnection | null = null;
             try {
-                await newConnection.start();
+                connAttempt = await connectMatrimonialHub(API_BASE_URL);
                 if (disposed) {
-                    await newConnection.stop();
+                    await connAttempt.stop();
                     return;
                 }
                 console.log("SignalR Connected!");
 
                 // Join personal matching group
-                await newConnection.invoke("JoinUserGroup", String(user.id));
-                activeConnection = newConnection;
-                setConnection(newConnection);
+                await connAttempt.invoke("JoinUserGroup", String(user.id));
+                activeConnection = connAttempt;
+                setConnection(connAttempt);
             } catch (e) {
+                await connAttempt?.stop().catch(() => {});
                 if (disposed) return;
                 if (!isNegotiationStoppedError(e)) {
                     console.error("SignalR Connection Failed: ", e);
@@ -136,19 +206,42 @@ function MessagesContent() {
         if (!connection) return;
 
         // New Message Received
-        connection.on("ReceiveNewMessage", (message) => {
+        connection.on("ReceiveNewMessage", (payload) => {
+            const message = normalizeChatMessage(payload as Record<string, unknown>);
             const activeContactId = selectedContactRef.current?.contactId;
-            // If message belongs to active chat, append it 
-            if (message.senderId === activeContactId || message.receiverId === activeContactId || message.senderId === Number(user?.id)) {
-                setMessages(prev => {
-                    if (!prev.find(m => m.id === message.id)) {
-                        return [...prev, message];
-                    }
-                    return prev;
-                });
-                scrollToBottom();
+            const myId = Number(user?.id);
+
+            if (!message || !myId || !activeContactId) {
+                refreshInbox();
+                return;
             }
-            // Regardless of active chat, update inbox
+
+            const inActiveThread =
+                (message.senderId === activeContactId && message.receiverId === myId) ||
+                (message.receiverId === activeContactId && message.senderId === myId);
+
+            if (!inActiveThread) {
+                refreshInbox();
+                return;
+            }
+
+            setMessages((prev) => {
+                if (prev.some((m) => Number(m.id) === message.id)) return prev;
+
+                let next = prev;
+                if (message.senderId === myId) {
+                    const body = normalizeMessageContent(message.content);
+                    next = prev.filter((m) => {
+                        if (!(m as { __localPending?: boolean }).__localPending) return true;
+                        if (Number(m.senderId) !== myId || Number(m.receiverId) !== message.receiverId) return true;
+                        return normalizeMessageContent(String(m.content ?? '')) !== body;
+                    });
+                }
+
+                if (next.some((m) => Number(m.id) === message.id)) return next;
+                return [...next, message];
+            });
+            scrollToBottom();
             refreshInbox();
         });
 
@@ -170,15 +263,15 @@ function MessagesContent() {
             }
         });
 
-        // Presence updates
-        connection.on("ReceivePresenceUpdate", (presence) => {
-            const activeContactId = selectedContactRef.current?.contactId;
-            if (String(activeContactId) === String(presence?.userId)) {
-                setContactPresence({
-                    isOnline: !!presence?.isOnline,
-                    lastSeen: presence?.lastSeen || null
-                });
-            }
+        // Presence updates — keep a map for inbox + open chat (ChatHub broadcasts globally).
+        connection.on('ReceivePresenceUpdate', (presence: unknown) => {
+            if (!presence || typeof presence !== 'object') return;
+            const n = normalizeHubPresencePayload(presence as Record<string, unknown>, '');
+            if (!n.userId) return;
+            setPresenceMap((prev) => ({
+                ...prev,
+                [n.userId]: { isOnline: n.isOnline, lastSeen: n.lastSeen },
+            }));
         });
 
         // Unsubscribe all on cleanup to avoid duplicated events
@@ -190,32 +283,75 @@ function MessagesContent() {
         };
     }, [connection, user]);
 
+    const inboxPresenceKey = useMemo(() => {
+        if (!inbox.length) return '';
+        const ids = inbox
+            .map((c: { contactId?: number }) => Number(c.contactId))
+            .filter((id: number) => Number.isFinite(id) && id > 0);
+        return [...new Set(ids)].sort((a, b) => a - b).join(',');
+    }, [inbox]);
+
+    // Batch presence for sidebar when hub + inbox are ready
     useEffect(() => {
-        const fetchPresence = async () => {
-            if (!connection || !selectedContact) {
-                setContactPresence({ isOnline: false, lastSeen: null });
-                return;
+        if (!connection || connection.state !== signalR.HubConnectionState.Connected) return;
+        if (!inboxPresenceKey) return;
+
+        let cancelled = false;
+        const ids = inboxPresenceKey.split(',').map((s) => Number(s));
+
+        (async () => {
+            const updates: Record<string, PresenceInfo> = {};
+            await Promise.all(
+                ids.map(async (id) => {
+                    if (!Number.isFinite(id) || id <= 0) return;
+                    const sid = String(id);
+                    try {
+                        const raw = await connection.invoke('GetPresence', sid);
+                        if (cancelled || raw == null || typeof raw !== 'object') return;
+                        const n = normalizeHubPresencePayload(raw as Record<string, unknown>, sid);
+                        updates[n.userId] = { isOnline: n.isOnline, lastSeen: n.lastSeen };
+                    } catch {
+                        /* ignore per-user failures */
+                    }
+                })
+            );
+            if (!cancelled && Object.keys(updates).length > 0) {
+                setPresenceMap((prev) => ({ ...prev, ...updates }));
             }
-            try {
-                const presence = await connection.invoke("GetPresence", String(selectedContact.contactId));
-                setContactPresence({
-                    isOnline: !!presence?.isOnline,
-                    lastSeen: presence?.lastSeen || null
-                });
-            } catch {
-                setContactPresence({ isOnline: false, lastSeen: null });
-            }
+        })();
+
+        return () => {
+            cancelled = true;
         };
+    }, [connection, inboxPresenceKey]);
 
-        fetchPresence();
+    // Selected thread (e.g. deep link) may not be in inbox yet — refresh their row
+    useEffect(() => {
+        if (!connection || connection.state !== signalR.HubConnectionState.Connected) return;
+        const cid = selectedContact?.contactId;
+        if (cid == null || !Number.isFinite(Number(cid))) return;
+
+        let cancelled = false;
+        const sid = String(cid);
+
+        (async () => {
+            try {
+                const raw = await connection.invoke('GetPresence', sid);
+                if (cancelled || raw == null || typeof raw !== 'object') return;
+                const n = normalizeHubPresencePayload(raw as Record<string, unknown>, sid);
+                setPresenceMap((prev) => ({
+                    ...prev,
+                    [n.userId]: { isOnline: n.isOnline, lastSeen: n.lastSeen },
+                }));
+            } catch {
+                /* ignore */
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
     }, [connection, selectedContact?.contactId]);
-
-    const formatLastSeen = (lastSeen: string | null) => {
-        if (!lastSeen) return 'Offline';
-        const d = new Date(lastSeen);
-        if (isNaN(d.getTime())) return 'Offline';
-        return `Last seen ${d.toLocaleString()}`;
-    };
 
     const refreshInbox = async () => {
         if (!user) return;
@@ -260,7 +396,11 @@ function MessagesContent() {
         try {
             const res = await matrimonialService.getConversation(Number(user.id), contactId);
             if (res.statusCode === 200 || res.statusCode === 1) {
-                setMessages(res.result || []);
+                const rawList = Array.isArray(res.result) ? res.result : [];
+                const cleaned = rawList
+                    .map((row: Record<string, unknown>) => normalizeChatMessage(row))
+                    .filter(Boolean) as ReturnType<typeof normalizeChatMessage>[];
+                setMessages(cleaned);
                 scrollToBottom();
             }
         } catch (err) {
@@ -370,14 +510,15 @@ function MessagesContent() {
         setIsTyping(false);
 
         try {
-            // Optimistically update UI so it feels instant
+            // Optimistically update UI so it feels instant (__localPending merged away when SignalR echoes the server row).
             const newMsgObj = {
                 id: tempId,
                 senderId: Number(user.id),
                 receiverId: selectedContact.contactId,
                 content: content,
                 sentAt: new Date().toISOString(),
-                isRead: false
+                isRead: false,
+                __localPending: true,
             };
             setMessages(prev => [...prev, newMsgObj]);
             scrollToBottom();
@@ -387,8 +528,12 @@ function MessagesContent() {
             // Replace temporary ID if needed or let SignalR handle the sync
             if (res.statusCode === 200 || res.statusCode === 1) {
                 refreshInbox();
-                if (res.result?.id) {
-                    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: res.result.id } : m));
+                const serverIdRaw = res.result?.id ?? res.result?.Id;
+                if (serverIdRaw != null) {
+                    const sid = Number(serverIdRaw);
+                    setMessages(prev =>
+                        prev.map(m => (m.id === tempId ? { ...m, id: sid, __localPending: false } : m))
+                    );
                 }
             }
         } catch (err) {
@@ -486,6 +631,23 @@ function MessagesContent() {
                                                     {new Date(contact.sentAt).toLocaleDateString()}
                                                 </span>
                                             </div>
+                                            {(() => {
+                                                const pr = getPresenceFor(presenceMap, contact.contactId);
+                                                return (
+                                                    <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                                                        <span
+                                                            className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${pr.isOnline ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                                                            title={pr.isOnline ? 'Online' : 'Offline'}
+                                                            aria-hidden
+                                                        />
+                                                        <span
+                                                            className={`text-[0.7rem] truncate ${pr.isOnline ? 'text-emerald-700 font-medium' : 'text-text-light'}`}
+                                                        >
+                                                            {formatLastSeenLabel(pr.lastSeen, pr.isOnline, presenceClockTick)}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
                                             <div className="flex justify-between items-center">
                                                 <p className={`text-[0.85rem] m-0 truncate ${contact.unreadCount > 0 ? 'text-text-dark font-semibold' : 'text-text-light'}`}>
                                                     {contact.latestMessage}
@@ -529,11 +691,14 @@ function MessagesContent() {
                                         <h3 className="font-playfair text-xl md:text-2xl font-semibold m-0 leading-tight">{selectedContact.firstName} {selectedContact.lastName}</h3>
                                         {remoteTyping ? (
                                             <span className="text-xs text-primary font-medium animate-pulse mt-0.5">typing...</span>
-                                        ) : (
-                                            <span className={`text-xs mt-0.5 ${contactPresence.isOnline ? 'text-green-600 font-medium' : 'text-text-light'}`}>
-                                                {contactPresence.isOnline ? 'Online' : formatLastSeen(contactPresence.lastSeen)}
-                                            </span>
-                                        )}
+                                        ) : (() => {
+                                            const pr = getPresenceFor(presenceMap, selectedContact.contactId);
+                                            return (
+                                                <span className={`text-xs mt-0.5 ${pr.isOnline ? 'text-green-600 font-medium' : 'text-text-light'}`}>
+                                                    {formatLastSeenLabel(pr.lastSeen, pr.isOnline, presenceClockTick)}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
 
@@ -541,9 +706,11 @@ function MessagesContent() {
                                 <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col gap-4 bg-[url('/pattern-bg.png')] bg-opacity-5">
                                     {messages.map((msg, index) => {
                                         const isMe = Number(msg.senderId) === Number(user.id);
+                                        const rowKey =
+                                            typeof msg.id === 'number' && Number.isInteger(msg.id) ? msg.id : `pending-${index}`;
                                         return (
                                             <div
-                                                key={`msg-${msg.id}-${index}`}
+                                                key={`msg-${rowKey}-${index}`}
                                                 className={`flex flex-col max-w-[85%] md:max-w-[70%] group ${isMe ? 'self-end' : 'self-start'}`}
                                                 onContextMenu={(e) => handleMessageRightClick(e, msg)}
                                             >
@@ -670,7 +837,7 @@ function MessagesContent() {
             )}
 
             {chatStatusToast && (
-                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2200, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 2200, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
                     {chatStatusToast}
                 </div>
             )}

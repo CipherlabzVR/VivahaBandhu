@@ -10,6 +10,15 @@ import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import { isManagedSubAccount } from '../utils/managedSubAccount';
+
+/** Featured section should not list the logged-in member (show other people only). */
+function excludeSelfFromFeatured(uid: number | undefined, items: unknown): any[] {
+    const arr = Array.isArray(items) ? items : [];
+    if (uid == null || Number.isNaN(Number(uid))) return arr.slice(0, 4);
+    const u = Number(uid);
+    return arr.filter((p: any) => Number(p?.userId ?? p?.UserId ?? 0) !== u).slice(0, 4);
+}
 
 interface ProfilesProps {
     onOpenSubscription: () => void;
@@ -28,30 +37,48 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     useEffect(() => {
         const fetchProfiles = async () => {
             try {
-                if (user?.id) {
-                    const res = await matrimonialService.getMatchedProfiles(Number(user.id), 4);
+                const uidNum = user?.id != null ? Number(user.id) : undefined;
+                const recentCount = uidNum != null && !Number.isNaN(uidNum) ? 24 : 4;
+
+                const commit = (items: unknown, matchedFlag: boolean) => {
+                    setProfiles(excludeSelfFromFeatured(uidNum, items));
+                    setIsMatched(matchedFlag);
+                };
+
+                if (uidNum != null && !Number.isNaN(uidNum)) {
+                    const res = await matrimonialService.getMatchedProfiles(uidNum, 4);
                     if (res.statusCode === 200 && res.result) {
                         const matched = res.result;
                         if (Array.isArray(matched) && matched.length > 0) {
-                            setProfiles(matched);
-                            setIsMatched(true);
-                        } else {
-                            const fallback = await matrimonialService.getRecentProfiles(4);
-                            if (fallback.statusCode === 200 && fallback.result) setProfiles(fallback.result);
-                            setIsMatched(false);
+                            commit(matched, true);
+                            return;
                         }
+                        const fallback = await matrimonialService.getRecentProfiles(recentCount);
+                        if (fallback.statusCode === 200 && fallback.result) {
+                            commit(fallback.result, false);
+                        } else {
+                            commit([], false);
+                        }
+                        return;
                     }
-                } else {
-                    const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
-                    setIsMatched(false);
                 }
+
+                const res = await matrimonialService.getRecentProfiles(4);
+                if (res.statusCode === 200 && res.result) commit(res.result, false);
+                else commit([], false);
             } catch (error) {
-                console.error("Failed to load profiles", error);
+                console.error('Failed to load profiles', error);
                 try {
-                    const res = await matrimonialService.getRecentProfiles(4);
-                    if (res.statusCode === 200 && res.result) setProfiles(res.result);
-                } catch (e) { /* ignore */ }
+                    const uidNum = user?.id != null ? Number(user.id) : undefined;
+                    const recentCount = uidNum != null && !Number.isNaN(uidNum) ? 24 : 4;
+                    const res = await matrimonialService.getRecentProfiles(recentCount);
+                    const arr =
+                        res.statusCode === 200 && res.result && Array.isArray(res.result) ? res.result : [];
+                    setProfiles(excludeSelfFromFeatured(uidNum, arr));
+                    setIsMatched(false);
+                } catch {
+                    /* ignore */
+                }
             }
         };
 
@@ -233,12 +260,14 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 </div>
             )}
 
+            {(!user || !isManagedSubAccount(user)) && (
             <div className="text-center mt-12">
                 <Link href="/profiles" className="inline-block px-8 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors">{t('viewAllProfiles')}</Link>
             </div>
+            )}
 
             {actionToast && (
-                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
                     {actionToast}
                 </div>
             )}

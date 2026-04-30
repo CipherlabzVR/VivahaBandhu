@@ -29,7 +29,16 @@ export interface MatrimonialRegisterResponse {
         lastName?: string;
         accountType?: string;
         message?: string;
+        resumeVerification?: boolean;
+        ResumeVerification?: boolean;
     };
+}
+
+/** Live totals for the homepage hero statistics panel */
+export interface PublicHeroStats {
+    verifiedProfilesCount: number;
+    successStoriesCount: number;
+    trustedMatchmakersCount: number;
 }
 
 export interface MatrimonialLoginRequest {
@@ -80,6 +89,12 @@ export interface MatrimonialLoginResponse {
 
         HoroscopeDocument?: string;
         horoscopeDocument?: string;
+
+        ParentUserId?: number | null;
+        parentUserId?: number | null;
+
+        matrimonialExtras?: Record<string, unknown>;
+        MatrimonialExtras?: Record<string, unknown>;
     };
 }
 
@@ -160,6 +175,38 @@ export const matrimonialService = {
             }
             throw new Error('An unexpected error occurred during registration');
         }
+    },
+
+    /**
+     * Resume a pending registration: returns registrationSessionId when an unverified session exists for this email/NIC.
+     */
+    async getPendingRegistrationSession(params: { email: string; nic?: string }): Promise<MatrimonialRegisterResponse> {
+        const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPendingRegistrationSession`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: params.email.trim(),
+                nic: params.nic?.trim() ?? '',
+            }),
+        });
+
+        let data: MatrimonialRegisterResponse;
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error('Invalid response from server.');
+        }
+
+        if (!response.ok) {
+            const msg = data?.message || `Request failed: ${response.statusText}`;
+            const err = new Error(msg);
+            (err as Error & { isApiError?: boolean }).isApiError = true;
+            throw err;
+        }
+
+        return data;
     },
 
     /**
@@ -271,6 +318,60 @@ export const matrimonialService = {
         }
     },
 
+    async requestPhoneChangeOtp(newPhone: string): Promise<{ statusCode: number; message: string; result?: { maskedPhone?: string } }> {
+        try {
+            const token = getStoredToken();
+            if (!token) {
+                throw new Error('Please sign in again.');
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/RequestPhoneChangeOtp`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ newPhone }),
+            });
+            const data = (await response.json().catch(() => ({}))) as { message?: string; statusCode?: number };
+            if (!response.ok) {
+                throw new Error(data.message || `Failed to send code (${response.status})`);
+            }
+            return data as { statusCode: number; message: string; result?: { maskedPhone?: string } };
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while sending the phone verification code.');
+        }
+    },
+
+    async confirmPhoneChange(code: string): Promise<{ statusCode: number; message: string; result?: { phoneNumber?: string; userId?: number } }> {
+        try {
+            const token = getStoredToken();
+            if (!token) {
+                throw new Error('Please sign in again.');
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ConfirmPhoneChange`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ code }),
+            });
+            const data = (await response.json().catch(() => ({}))) as { message?: string; statusCode?: number };
+            if (!response.ok) {
+                throw new Error(data.message || `Verification failed (${response.status})`);
+            }
+            return data as { statusCode: number; message: string; result?: { phoneNumber?: string; userId?: number } };
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while confirming the phone number.');
+        }
+    },
+
     async searchRecoveryAccounts(name: string): Promise<{ statusCode: number; message: string; result: RecoveryAccount[] }> {
         try {
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SearchRecoveryAccounts`, {
@@ -370,6 +471,32 @@ export const matrimonialService = {
                 throw error;
             }
             throw new Error('An unexpected error occurred while fetching recent profiles');
+        }
+    },
+
+    /**
+     * Recent profiles that currently have an active subscription (premium).
+     */
+    async getRecentPremiumProfiles(count: number = 4): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentPremiumProfiles?count=${count}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to fetch premium profiles: ${response.statusText}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error('An unexpected error occurred while fetching premium profiles');
         }
     },
 
@@ -547,11 +674,36 @@ export const matrimonialService = {
         }
     },
 
+    /** When the viewer already favourites the sender, call instead of ToggleFavorite so the sender still gets "interest back" notifications. */
+    async notifyInterestBack(actorUserId: number, originalInterestSenderUserId: number): Promise<any> {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/NotifyInterestBack?actorUserId=${actorUserId}&originalInterestSenderUserId=${originalInterestSenderUserId}`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+            );
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async toggleShortlist(userId: number, profileId: number): Promise<any> {
         try {
             const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleShortlist?userId=${userId}&profileId=${profileId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
+            });
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async getInterestNotifications(userId: number): Promise<any> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${userId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
             });
             return await response.json();
         } catch (error) {
@@ -711,7 +863,7 @@ export const matrimonialService = {
         }
     },
 
-    async activateMockSubscription(userId: number, mockReference: string): Promise<any> {
+    async activateMockSubscription(userId: number, mockReference: string, subscriptionPlan?: string): Promise<any> {
         try {
             const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/ActivateMockSubscription`, {
@@ -722,7 +874,8 @@ export const matrimonialService = {
                 },
                 body: JSON.stringify({
                     userId,
-                    mockReference
+                    mockReference,
+                    ...(subscriptionPlan ? { subscriptionPlan } : {})
                 })
             });
 
@@ -778,6 +931,26 @@ export const matrimonialService = {
         }
     },
 
+    /** Public hero counters — verified profiles, active success stories, active matchmaker users */
+    async getPublicHeroStats(): Promise<{
+        statusCode: number;
+        result?: Partial<PublicHeroStats>;
+        Result?: Partial<PublicHeroStats>;
+    }> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPublicHeroStats`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!response.ok) {
+                return { statusCode: response.status };
+            }
+            return await response.json();
+        } catch {
+            return { statusCode: 0 };
+        }
+    },
+
     /**
      * Register this site's origin with the backend CORS allowlist (called from the landing page).
      */
@@ -823,4 +996,52 @@ export const matrimonialService = {
         }
     }
 };
+
+/** Maps matrimonialExtras from `/User/SignIn` onto client `User` fields. */
+export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undefined): {
+    isSubscribed?: boolean;
+    isPremiumSelfSubscribed?: boolean;
+    matchmakerTier?: string;
+    matchmakerMaxClientProfiles?: number;
+    matchmakerClientProfileCount?: number;
+    matchmakerCanAddClients?: boolean;
+    matchmakerDailyFullProfileViewsRemaining?: number;
+} {
+    if (!r || typeof r !== 'object') {
+        return {};
+    }
+    const accountType = String(r.AccountType ?? r.accountType ?? r.role ?? '');
+    const mxRaw = r.MatrimonialExtras ?? r.matrimonialExtras;
+    if (!mxRaw || typeof mxRaw !== 'object') {
+        return {};
+    }
+    const mx = mxRaw as Record<string, unknown>;
+    const tierRaw = mx.MatchmakerTier ?? mx.matchmakerTier ?? 'FREE';
+    const tier = String(tierRaw || 'FREE');
+    const mmPaid =
+        tier.toUpperCase() === 'GOLD' || tier.toUpperCase() === 'DIAMOND';
+    const isPremiumSelf = !!(mx.IsPremiumSubscribed ?? mx.isPremiumSubscribed);
+
+    const maxCli = mx.MatchmakerMaxClientProfiles ?? mx.matchmakerMaxClientProfiles;
+    const cntCli = mx.MatchmakerClientProfileCount ?? mx.matchmakerClientProfileCount;
+    const canAdd = mx.MatchmakerCanAddClients ?? mx.matchmakerCanAddClients;
+    const remViews = mx.MatchmakerDailyFullProfileViewsRemaining ?? mx.matchmakerDailyFullProfileViewsRemaining;
+
+    return {
+        isPremiumSelfSubscribed: isPremiumSelf,
+        matchmakerTier: tier,
+        matchmakerMaxClientProfiles: maxCli != null ? Number(maxCli) : undefined,
+        matchmakerClientProfileCount: cntCli != null ? Number(cntCli) : undefined,
+        matchmakerCanAddClients:
+            typeof canAdd === 'boolean' ? canAdd : typeof canAdd === 'string'
+                ? canAdd === 'true'
+                : undefined,
+        matchmakerDailyFullProfileViewsRemaining:
+            remViews != null && remViews !== '' ? Number(remViews) : undefined,
+        isSubscribed:
+            accountType === 'Matchmaker'
+                ? mmPaid
+                : isPremiumSelf,
+    };
+}
 

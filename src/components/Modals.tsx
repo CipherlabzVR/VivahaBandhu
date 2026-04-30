@@ -3,7 +3,7 @@
 import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import { matrimonialService, type RecoveryAccount, type ForgotPasswordInitiateRequest } from '../services/matrimonialService';
+import { matrimonialService, mapUserFieldsFromSignInResult, type RecoveryAccount, type ForgotPasswordInitiateRequest, type MatrimonialLoginResponse } from '../services/matrimonialService';
 import { sanitizeNicInput } from '../utils/nicInput';
 import { sanitizeNameInput, nameLettersOnlyError } from '../utils/nameInput';
 import {
@@ -16,7 +16,14 @@ import {
     WHATSAPP_REQUIRED_MSG,
     WHATSAPP_SAME_AS_PHONE_MSG,
 } from '../utils/sriLankanPhone';
-import { PREMIUM_SUBSCRIPTION_LKR } from '../constants/subscription';
+import {
+    PREMIUM_SUBSCRIPTION_LKR,
+    MATCHMAKER_GOLD_LKR,
+    MATCHMAKER_DIAMOND_LKR,
+    CHECKOUT_PLAN_PREMIUM_SELF,
+    CHECKOUT_PLAN_MATCHMAKER_GOLD,
+    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
+} from '../constants/subscription';
 import WelcomePopup from './WelcomePopup';
 import Image from 'next/image';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
@@ -24,6 +31,24 @@ import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
+import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
+import { showToast } from '../utils/toast';
+
+/** Matrimonial profile card / modal may expose viewer id as userId, UserId, or numeric id */
+function viewerProfileUserId(p: Record<string, unknown> | null | undefined): number | null {
+    if (!p || typeof p !== 'object') return null;
+    const raw = (p as any).userId ?? (p as any).UserId ?? (p as any).id ?? (p as any).Id;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parentUserIdFromLoginResult(r: MatrimonialLoginResponse['result'] | undefined): number | undefined {
+    if (!r) return undefined;
+    const raw = r.parentUserId ?? r.ParentUserId;
+    if (raw == null) return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 interface ModalsProps {
     activeModal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null;
@@ -104,7 +129,7 @@ function getPasswordStrength(password: string, checks: PwdChecks): { level: numb
     if (!password) return { level: 0, label: '', color: '#e5e7eb' };
     const passed = [checks.minLength, checks.hasUpper, checks.hasLower, checks.hasDigit, checks.hasSpecial].filter(Boolean).length;
     if (passed <= 1) return { level: 1, label: 'Weak', color: '#ef4444' };
-    if (passed === 2) return { level: 2, label: 'Fair', color: '#f97316' };
+    if (passed === 2) return { level: 2, label: 'Fair', color: '#ffa20d' };
     if (passed <= 4) return { level: 3, label: 'Good', color: '#eab308' };
     return { level: 4, label: 'Strong', color: '#22c55e' };
 }
@@ -141,20 +166,6 @@ function RegisterPasswordFields({
         </li>
     );
 
-    const toggleBtnStyle: CSSProperties = {
-        position: 'absolute',
-        right: '10px',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        border: 'none',
-        background: 'transparent',
-        cursor: 'pointer',
-        padding: '4px',
-        fontSize: '1rem',
-        lineHeight: 1,
-        color: 'var(--text-light)',
-    };
-
     return (
         <>
             <div className="form-group">
@@ -169,15 +180,12 @@ function RegisterPasswordFields({
                         style={{ borderColor: errors.password ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                         autoComplete="new-password"
                     />
-                    <button
-                        type="button"
-                        style={toggleBtnStyle}
-                        onClick={onToggleShowPassword}
+                    <PasswordVisibilityToggle
+                        passwordVisible={showPassword}
+                        onToggle={onToggleShowPassword}
                         tabIndex={-1}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                        {showPassword ? '🙈' : '👁'}
-                    </button>
+                        style={modalPasswordToggleStyle}
+                    />
                 </div>
                 {(() => {
                     const strength = getPasswordStrength(password, pwdChecks);
@@ -225,19 +233,70 @@ function RegisterPasswordFields({
                         style={{ borderColor: errors.confirmPassword ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                         autoComplete="new-password"
                     />
-                    <button
-                        type="button"
-                        style={toggleBtnStyle}
-                        onClick={onToggleShowConfirmPassword}
+                    <PasswordVisibilityToggle
+                        passwordVisible={showConfirmPassword}
+                        onToggle={onToggleShowConfirmPassword}
                         tabIndex={-1}
-                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                    >
-                        {showConfirmPassword ? '🙈' : '👁'}
-                    </button>
+                        ariaLabelWhenHidden="Show confirm password"
+                        ariaLabelWhenVisible="Hide confirm password"
+                        style={modalPasswordToggleStyle}
+                    />
                 </div>
                 {errors.confirmPassword && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.confirmPassword}</span>}
             </div>
         </>
+    );
+}
+
+const PENDING_REG_CONTINUE_PHRASE = 'Complete verification';
+
+function RegisterErrorBox({
+    message,
+    onContinuePending,
+    continueLoading,
+}: {
+    message: string;
+    onContinuePending: () => void;
+    continueLoading: boolean;
+}) {
+    const boxStyle: CSSProperties = {
+        color: '#b91c1c',
+        fontSize: '0.9rem',
+        marginBottom: '1rem',
+        padding: '0.5rem',
+        backgroundColor: '#ffe6e6',
+        borderRadius: '4px',
+    };
+    const lower = message.toLowerCase();
+    if (!lower.includes('already in progress') || !message.includes(PENDING_REG_CONTINUE_PHRASE)) {
+        return <div style={boxStyle}>{message}</div>;
+    }
+    const idx = message.indexOf(PENDING_REG_CONTINUE_PHRASE);
+    const before = message.slice(0, idx);
+    const after = message.slice(idx + PENDING_REG_CONTINUE_PHRASE.length);
+    return (
+        <div style={boxStyle}>
+            {before}
+            <button
+                type="button"
+                onClick={onContinuePending}
+                disabled={continueLoading}
+                style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    margin: 0,
+                    color: '#b45309',
+                    fontWeight: 700,
+                    textDecoration: 'underline',
+                    cursor: continueLoading ? 'wait' : 'pointer',
+                    font: 'inherit',
+                }}
+            >
+                {PENDING_REG_CONTINUE_PHRASE}
+            </button>
+            {after}
+        </div>
     );
 }
 
@@ -381,11 +440,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [galleryLightboxSrc, setGalleryLightboxSrc] = useState<string | null>(null);
     const [registerAccountType, setRegisterAccountType] = useState('Self');
     const [subscriptionOption, setSubscriptionOption] = useState('Free');
+    const [matchmakerCheckoutPick, setMatchmakerCheckoutPick] = useState<'gold' | 'diamond'>('gold');
 
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+
+    useEffect(() => {
+        if (activeModal === 'subscription') {
+            setMatchmakerCheckoutPick('gold');
+        }
+    }, [activeModal]);
+
     const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
     const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
+    const [interactionFavoriteIds, setInteractionFavoriteIds] = useState<number[]>([]);
+    const [expressInterestLoading, setExpressInterestLoading] = useState(false);
 
     useEffect(() => {
         if (initialSelectedProfile) {
@@ -396,22 +465,36 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 const fetchDetailedProfile = async () => {
                     setIsLoadingProfile(true);
                     try {
+                        const viewAsOthers = Boolean(initialSelectedProfile.viewAsOthers);
+                        const isOwnProfile =
+                            user?.id && String(initialSelectedProfile.userId) === String(user.id);
+                        // Owner preview: omit requester so the API applies visitor masking (no daily-view charge).
+                        const requesterForFetch =
+                            viewAsOthers && isOwnProfile
+                                ? undefined
+                                : user?.id
+                                  ? Number(user.id)
+                                  : undefined;
+                        const applyViewLimit = !(viewAsOthers && isOwnProfile);
+
                         const res = await matrimonialService.getProfile(
                             initialSelectedProfile.userId,
-                            user?.id ? Number(user.id) : undefined,
-                            true
+                            requesterForFetch,
+                            applyViewLimit
                         );
                         if (res.statusCode === 200 && res.result) {
                             setIsProfileLockedByDailyLimit(false);
                             setSelectedProfile((prev: any) => ({
                                 ...prev,
                                 ...res.result,
+                                viewAsOthers: prev?.viewAsOthers,
                                 firstName: prev?.firstName || res.result.firstName,
                                 lastName: prev?.lastName || res.result.lastName,
                                 profilePhoto: prev?.profilePhoto || res.result.profilePhoto,
                                 dateOfBirth: res.result.dateOfBirth ?? res.result.DateOfBirth ?? prev?.dateOfBirth,
                                 educationLevel: res.result.qualificationLevel || prev?.educationLevel,
-                                aboutMe: res.result.remarks || prev?.aboutMe,
+                                aboutMe: res.result.remarks || res.result.Remarks || prev?.aboutMe,
+                                bio: res.result.remarks || res.result.Remarks || prev?.bio,
                                 diet: res.result.eatingHabits || prev?.diet,
                                 smoking: res.result.smokingHabits || prev?.smoking,
                                 drinking: res.result.drinkingHabits || prev?.drinking,
@@ -444,6 +527,43 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setGalleryLightboxSrc(null);
         }
     }, [activeModal, initialSelectedProfile, user?.id]);
+
+    useEffect(() => {
+        if (activeModal !== 'profile') {
+            setInteractionFavoriteIds([]);
+            return;
+        }
+        const targetId = viewerProfileUserId(selectedProfile);
+        if (!user?.id || !targetId || String(user.id) === String(targetId)) {
+            setInteractionFavoriteIds([]);
+            return;
+        }
+        let cancelled = false;
+        matrimonialService
+            .getUserInteractions(Number(user.id))
+            .then((res) => {
+                if (cancelled) return;
+                const fav = res?.result?.Favorites ?? res?.result?.favorites ?? [];
+                const ids = (Array.isArray(fav) ? fav : [])
+                    .map((x: unknown) => (typeof x === 'number' ? x : Number((x as any)?.favoriteProfileId ?? (x as any)?.profileId ?? (x as any)?.id)))
+                    .filter((x: number) => Number.isFinite(x));
+                setInteractionFavoriteIds(ids);
+            })
+            .catch(() => {
+                if (!cancelled) setInteractionFavoriteIds([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [activeModal, user?.id, selectedProfile]);
+
+    const interestTargetUserId = useMemo(
+        () => viewerProfileUserId(selectedProfile),
+        [selectedProfile]
+    );
+    const isInterestExpressed =
+        interestTargetUserId !== null && interactionFavoriteIds.includes(interestTargetUserId);
+
     const [isWhatsAppSame, setIsWhatsAppSame] = useState(false);
     const [nic, setNic] = useState('');
     const [dob, setDob] = useState('');
@@ -465,12 +585,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [errors, setErrors] = useState<{ [key: string]: string }>({});
     const [isLoading, setIsLoading] = useState(false);
     const [registerError, setRegisterError] = useState<string | null>(null);
+    const [verificationResumeHint, setVerificationResumeHint] = useState<string | null>(null);
+    const [continuePendingLoading, setContinuePendingLoading] = useState(false);
     const [loginError, setLoginError] = useState<string | null>(null);
     const [loginSuccessHint, setLoginSuccessHint] = useState<string | null>(null);
     const [loginEmailError, setLoginEmailError] = useState<string | null>(null);
     const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [showLoginPassword, setShowLoginPassword] = useState(false);
+    const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+    const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [forgotMode, setForgotMode] = useState<'contact' | 'search'>('contact');
     const [forgotContactMethod, setForgotContactMethod] = useState<'email' | 'phone' | 'whatsapp'>('email');
@@ -690,6 +815,56 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     };
 
+    const handleContinuePendingVerification = async () => {
+        if (!email.trim()) {
+            setRegisterError('Enter the same email you used when you started registration, then tap “Complete verification”.');
+            return;
+        }
+        setContinuePendingLoading(true);
+        setRegisterError(null);
+        try {
+            const response = await matrimonialService.getPendingRegistrationSession({
+                email: email.trim(),
+                nic: nic.trim() || undefined,
+            });
+            const resultAny = response.result as Record<string, unknown> | undefined;
+            const regSid = resultAny?.registrationSessionId ?? resultAny?.RegistrationSessionId;
+            const statusCode = response.statusCode;
+            const ok =
+                (statusCode === 200 || statusCode === 1) &&
+                !!regSid &&
+                !!resultAny;
+
+            if (!ok) {
+                setRegisterError(
+                    response.message ||
+                        'No pending registration found. Check your email and National ID match your signup, or start again.',
+                );
+                return;
+            }
+
+            const resumeFn = (resultAny.firstName ?? resultAny.FirstName) as string | undefined;
+            setRegisteredFirstName(resumeFn && resumeFn.trim().length > 0 ? resumeFn.trim() : firstName);
+            setRegistrationSessionId(String(regSid));
+            setRegisteredUserId(null);
+            setShowVerification(true);
+            setCodeSent(false);
+            setVerificationMethod('');
+            setVerificationDigits(EMPTY_VERIFY_DIGITS());
+            setVerificationError(null);
+            setSendCodeError(null);
+            setVerificationResumeHint(
+                response.message ||
+                    'Continue where you left off. Choose a method to receive a code if you need a new one.',
+            );
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Could not resume registration.';
+            setRegisterError(msg);
+        } finally {
+            setContinuePendingLoading(false);
+        }
+    };
+
     const handleRegister = async () => {
         if (!validateForm()) {
             return;
@@ -736,7 +911,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             if (isSuccess) {
                 // Pending registration — verify OTP before account is created on server
                 console.log('Registration pending verification, session:', regSid);
-                setRegisteredFirstName(firstName);
+                const resumeVerification =
+                    resultAny?.resumeVerification === true || resultAny?.ResumeVerification === true;
+                const resumeFn = (resultAny?.firstName ?? resultAny?.FirstName) as string | undefined;
+                setRegisteredFirstName(
+                    resumeFn && String(resumeFn).trim().length > 0 ? String(resumeFn).trim() : firstName,
+                );
                 setRegistrationSessionId(String(regSid));
                 setRegisteredUserId(null);
                 setShowVerification(true);
@@ -746,6 +926,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 setVerificationError(null); // Reset errors
                 setSendCodeError(null); // Reset send code errors
                 setRegisterError(null);
+                if (resumeVerification && response.message) {
+                    setVerificationResumeHint(response.message);
+                } else {
+                    setVerificationResumeHint(null);
+                }
                 // IMPORTANT: Don't close modal or redirect - wait for verification
                 // The verification screen will be shown in the modal
                 // User must select a verification method - no code is sent automatically
@@ -812,6 +997,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             if (response.statusCode === 200 && response.result) {
                 // Login successful
                 console.log('Login API response:', response.result);
+                const loginParentId = parentUserIdFromLoginResult(response.result);
+                const signInExtras = mapUserFieldsFromSignInResult(response.result as unknown as Record<string, unknown>);
                 const user = {
                     id: response.result.id.toString(),
                     firstName: response.result.firstName,
@@ -826,6 +1013,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     profilePhoto: response.result.ProfilePhoto || response.result.profilePhoto || '',
                     horoscopeDocument: response.result.HoroscopeDocument || response.result.horoscopeDocument || '',
                     isVerified: response.result.status === 1,
+                    ...(loginParentId !== undefined ? { parentUserId: loginParentId } : {}),
+                    ...signInExtras,
                 };
 
                 login(user, loginRememberMe);
@@ -874,6 +1063,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotCode('');
         setForgotNewPassword('');
         setForgotConfirmPassword('');
+        setShowForgotNewPassword(false);
+        setShowForgotConfirmPassword(false);
+        setShowLoginPassword(false);
         setForgotError(null);
         setForgotSuccess(null);
         setForgotStep('entry');
@@ -1193,12 +1385,45 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setConfirmPassword('');
             setShowRegisterPassword(false);
             setShowRegisterConfirmPassword(false);
+            setShowLoginPassword(false);
+            setVerificationResumeHint(null);
         }
         onClose();
     };
 
     const handleOverlayClick = (e: MouseEvent) => {
         if (e.target === e.currentTarget) close();
+    };
+
+    const handleExpressInterest = async () => {
+        if (selectedProfile?.viewAsOthers) return;
+        const targetProfileUserId = viewerProfileUserId(selectedProfile);
+        if (!targetProfileUserId) return;
+
+        if (!user) {
+            onSwitch('login');
+            return;
+        }
+        if (user.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+
+        setExpressInterestLoading(true);
+        try {
+            const res = await matrimonialService.toggleFavorite(Number(user.id), targetProfileUserId);
+            if (res.statusCode === 200) {
+                setInteractionFavoriteIds((prev) => {
+                    const has = prev.includes(targetProfileUserId);
+                    return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
+                });
+                showToast('Interest updated successfully', 'success');
+            }
+        } catch {
+            showToast('Could not update interest. Try again.', 'error');
+        } finally {
+            setExpressInterestLoading(false);
+        }
     };
 
     const handleSendVerificationCode = async (method: string) => {
@@ -1295,6 +1520,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     setStoredToken(token, registerRememberMe);
 
                     const r = loginResponse.result;
+                    const loginParentId = parentUserIdFromLoginResult(r);
+                    const signInExtras = mapUserFieldsFromSignInResult(r as unknown as Record<string, unknown>);
                     userToLogin = {
                         id: (r.id ?? resolvedUserId ?? registeredUserId).toString(),
                         firstName: r.firstName || userToLogin.firstName,
@@ -1309,6 +1536,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         profilePhoto: r.ProfilePhoto || r.profilePhoto || userToLogin.profilePhoto,
                         horoscopeDocument: r.HoroscopeDocument || r.horoscopeDocument || userToLogin.horoscopeDocument,
                         isVerified: r.status === 1 ? true : userToLogin.isVerified,
+                        ...(loginParentId !== undefined ? { parentUserId: loginParentId } : {}),
+                        ...signInExtras,
                     };
                 }
 
@@ -1321,6 +1550,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 }
 
                 // Close the verification modal first
+                setVerificationResumeHint(null);
                 setShowVerification(false);
 
                 // Show welcome popup immediately (before closing modal to preserve state)
@@ -1375,7 +1605,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         )}
 
                         {activeModal === 'verify' || showVerification ? (
-                            <div id="verificationTab" className="tab-content active verification-screen" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            <div id="verificationTab" className="tab-content active verification-screen">
                                 <div className="verification-header">
                                     <div className="verification-icon">
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1386,6 +1616,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <p style={{ textAlign: 'center', marginBottom: '2rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                                         {!codeSent ? 'Select a verification method to receive your code' : `We've sent a 6-digit code to your ${verificationMethod.toLowerCase()}`}
                                     </p>
+                                    {verificationResumeHint && (
+                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                            {verificationResumeHint}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {!codeSent ? (
@@ -1816,21 +2051,43 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 </div>
                                                 <div className="form-group">
                                                     <label>New Password</label>
-                                                    <input
-                                                        type="password"
-                                                        value={forgotNewPassword}
-                                                        onChange={(e) => setForgotNewPassword(e.target.value)}
-                                                        placeholder="New password"
-                                                    />
+                                                    <div style={{ position: 'relative' }}>
+                                                        <input
+                                                            type={showForgotNewPassword ? 'text' : 'password'}
+                                                            value={forgotNewPassword}
+                                                            onChange={(e) => setForgotNewPassword(e.target.value)}
+                                                            placeholder="New password"
+                                                            autoComplete="new-password"
+                                                            style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                        />
+                                                        <PasswordVisibilityToggle
+                                                            passwordVisible={showForgotNewPassword}
+                                                            onToggle={() => setShowForgotNewPassword((v) => !v)}
+                                                            ariaLabelWhenHidden="Show new password"
+                                                            ariaLabelWhenVisible="Hide new password"
+                                                            style={modalPasswordToggleStyle}
+                                                        />
+                                                    </div>
                                                 </div>
                                                 <div className="form-group">
                                                     <label>Confirm Password</label>
-                                                    <input
-                                                        type="password"
-                                                        value={forgotConfirmPassword}
-                                                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                                                        placeholder="Confirm password"
-                                                    />
+                                                    <div style={{ position: 'relative' }}>
+                                                        <input
+                                                            type={showForgotConfirmPassword ? 'text' : 'password'}
+                                                            value={forgotConfirmPassword}
+                                                            onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                                                            placeholder="Confirm password"
+                                                            autoComplete="new-password"
+                                                            style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                        />
+                                                        <PasswordVisibilityToggle
+                                                            passwordVisible={showForgotConfirmPassword}
+                                                            onToggle={() => setShowForgotConfirmPassword((v) => !v)}
+                                                            ariaLabelWhenHidden="Show confirm password"
+                                                            ariaLabelWhenVisible="Hide confirm password"
+                                                            style={modalPasswordToggleStyle}
+                                                        />
+                                                    </div>
                                                 </div>
                                                 <button
                                                     className="btn btn-primary"
@@ -1874,14 +2131,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                         <div className="form-group">
                                             <label>Password</label>
-                                            <input
-                                                type="password"
-                                                placeholder="Enter your password"
-                                                value={loginPassword}
-                                                onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
-                                                style={{ borderColor: loginPasswordError ? 'red' : '' }}
-                                                autoComplete="current-password"
-                                            />
+                                            <div style={{ position: 'relative' }}>
+                                                <input
+                                                    type={showLoginPassword ? 'text' : 'password'}
+                                                    placeholder="Enter your password"
+                                                    value={loginPassword}
+                                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
+                                                    style={{ borderColor: loginPasswordError ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
+                                                    autoComplete="current-password"
+                                                />
+                                                <PasswordVisibilityToggle
+                                                    passwordVisible={showLoginPassword}
+                                                    onToggle={() => setShowLoginPassword((v) => !v)}
+                                                    style={modalPasswordToggleStyle}
+                                                />
+                                            </div>
                                             {loginPasswordError && (
                                                 <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
                                                     {loginPasswordError}
@@ -1952,7 +2216,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 )}
                             </div>
                         ) : (
-                            <div id="registerTab" className="tab-content active" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
+                            <div id="registerTab" className="tab-content active">
                                 <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Create a new account to get started</p>
 
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
@@ -2124,16 +2388,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <label htmlFor="termsLogin">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
-                                    <div style={{
-                                        color: 'red',
-                                        fontSize: '0.9rem',
-                                        marginBottom: '1rem',
-                                        padding: '0.5rem',
-                                        backgroundColor: '#ffe6e6',
-                                        borderRadius: '4px'
-                                    }}>
-                                        {registerError}
-                                    </div>
+                                    <RegisterErrorBox
+                                        message={registerError}
+                                        onContinuePending={handleContinuePendingVerification}
+                                        continueLoading={continuePendingLoading}
+                                    />
                                 )}
                                 <button
                                     className="btn btn-primary"
@@ -2141,13 +2400,26 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         width: '100%',
                                         justifyContent: 'center',
                                         opacity: (loginTermsAccepted && !isLoading) ? 1 : 0.5,
-                                        cursor: (loginTermsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
+                                        cursor: (loginTermsAccepted && !isLoading) ? 'pointer' : 'not-allowed',
                                     }}
                                     disabled={!loginTermsAccepted || isLoading}
                                     onClick={handleRegister}
                                 >
                                     {isLoading ? 'Registering...' : 'Create Free Account →'}
                                 </button>
+                                <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
+                                    Already have an account?{' '}
+                                    <a
+                                        href="#"
+                                        style={{ color: 'var(--primary)' }}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setLoginTab('login');
+                                        }}
+                                    >
+                                        Login
+                                    </a>
+                                </p>
                             </div>
                         )}
                     </div>
@@ -2189,6 +2461,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <p style={{ textAlign: 'center', marginBottom: '2rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                                         {!codeSent ? 'Select a verification method to receive your code' : `We've sent a 6-digit code to your ${verificationMethod.toLowerCase()}`}
                                     </p>
+                                    {verificationResumeHint && (
+                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                            {verificationResumeHint}
+                                        </p>
+                                    )}
                                 </div>
 
                                 {!codeSent ? (
@@ -2531,16 +2808,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <label htmlFor="terms">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
                                 </div>
                                 {registerError && (
-                                    <div style={{
-                                        color: 'red',
-                                        fontSize: '0.9rem',
-                                        marginBottom: '1rem',
-                                        padding: '0.5rem',
-                                        backgroundColor: '#ffe6e6',
-                                        borderRadius: '4px'
-                                    }}>
-                                        {registerError}
-                                    </div>
+                                    <RegisterErrorBox
+                                        message={registerError}
+                                        onContinuePending={handleContinuePendingVerification}
+                                        continueLoading={continuePendingLoading}
+                                    />
                                 )}
                                 <button
                                     className="btn btn-primary"
@@ -2555,18 +2827,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 >
                                     {isLoading ? 'Registering...' : 'Create Free Account →'}
                                 </button>
-                                {registerError && (
-                                    <div style={{
-                                        color: 'red',
-                                        fontSize: '0.9rem',
-                                        marginTop: '1rem',
-                                        padding: '0.5rem',
-                                        backgroundColor: '#ffe6e6',
-                                        borderRadius: '4px'
-                                    }}>
-                                        {registerError}
-                                    </div>
-                                )}
                                 <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                                     Already have an account? <a href="#" style={{ color: 'var(--primary)' }} onClick={(e) => { e.preventDefault(); onSwitch('login'); }}>Login</a>
                                 </p>
@@ -2581,71 +2841,162 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
-                        <h2>Choose Subscription Plan</h2>
-                        <p>Both plans now include the same full feature set</p>
+                        <h2>{user?.accountType === 'Matchmaker' ? 'Matchmaker Plans' : 'Choose Subscription Plan'}</h2>
+                        <p>{user?.accountType === 'Matchmaker'
+                            ? 'Gold and Diamond unlock contacts, messaging, and client profiles. Free can browse summaries only.'
+                            : 'Both plans now include the same full feature set'}</p>
                     </div>
                     <div className="modal-body">
-                        <div className="subscription-comparison">
-                            <div className={`sub-option ${subscriptionOption === 'Free' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('Free')}>
-                                <h4>Free</h4>
-                                <div className="price">LKR 0<span>/mo</span></div>
-                                <p>10 profile views/day</p>
-                            </div>
-                            <div className={`sub-option ${subscriptionOption === 'Premium' ? 'selected recommended' : ''}`} onClick={() => setSubscriptionOption('Premium')}>
-                                <h4>Premium</h4>
-                                <div className="price">LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}<span>/mo</span></div>
-                                <p>Unlimited access + chat</p>
-                            </div>
-                        </div>
+                        {user?.accountType === 'Matchmaker' ? (
+                            <>
+                                <div className="subscription-comparison">
+                                    <div className="sub-option selected recommended">
+                                        <h4>Free</h4>
+                                        <div className="price">LKR 0</div>
+                                        <p>Browse listings &amp; basics only</p>
+                                        <p style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.35rem', lineHeight: 1.4 }}>
+                                            No contact info, messaging, or client profiles.
+                                        </p>
+                                    </div>
+                                    <div
+                                        className={`sub-option ${matchmakerCheckoutPick === 'gold' ? 'selected recommended' : ''}`}
+                                        onClick={() => setMatchmakerCheckoutPick('gold')}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') setMatchmakerCheckoutPick('gold');
+                                        }}
+                                    >
+                                        <h4>Gold</h4>
+                                        <div className="price">LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')}<span>/yr</span></div>
+                                        <p>50 full profiles / day</p>
+                                        <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>Up to 5 client profiles</p>
+                                    </div>
+                                    <div
+                                        className={`sub-option ${matchmakerCheckoutPick === 'diamond' ? 'selected recommended' : ''}`}
+                                        onClick={() => setMatchmakerCheckoutPick('diamond')}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') setMatchmakerCheckoutPick('diamond');
+                                        }}
+                                    >
+                                        <h4>Diamond</h4>
+                                        <div className="price">LKR {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}<span>/yr</span></div>
+                                        <p>Unlimited full profiles</p>
+                                        <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>Up to 10 client profiles</p>
+                                    </div>
+                                </div>
+                                <div className="features-unlocked">
+                                    <h4>{matchmakerCheckoutPick === 'gold' ? 'Gold includes' : 'Diamond includes'}</h4>
+                                    <div className="unlock-grid">
+                                        <div className="unlock-item"><span>✓</span> Full profile &amp; family details</div>
+                                        <div className="unlock-item"><span>✓</span> Contact numbers &amp; messaging</div>
+                                        <div className="unlock-item"><span>✓</span> Add client profiles (plan limit)</div>
+                                        <div className="unlock-item"><span>✓</span> {matchmakerCheckoutPick === 'gold' ? '50 detailed views per day' : 'Unlimited detailed views'}</div>
+                                    </div>
+                                </div>
+                                <div style={{ marginTop: '1.5rem' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        style={{ width: '100%', justifyContent: 'center', padding: '0.85rem', marginBottom: '0.65rem' }}
+                                        onClick={() => {
+                                            onClose();
+                                            router.push('/search');
+                                        }}
+                                    >
+                                        Continue on Free plan
+                                    </button>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
+                                        onClick={() => {
+                                            onClose();
+                                            const plan =
+                                                matchmakerCheckoutPick === 'diamond'
+                                                    ? CHECKOUT_PLAN_MATCHMAKER_DIAMOND
+                                                    : CHECKOUT_PLAN_MATCHMAKER_GOLD;
+                                            const amt =
+                                                matchmakerCheckoutPick === 'diamond'
+                                                    ? MATCHMAKER_DIAMOND_LKR
+                                                    : MATCHMAKER_GOLD_LKR;
+                                            router.push(`/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amt}`);
+                                        }}
+                                    >
+                                        Continue to Payment
+                                    </button>
+                                    <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                                        🔒 Secure payment • Matches bank transfer amounts LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')} /{' '}
+                                        {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}
+                                    </p>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="subscription-comparison">
+                                    <div className={`sub-option ${subscriptionOption === 'Free' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('Free')}>
+                                        <h4>Free</h4>
+                                        <div className="price">LKR 0<span>/mo</span></div>
+                                        <p>10 profile views/day</p>
+                                    </div>
+                                    <div className={`sub-option ${subscriptionOption === 'Premium' ? 'selected recommended' : ''}`} onClick={() => setSubscriptionOption('Premium')}>
+                                        <h4>Premium</h4>
+                                        <div className="price">LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}<span>/mo</span></div>
+                                        <p>Unlimited access + chat</p>
+                                    </div>
+                                </div>
 
-                        <div className="features-unlocked">
-                            <h4>{subscriptionOption === 'Free' ? '📋 Free Plan Includes' : '🔓 Premium Unlocks'}</h4>
-                            <div className="unlock-grid">
-                                {subscriptionOption === 'Free' ? (
-                                    <>
-                                        <div className="unlock-item"><span>✓</span> Create Profile</div>
-                                        <div className="unlock-item"><span>✓</span> Add Photos</div>
-                                        <div className="unlock-item"><span>✓</span> Search Profiles</div>
-                                        <div className="unlock-item"><span>✓</span> Send Interest</div>
-                                        <div className="unlock-item"><span>✓</span> View 10 Profiles / Day</div>
-                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> View Contact Info</div>
-                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Direct Chat</div>
-                                        <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Unlimited Profile Views</div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div className="unlock-item"><span>✓</span> Unlimited Profile Views</div>
-                                        <div className="unlock-item"><span>✓</span> View Contact Info</div>
-                                        <div className="unlock-item"><span>✓</span> Direct Chat</div>
-                                        <div className="unlock-item"><span>✓</span> Create Profile</div>
-                                        <div className="unlock-item"><span>✓</span> Add Photos</div>
-                                        <div className="unlock-item"><span>✓</span> Search Profiles</div>
-                                        <div className="unlock-item"><span>✓</span> Send Interest</div>
-                                        <div className="unlock-item"><span>✓</span> Priority Support</div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
+                                <div className="features-unlocked">
+                                    <h4>{subscriptionOption === 'Free' ? '📋 Free Plan Includes' : '🔓 Premium Unlocks'}</h4>
+                                    <div className="unlock-grid">
+                                        {subscriptionOption === 'Free' ? (
+                                            <>
+                                                <div className="unlock-item"><span>✓</span> Create Profile</div>
+                                                <div className="unlock-item"><span>✓</span> Add Photos</div>
+                                                <div className="unlock-item"><span>✓</span> Search Profiles</div>
+                                                <div className="unlock-item"><span>✓</span> Send Interest</div>
+                                                <div className="unlock-item"><span>✓</span> View 10 Profiles / Day</div>
+                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> View Contact Info</div>
+                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Direct Chat</div>
+                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Unlimited Profile Views</div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="unlock-item"><span>✓</span> Unlimited Profile Views</div>
+                                                <div className="unlock-item"><span>✓</span> View Contact Info</div>
+                                                <div className="unlock-item"><span>✓</span> Direct Chat</div>
+                                                <div className="unlock-item"><span>✓</span> Create Profile</div>
+                                                <div className="unlock-item"><span>✓</span> Add Photos</div>
+                                                <div className="unlock-item"><span>✓</span> Search Profiles</div>
+                                                <div className="unlock-item"><span>✓</span> Send Interest</div>
+                                                <div className="unlock-item"><span>✓</span> Priority Support</div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
 
-                        <div style={{ marginTop: '1.5rem' }}>
-                            <button
-                                className="btn btn-primary"
-                                style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
-                                onClick={() => {
-                                    onClose();
-                                    if (subscriptionOption === 'Free') {
-                                        router.push('/search');
-                                        return;
-                                    }
-                                    router.push(`/subscription/checkout?plan=premium&amount=${PREMIUM_SUBSCRIPTION_LKR}`);
-                                }}
-                            >
-                                {subscriptionOption === 'Free' ? 'Continue with Free Plan' : 'Continue to Payment'}
-                            </button>
-                            <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
-                                🔒 Secure payment • Cancel anytime
-                            </p>
-                        </div>
+                                <div style={{ marginTop: '1.5rem' }}>
+                                    <button
+                                        className="btn btn-primary"
+                                        style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
+                                        onClick={() => {
+                                            onClose();
+                                            if (subscriptionOption === 'Free') {
+                                                router.push('/search');
+                                                return;
+                                            }
+                                            router.push(`/subscription/checkout?plan=${CHECKOUT_PLAN_PREMIUM_SELF}&amount=${PREMIUM_SUBSCRIPTION_LKR}`);
+                                        }}
+                                    >
+                                        {subscriptionOption === 'Free' ? 'Continue with Free Plan' : 'Continue to Payment'}
+                                    </button>
+                                    <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                                        🔒 Secure payment • Cancel anytime
+                                    </p>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -2657,6 +3008,59 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
                     {selectedProfile ? (
                         <div className="profile-detail-content">
+                            {selectedProfile.viewAsOthers && (
+                                <div
+                                    role="status"
+                                    style={{
+                                        marginBottom: '1rem',
+                                        padding: '0.75rem 1rem',
+                                        borderRadius: '10px',
+                                        background: '#eff6ff',
+                                        border: '1px solid #bfdbfe',
+                                        color: '#1e3a8a',
+                                        fontSize: '0.9rem',
+                                        lineHeight: 1.45,
+                                    }}
+                                >
+                                    <strong>Public preview</strong>
+                                    {' — '}
+                                    This is how your profile looks to other members: contact details follow the same rules as for a
+                                    signed-in visitor without an active subscription (your edit screens are unchanged).
+                                </div>
+                            )}
+                            {(selectedProfile.usesMatchmakerPeekMode || selectedProfile.UsesMatchmakerPeekMode) && (
+                                <div
+                                    role="status"
+                                    style={{
+                                        marginBottom: '1rem',
+                                        padding: '0.75rem 1rem',
+                                        borderRadius: '10px',
+                                        background: '#fef9c3',
+                                        border: '1px solid #fde047',
+                                        color: '#713f12',
+                                        fontSize: '0.9rem',
+                                        lineHeight: 1.45,
+                                    }}
+                                >
+                                    <strong>Basic matchmaker preview</strong>
+                                    {' — '}
+                                    You are seeing limited profile details without contact information. Upgrade to Matchmaker Gold or
+                                    Diamond for full profiles, messaging, and client accounts.
+                                    {typeof selectedProfile.remainingMatchmakerFullProfileViews === 'number' ||
+                                    typeof selectedProfile.RemainingMatchmakerFullProfileViews === 'number'
+                                        ? (
+                                            <>
+                                                {' '}
+                                                Full-detail views remaining today:{' '}
+                                                <strong>
+                                                    {selectedProfile.remainingMatchmakerFullProfileViews ??
+                                                        selectedProfile.RemainingMatchmakerFullProfileViews}
+                                                </strong>.
+                                            </>
+                                        )
+                                        : null}
+                                </div>
+                            )}
                             {/* Profile Header */}
                             <div className="profile-detail-header">
                                 <div
@@ -2700,27 +3104,69 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <span>{selectedProfile.cityOfResidence || 'Location Not Specified'}</span>
                                     </div>
                                     <div className="profile-actions-row">
-                                        {user && (selectedProfile.userId ? String(user.id) === String(selectedProfile.userId) : false) ? (
+                                        {user &&
+                                        (selectedProfile.userId ? String(user.id) === String(selectedProfile.userId) : false) &&
+                                        !selectedProfile.viewAsOthers ? (
                                             <div style={{ color: 'var(--primary)', fontWeight: 500, padding: '0.75rem', backgroundColor: '#fdf8f3', borderRadius: '8px', textAlign: 'center', width: '100%', border: '1px solid var(--primary-light)' }}>
                                                 ✨ This is your profile
                                             </div>
                                         ) : (
                                             <>
-                                                <button className="btn btn-primary" onClick={() => onSwitch('subscription')}><HeartIcon filled size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Express Interest</button>
-                                                <button className="btn btn-outline" onClick={() => {
-                                                    if (!user) {
-                                                        onSwitch('login');
-                                                    } else {
-                                                        const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
-                                                        if (!canMessage) {
-                                                            setProfileAccessMessage('Messaging needs an active subscription.');
-                                                            return;
+                                                {selectedProfile.viewAsOthers && (
+                                                    <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: '0 0 0.5rem 0', width: '100%' }}>
+                                                        Preview only — visitor actions are disabled here.
+                                                    </p>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary"
+                                                    disabled={!!selectedProfile.viewAsOthers || expressInterestLoading}
+                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    onClick={() => {
+                                                        void handleExpressInterest();
+                                                    }}
+                                                >
+                                                    <HeartIcon filled={isInterestExpressed} size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} />{' '}
+                                                    {expressInterestLoading
+                                                        ? 'Please wait…'
+                                                        : isInterestExpressed
+                                                          ? 'Interest expressed'
+                                                          : 'Express Interest'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline"
+                                                    disabled={!!selectedProfile.viewAsOthers}
+                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    onClick={() => {
+                                                        if (selectedProfile.viewAsOthers) return;
+                                                        if (!user) {
+                                                            onSwitch('login');
+                                                        } else {
+                                                            const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
+                                                            if (!canMessage) {
+                                                                setProfileAccessMessage('Messaging needs an active subscription.');
+                                                                return;
+                                                            }
+                                                            onClose();
+                                                            router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
                                                         }
-                                                        onClose();
-                                                        router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
-                                                    }
-                                                }}><span>💬</span> Message</button>
-                                                <button className="btn btn-outline" onClick={() => onSwitch('login')}><BookmarkIcon size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Shortlist</button>
+                                                    }}
+                                                >
+                                                    <span>💬</span> Message
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-outline"
+                                                    disabled={!!selectedProfile.viewAsOthers}
+                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    onClick={() => {
+                                                        if (selectedProfile.viewAsOthers) return;
+                                                        onSwitch('login');
+                                                    }}
+                                                >
+                                                    <BookmarkIcon size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Shortlist
+                                                </button>
                                             </>
                                         )}
                                     </div>

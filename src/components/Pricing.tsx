@@ -4,8 +4,16 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
-import { PREMIUM_SUBSCRIPTION_LKR } from '../constants/subscription';
+import {
+    PREMIUM_SUBSCRIPTION_LKR,
+    MATCHMAKER_GOLD_LKR,
+    MATCHMAKER_DIAMOND_LKR,
+    CHECKOUT_PLAN_PREMIUM_SELF,
+    CHECKOUT_PLAN_MATCHMAKER_GOLD,
+    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
+} from '../constants/subscription';
 import { matrimonialService } from '../services/matrimonialService';
+import { useAuth } from '../context/AuthContext';
 
 interface PricingProps {
     onOpenSubscription: () => void;
@@ -36,7 +44,9 @@ function normalizePackages(raw: unknown): PublicPkg[] {
 export default function Pricing({ onOpenSubscription }: PricingProps) {
     const { t } = useLanguage();
     const router = useRouter();
+    const { user } = useAuth();
     const [paidPackages, setPaidPackages] = useState<PublicPkg[]>([]);
+    const isLoggedInMatchmaker = user?.accountType === 'Matchmaker';
 
     useEffect(() => {
         let cancelled = false;
@@ -54,8 +64,8 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
         };
     }, []);
 
-    const goCheckout = (amount: number) => {
-        router.push(`/subscription/checkout?plan=premium&amount=${amount}`);
+    const goCheckout = (plan: string, amount: number) => {
+        router.push(`/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amount}`);
     };
 
     const renderFeatureList = (items: { label: string; muted?: boolean }[]) => (
@@ -94,8 +104,32 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
         { label: 'Priority Support' },
     ];
 
-    const gridClass =
-        'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8';
+    const matchmakerFreeFeatures = [
+        { label: 'Search & browse listings' },
+        { label: 'See basic profile fields only' },
+        { label: 'View Contact Info', muted: true },
+        { label: 'Messaging', muted: true },
+        { label: 'Full family / partner sections', muted: true },
+        { label: 'Add client profiles', muted: true },
+    ];
+
+    const matchmakerGoldFeatures = [
+        { label: '50 full-detail profile views per day' },
+        { label: 'View contacts & messaging' },
+        { label: 'Up to 5 client profiles' },
+        { label: 'Search & favourites' },
+    ];
+
+    const matchmakerDiamondFeatures = [
+        { label: 'Unlimited full-detail views' },
+        { label: 'View contacts & messaging' },
+        { label: 'Up to 10 client profiles' },
+        { label: 'Search & favourites' },
+    ];
+
+    const gridClass = isLoggedInMatchmaker
+        ? 'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8'
+        : 'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8';
 
     return (
         <section className="relative py-24 px-4 overflow-hidden" id="pricing">
@@ -124,48 +158,109 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                 </div>
 
                 <div className={gridClass}>
-                    {/* Free — always */}
-                    <div className="rounded-3xl p-8 bg-white/70 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/80 transition-all duration-300">
-                        <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">{t('free')}</h3>
-                        <div className="mb-6">
-                            <span className="text-4xl font-bold text-text-dark">LKR 0</span>
-                            <span className="text-text-light">/mo</span>
-                        </div>
-                        {renderFeatureList(freeFeatures)}
-                        <button
-                            className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                            onClick={onOpenSubscription}
-                        >
-                            {t('getStarted')}
-                        </button>
-                    </div>
+                    {/* Logged-in Matchmaker: tier cards only (Gold / Diamond + Free). */}
+                    {isLoggedInMatchmaker ? (
+                        <>
+                            <div className="rounded-3xl p-8 bg-white/70 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/80 transition-all duration-300">
+                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker · Free</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-bold text-text-dark">LKR 0</span>
+                                </div>
+                                {renderFeatureList(matchmakerFreeFeatures)}
+                                <button
+                                    type="button"
+                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                    onClick={onOpenSubscription}
+                                >
+                                    View upgrade options
+                                </button>
+                            </div>
 
-                    {/* Standard Premium — always shown alongside admin packages */}
-                    <div
-                        key="premium-standard"
-                        className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 border-primary border-white/50 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative"
-                    >
-                        <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
-                            {t('mostPopular')}
-                        </span>
-                        <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Premium</h3>
-                        <div className="mb-6">
-                            <span className="text-4xl font-bold text-text-dark">
-                                LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}
-                            </span>
-                            <span className="text-text-light">/mo</span>
-                        </div>
-                        {renderFeatureList(fallbackPremiumFeatures)}
-                        <button
-                            className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                            onClick={() => goCheckout(PREMIUM_SUBSCRIPTION_LKR)}
-                        >
-                            {t('upgradeNow')}
-                        </button>
-                    </div>
+                            <div className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 border-white/40 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative">
+                                <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
+                                    {t('mostPopular')}
+                                </span>
+                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker Gold</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-bold text-text-dark">
+                                        LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')}
+                                    </span>
+                                    <span className="text-text-light"> /yr</span>
+                                </div>
+                                {renderFeatureList(matchmakerGoldFeatures)}
+                                <button
+                                    type="button"
+                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
+                                    onClick={() => goCheckout(CHECKOUT_PLAN_MATCHMAKER_GOLD, MATCHMAKER_GOLD_LKR)}
+                                >
+                                    {t('upgradeNow')}
+                                </button>
+                            </div>
 
-                    {/* Extra paid tiers from admin (shown after Free + standard Premium) */}
-                    {paidPackages.map((pkg) => {
+                            <div className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300">
+                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker Diamond</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-bold text-text-dark">
+                                        LKR {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}
+                                    </span>
+                                    <span className="text-text-light"> /yr</span>
+                                </div>
+                                {renderFeatureList(matchmakerDiamondFeatures)}
+                                <button
+                                    type="button"
+                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
+                                    onClick={() => goCheckout(CHECKOUT_PLAN_MATCHMAKER_DIAMOND, MATCHMAKER_DIAMOND_LKR)}
+                                >
+                                    {t('upgradeNow')}
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* Free — Self / visitors */}
+                            <div className="rounded-3xl p-8 bg-white/70 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/80 transition-all duration-300">
+                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">{t('free')}</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-bold text-text-dark">LKR 0</span>
+                                    <span className="text-text-light">/mo</span>
+                                </div>
+                                {renderFeatureList(freeFeatures)}
+                                <button
+                                    type="button"
+                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                    onClick={onOpenSubscription}
+                                >
+                                    {t('getStarted')}
+                                </button>
+                            </div>
+
+                            {/* Standard Premium — Self seekers */}
+                            <div
+                                key="premium-standard"
+                                className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 border-primary border-white/50 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative"
+                            >
+                                <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
+                                    {t('mostPopular')}
+                                </span>
+                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Premium</h3>
+                                <div className="mb-6">
+                                    <span className="text-4xl font-bold text-text-dark">
+                                        LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}
+                                    </span>
+                                    <span className="text-text-light">/mo</span>
+                                </div>
+                                {renderFeatureList(fallbackPremiumFeatures)}
+                                <button
+                                    type="button"
+                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
+                                    onClick={() => goCheckout(CHECKOUT_PLAN_PREMIUM_SELF, PREMIUM_SUBSCRIPTION_LKR)}
+                                >
+                                    {t('upgradeNow')}
+                                </button>
+                            </div>
+
+                            {/* Extra paid tiers from admin */}
+                            {paidPackages.map((pkg) => {
                         const id = pkg.id ?? pkg.Id ?? 0;
                         const name = pkg.name ?? pkg.Name ?? 'Package';
                         const desc = pkg.description ?? pkg.Description;
@@ -214,13 +309,15 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                                 )}
                                 <button
                                     className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                    onClick={() => goCheckout(price)}
+                                    onClick={() => goCheckout(CHECKOUT_PLAN_PREMIUM_SELF, price)}
                                 >
                                     {t('upgradeNow')}
                                 </button>
                             </div>
                         );
                     })}
+                        </>
+                    )}
                 </div>
             </div>
         </section>

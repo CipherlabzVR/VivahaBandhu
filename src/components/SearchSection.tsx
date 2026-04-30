@@ -6,6 +6,7 @@ import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
@@ -295,7 +296,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 <aside className="filters-sidebar" style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
                     <div className="filters-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                         <h3 style={{ margin: 0 }}>Filters</h3>
-                        <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: '#F97316', cursor: 'pointer' }}>Clear Filters</button>
+                        <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer' }}>Clear Filters</button>
                     </div>
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
@@ -339,13 +340,10 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Religion</label>
                         <select name="religion" value={filters.religion} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
-                            <option value="">Any</option>
-                            <option value="Buddhism">Buddhism</option>
-                            <option value="Hinduism">Hinduism</option>
-                            <option value="Islam">Islam</option>
-                            <option value="Christianity">Christianity</option>
-                            <option value="Catholic">Catholic</option>
-                            <option value="Other">Other</option>
+                            <option value="">Select Religion</option>
+                            {MATRIMONIAL_RELIGION_OPTIONS.map((r) => (
+                                <option key={r} value={r}>{r}</option>
+                            ))}
                         </select>
                     </div>
 
@@ -442,7 +440,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="results-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
                         <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? '#F97316' : '#333' }}>Preferred Search</span>
+                            <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? 'var(--primary)' : '#333' }}>Preferred Search</span>
                             <label className="toggle-switch" style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
                                 <input 
                                     type="checkbox" 
@@ -457,7 +455,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     }}
                                     style={{ opacity: 0, width: 0, height: 0 }} 
                                 />
-                                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: preferredSearch ? '#F97316' : '#ccc', borderRadius: '24px', transition: 'background-color 0.3s' }}>
+                                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: preferredSearch ? 'var(--primary)' : '#ccc', borderRadius: '24px', transition: 'background-color 0.3s' }}>
                                     <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: preferredSearch ? '22px' : '3px', bottom: '3px', backgroundColor: 'white', borderRadius: '50%', transition: 'left 0.3s' }}></span>
                                 </span>
                             </label>
@@ -508,7 +506,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     }
                                     onOpenProfileDetail(profile);
                                 }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={cardStyle}>
-                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: '#F97316', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
                                     {(isManaged || isPremium) && (
                                         <span style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                                             {isPremium && <PremiumBadge variant="compact" />}
@@ -538,7 +536,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                             </div>
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '15px', borderTop: '1px solid #eee' }}>
-                                            <span style={{ color: '#F97316', fontWeight: 600 }}>
+                                            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
                                                 {preferredSearch && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
                                             </span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
@@ -610,7 +608,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         const pageStyle = (isActive: boolean, isDisabled?: boolean): React.CSSProperties => ({
                             minWidth: '40px', height: '40px', borderRadius: '8px',
                             border: isActive ? 'none' : '1px solid #eee',
-                            background: isActive ? '#F97316' : 'white',
+                            background: isActive ? 'var(--primary)' : 'white',
                             color: isDisabled ? '#ccc' : isActive ? 'white' : '#333',
                             cursor: isDisabled ? 'not-allowed' : 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -654,7 +652,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             </div>
 
             {actionToast && (
-                <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 2000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
                     {actionToast}
                 </div>
             )}

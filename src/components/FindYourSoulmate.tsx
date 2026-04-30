@@ -44,7 +44,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                         <path
                             ref={pathRef}
                             d={HEART_PATH}
-                            stroke="#F97316"
+                            stroke="#ffa20d"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -58,7 +58,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#F97316"
+                            stroke="#ffa20d"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -72,7 +72,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#F97316"
+                            stroke="#ffa20d"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"

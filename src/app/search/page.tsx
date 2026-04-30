@@ -1,20 +1,31 @@
 'use client';
 
 import { Suspense, useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
 import { religionFilterMatches } from '../../utils/religionMatch';
+import { useAuth } from '../../context/AuthContext';
+import { isManagedSubAccount } from '../../utils/managedSubAccount';
 
 function SearchContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
+    const { user, loading } = useAuth();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (loading) return;
+        if (user && isManagedSubAccount(user)) {
+            router.replace('/profile');
+        }
+    }, [loading, user, router]);
 
     useEffect(() => {
         const fetchAndFilterProfiles = async () => {
@@ -29,8 +40,39 @@ function SearchContent() {
                     const ageTo = searchParams.get('ageTo');
                     const religion = searchParams.get('religion');
                     const district = searchParams.get('district');
+                    const qRaw = searchParams.get('q');
+                    const q = (qRaw ?? '').trim().toLowerCase();
 
                     const filtered = allProfiles.filter((profile: any) => {
+                        if (user?.id != null) {
+                            const pid = Number(profile.userId ?? profile.UserId ?? 0);
+                            if (pid === Number(user.id)) return false;
+                        }
+                        if (q) {
+                            const idStr =
+                                profile.id != null
+                                    ? String(profile.id)
+                                    : profile.Id != null
+                                        ? String(profile.Id)
+                                        : '';
+                            const blob = [
+                                profile.firstName,
+                                profile.lastName,
+                                profile.occupation,
+                                profile.cityOfResidence,
+                                idStr,
+                                profile.matrimonialProfileId != null ? String(profile.matrimonialProfileId) : '',
+                                profile.displayId,
+                                profile.profileCode,
+                            ]
+                                .filter(Boolean)
+                                .join(' ')
+                                .toLowerCase();
+                            if (!blob.includes(q)) {
+                                const parts = q.split(/\s+/).filter(Boolean);
+                                if (!parts.length || !parts.every((w: string) => blob.includes(w))) return false;
+                            }
+                        }
                         if (gender && gender !== 'Any') {
                             const targetGender = gender === 'Bride' ? 'Female' : 'Male';
                             if (profile.gender !== targetGender) return false;
@@ -50,7 +92,7 @@ function SearchContent() {
             }
         };
         fetchAndFilterProfiles();
-    }, [searchParams]);
+    }, [searchParams, user?.id]);
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
