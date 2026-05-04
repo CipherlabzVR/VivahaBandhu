@@ -291,8 +291,12 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     return (
         <section className="search-section" id="search" style={{ padding: '40px 20px', backgroundColor: '#f9f9f9' }}>
-            <div className="search-container">
-                {/* Filters Sidebar */}
+            <div
+                className="search-container"
+                style={preferredSearch ? { gridTemplateColumns: '1fr' } : undefined}
+            >
+                {/* Filters Sidebar — hidden while Preferred Search uses partner-preference matching */}
+                {!preferredSearch && (
                 <aside className="filters-sidebar" style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
                     <div className="filters-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                         <h3 style={{ margin: 0 }}>Filters</h3>
@@ -301,8 +305,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Sort By</label>
-                        <select name="sortBy" value={preferredSearch ? 'best_match' : filters.sortBy} onChange={handleFilterChange} disabled={preferredSearch} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee', opacity: preferredSearch ? 0.6 : 1 }}>
-                            {preferredSearch && <option value="best_match">Best Match</option>}
+                        <select name="sortBy" value={filters.sortBy} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option value="latest">Latest First</option>
                             <option value="oldest">Oldest First</option>
                             <option value="age_asc">Age: Low to High</option>
@@ -363,6 +366,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         <button className="btn btn-primary" style={{ backgroundColor: '#d4af37', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '25px', cursor: 'pointer', fontWeight: 600 }}>Save</button>
                     </div>
                 </aside>
+                )}
 
                 {/* Search Results */}
                 <div className="search-results">
@@ -433,7 +437,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                         {showSuggestions && searchInput.trim() && suggestions.length === 0 && (
                             <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, padding: '12px 14px', background: 'white', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', color: '#6b7280', fontSize: '0.9rem' }}>
-                                No matching profiles in current results. Try adjusting your filters.
+                                {preferredSearch
+                                    ? 'No matching profiles in current results. Try a different keyword or turn off Preferred Search.'
+                                    : 'No matching profiles in current results. Try adjusting your filters.'}
                             </div>
                         )}
                     </div>

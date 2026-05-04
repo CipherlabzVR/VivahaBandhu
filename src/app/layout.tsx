@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Playfair_Display, Source_Sans_3, Pacifico } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
 import { LanguageProvider } from '../context/LanguageContext';
+import { MatrimonialNotificationsProvider } from '../context/MatrimonialNotificationsContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
 import MessageFloatingButton from '../components/MessageFloatingButton';
 import GlobalToast from '../components/GlobalToast';
@@ -52,14 +53,16 @@ export default function RootLayout({
       </head>
       <body className={`${playfair.variable} ${sourceSans.variable} ${pacifico.variable}`} suppressHydrationWarning>
         <AuthProvider>
-          <LanguageProvider>
-            <LoadingScreenWrapper>
-              {children}
-              <MessageFloatingButton />
-              <PremiumActivationListener />
-              <GlobalToast />
-            </LoadingScreenWrapper>
-          </LanguageProvider>
+          <MatrimonialNotificationsProvider>
+            <LanguageProvider>
+              <LoadingScreenWrapper>
+                {children}
+                <MessageFloatingButton />
+                <PremiumActivationListener />
+                <GlobalToast />
+              </LoadingScreenWrapper>
+            </LanguageProvider>
+          </MatrimonialNotificationsProvider>
         </AuthProvider>
       </body>
     </html>
