@@ -1992,7 +1992,7 @@ export default function ProfileCompletionForm({
                             </div>
 
                             <div className="form-group">
-                                <label>Main Profile Photo*</label>
+                                <label>Main Profile Photo</label>
                                 <input
                                     ref={profilePhotoFileInputRef}
                                     type="file"

@@ -17,6 +17,11 @@ import { isMatchmakerPaidTier } from '../../constants/subscription';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
+import {
+    isInterestBackNotification,
+    referenceIdFromNotification,
+} from '../../utils/matrimonialInterestNotifications';
+import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
@@ -37,6 +42,7 @@ function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | unde
 
 function ProfilePageContent() {
     const { user, loading, updateUser, logout } = useAuth();
+    const { liveInterestRevision } = useMatrimonialNotifications();
     const { language, setLanguage } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -305,6 +311,8 @@ function ProfilePageContent() {
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
     const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
     const [interestProfiles, setInterestProfiles] = useState<any[]>([]);
+    /** Members who expressed interest in the current user (from interest notifications). */
+    const [incomingInterestProfiles, setIncomingInterestProfiles] = useState<any[]>([]);
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
     const [loadingSavedProfiles, setLoadingSavedProfiles] = useState(false);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
@@ -350,6 +358,7 @@ function ProfilePageContent() {
             if (!user?.id) {
                 setSavedProfiles([]);
                 setInterestProfiles([]);
+                setIncomingInterestProfiles([]);
                 setRecentActivity([]);
                 return;
             }
@@ -470,6 +479,73 @@ function ProfilePageContent() {
                 }
                 setInterestProfiles(interestList);
 
+                const rawNotifsEarly = notifRes?.result ?? notifRes?.Result ?? [];
+                const notifListEarly = Array.isArray(rawNotifsEarly) ? rawNotifsEarly : [];
+                const incomingRowsMeta: { refId: number; atLabel: string; isInterestBack: boolean }[] = [];
+                const incomingSeenIds = new Set<number>();
+                for (const n of notifListEarly) {
+                    const refId = referenceIdFromNotification(n as Record<string, unknown>);
+                    if (!refId || incomingSeenIds.has(refId)) continue;
+                    incomingSeenIds.add(refId);
+                    const at = (n as any).createdOn ?? (n as any).CreatedOn;
+                    incomingRowsMeta.push({
+                        refId,
+                        atLabel: formatListTime(at),
+                        isInterestBack: isInterestBackNotification(n as Record<string, unknown>),
+                    });
+                }
+                const missingIncomingIds = incomingRowsMeta.map((m) => m.refId).filter((id) => !byUserId.has(id));
+                if (missingIncomingIds.length > 0) {
+                    const extraIncoming = await Promise.all(
+                        missingIncomingIds.map(async (profileId) => {
+                            try {
+                                const profileRes = await matrimonialService.getProfile(profileId);
+                                if (profileRes?.statusCode === 200 && profileRes?.result) {
+                                    const p = profileRes.result;
+                                    const resolvedUserId = p.UserId || p.userId || profileId;
+                                    return {
+                                        requestedId: profileId,
+                                        id: resolvedUserId,
+                                        userId: resolvedUserId,
+                                        firstName: p.FirstName || p.firstName || 'User',
+                                        lastName: p.LastName || p.lastName || '',
+                                        age: p.Age || p.age || 0,
+                                        cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
+                                        profilePhoto:
+                                            p.ProfilePhoto ||
+                                            p.profilePhoto ||
+                                            p.ProfilePhotoFromProfile ||
+                                            p.profilePhotoFromProfile ||
+                                            '',
+                                    };
+                                }
+                            } catch {
+                                // ignore single profile failure
+                            }
+                            return null;
+                        })
+                    );
+                    for (const pr of extraIncoming.filter(Boolean) as any[]) {
+                        if (pr?.userId != null) byUserId.set(Number(pr.userId), pr);
+                        if (pr?.requestedId != null) {
+                            const rid = Number(pr.requestedId);
+                            byRequestedId.set(rid, pr);
+                            byUserId.set(rid, pr);
+                        }
+                    }
+                }
+                const incomingInterestList: any[] = [];
+                for (const row of incomingRowsMeta) {
+                    const pr = byUserId.get(row.refId) ?? byRequestedId.get(row.refId);
+                    if (!pr) continue;
+                    incomingInterestList.push({
+                        ...pr,
+                        interestedAtLabel: row.atLabel,
+                        isInterestBack: row.isInterestBack,
+                    });
+                }
+                setIncomingInterestProfiles(incomingInterestList);
+
                 const formatActivityWhen = (v: unknown): string => {
                     if (v == null || v === '') return '';
                     const d = new Date(v as string);
@@ -516,8 +592,7 @@ function ProfilePageContent() {
                     }
                 }
 
-                const rawNotifs = notifRes?.result ?? notifRes?.Result ?? [];
-                const notifList = Array.isArray(rawNotifs) ? rawNotifs : [];
+                const notifList = notifListEarly;
                 for (const n of notifList) {
                     const at = n.createdOn ?? n.CreatedOn;
                     const refId = n.referenceId ?? n.ReferenceId;
@@ -539,6 +614,7 @@ function ProfilePageContent() {
                 console.error('Failed to fetch saved profiles', error);
                 setSavedProfiles([]);
                 setInterestProfiles([]);
+                setIncomingInterestProfiles([]);
                 setRecentActivity([]);
             } finally {
                 setLoadingSavedProfiles(false);
@@ -546,7 +622,7 @@ function ProfilePageContent() {
         };
 
         fetchSavedAndActivity();
-    }, [user?.id]);
+    }, [user?.id, liveInterestRevision]);
 
     const fetchSubAccounts = async () => {
         try {
@@ -1447,10 +1523,6 @@ function ProfilePageContent() {
                             <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>{user.firstName} {user.lastName}</div>
                         </div>
                         <div className="detail-group">
-                            <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Account ID</label>
-                            <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>{user.id}</div>
-                        </div>
-                        <div className="detail-group">
                             <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Phone</label>
                             <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>{user.phone || '-'}</div>
                         </div>
@@ -2256,6 +2328,110 @@ function ProfilePageContent() {
                                     </li>
                                 ))}
                             </ul>
+                        )}
+                    </div>
+                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                        <h3 style={{ marginBottom: '0.25rem' }}>Interested in you</h3>
+                        <p style={{ color: '#666', fontSize: '0.875rem', margin: 0 }}>
+                            People who appear in your interest notifications. <strong>Interest back</strong> is labeled when the latest notification for that person is a reciprocal interest.
+                        </p>
+                        {loadingSavedProfiles ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>Loading list…</p>
+                        ) : incomingInterestProfiles.length === 0 ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>No one has expressed interest yet. Complete your profile and browse members to get noticed.</p>
+                        ) : (
+                            <>
+                                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: '1rem 0 0.75rem 0' }}>
+                                    {incomingInterestProfiles.length} {incomingInterestProfiles.length === 1 ? 'person' : 'people'}
+                                </p>
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '0.75rem',
+                                        maxHeight: '360px',
+                                        overflowY: 'auto',
+                                        paddingRight: '0.25rem',
+                                    }}
+                                >
+                                    {incomingInterestProfiles.map((p) => (
+                                        <div
+                                            key={`incoming-interest-${p.userId ?? p.id}`}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => {
+                                                if (user?.isVerified === false) {
+                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                    return;
+                                                }
+                                                openModal('profile', undefined, p);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    if (user?.isVerified === false) {
+                                                        window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                        return;
+                                                    }
+                                                    openModal('profile', undefined, p);
+                                                }
+                                            }}
+                                            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
+                                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                            title={`View ${p.firstName} ${p.lastName}'s profile`}
+                                        >
+                                            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
+                                                {p.profilePhoto ? (
+                                                    <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
+                                                        {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</span>
+                                                    {p.isInterestBack ? (
+                                                        <span
+                                                            style={{
+                                                                fontSize: '0.7rem',
+                                                                fontWeight: 700,
+                                                                letterSpacing: '0.02em',
+                                                                color: '#047857',
+                                                                background: '#d1fae5',
+                                                                padding: '0.12rem 0.5rem',
+                                                                borderRadius: '999px',
+                                                            }}
+                                                        >
+                                                            Interest back
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                                <div style={{ fontSize: '0.82rem', color: '#666' }}>{p.age || '-'} years • {p.cityOfResidence || 'Unknown'}</div>
+                                                {p.interestedAtLabel ? (
+                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                                                        {p.isInterestBack ? 'Latest activity ' : 'Interested '}
+                                                        {p.interestedAtLabel}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {!isManagedSubAccount(user) && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
+                                        onClick={() => router.push('/profiles')}
+                                    >
+                                        Browse profiles
+                                    </button>
+                                )}
+                            </>
                         )}
                     </div>
                     <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>

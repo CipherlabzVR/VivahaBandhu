@@ -3,38 +3,22 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
 import { useState, useEffect, useRef } from 'react';
-import * as signalR from '@microsoft/signalr';
 import { matrimonialService } from '../services/matrimonialService';
 import { getStoredToken } from '../utils/authStorage';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
-import { connectMatrimonialHub } from '../utils/signalrHub';
-
-const isNegotiationStoppedError = (error: unknown) =>
-    error instanceof Error &&
-    error.message.toLowerCase().includes('stopped during negotiation');
+import {
+    isInterestBackNotification,
+    notificationDescriptionFallback,
+    notificationTitleFallback,
+    referenceIdFromNotification,
+} from '../utils/matrimonialInterestNotifications';
 
 interface HeaderProps {
     onOpenLogin: () => void;
     onOpenRegister: () => void;
     onOpenVerify?: () => void;
-}
-
-function referenceIdFromNotification(notification: any): number {
-    const raw = notification?.referenceId ?? notification?.ReferenceId;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-/** True when API / live payload indicates reciprocal interest (“interest back”), not a first-time “interested”. */
-function isInterestBackNotification(notification: any): boolean {
-    const title = String(notification?.title ?? notification?.Title ?? '').toLowerCase();
-    const desc = String(notification?.description ?? notification?.Description ?? '').toLowerCase();
-    if (title.includes('interest back')) return true;
-    if (desc.includes('interest back')) return true;
-    if (/\bsent\s+interest\s+back\b/i.test(desc)) return true;
-    if (/\breciprocated\b/i.test(desc)) return true;
-    return false;
 }
 
 function senderLabelFromDescription(description: string | undefined): string {
@@ -56,16 +40,6 @@ function senderLabelFromDescription(description: string | undefined): string {
     return trimmed;
 }
 
-function notificationTitleFallback(notification: any): string {
-    return isInterestBackNotification(notification) ? 'Interest back' : 'New interest';
-}
-
-function notificationDescriptionFallback(notification: any): string {
-    return isInterestBackNotification(notification)
-        ? 'A member reciprocated — interest back.'
-        : 'Someone is interested in your profile.';
-}
-
 function initialsFromName(label: string): string {
     const parts = label.split(/\s+/).filter(Boolean);
     if (parts.length === 0) return '?';
@@ -78,10 +52,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
     const router = useRouter();
     const { user, logout, updateUser } = useAuth();
     const { language, setLanguage, t } = useLanguage();
+    const {
+        interestNotifications,
+        loadingNotifications,
+        refreshInterestNotifications,
+        markInterestNotificationRead,
+    } = useMatrimonialNotifications();
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
     const [notificationOpen, setNotificationOpen] = useState(false);
-    const [interestNotifications, setInterestNotifications] = useState<any[]>([]);
-    const [loadingNotifications, setLoadingNotifications] = useState(false);
     const [interestBackLoadingKey, setInterestBackLoadingKey] = useState<string | null>(null);
     const [actionToast, setActionToast] = useState('');
 
@@ -114,38 +92,6 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
     const getUnreadCount = () => interestNotifications.filter(n => !n.isRead).length;
 
-    const fetchInterestNotifications = async () => {
-        if (!user?.id) return;
-
-        setLoadingNotifications(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${user.id}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            if (!response.ok) return;
-
-            const data = await response.json();
-            const all = data?.result || data?.Result || [];
-            const list = Array.isArray(all) ? all : [];
-            setInterestNotifications(
-                list.map((n: any) => ({
-                    ...n,
-                    id: n?.id ?? n?.Id,
-                    title: n?.title ?? n?.Title ?? notificationTitleFallback(n),
-                    description: n?.description ?? n?.Description ?? '',
-                    isRead: n?.isRead ?? n?.IsRead ?? false,
-                    referenceId: n?.referenceId ?? n?.ReferenceId,
-                    createdOn: n?.createdOn ?? n?.CreatedOn,
-                }))
-            );
-        } catch {
-            // Silent fail to keep header lightweight
-        } finally {
-            setLoadingNotifications(false);
-        }
-    };
-
     useEffect(() => {
         if (!user?.id || user.profilePhoto) return;
         const token = getStoredToken();
@@ -174,125 +120,6 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         return () => { cancelled = true; };
     // updateUser is stable (useCallback) so it won't cause re-triggers
     }, [user?.id, user?.profilePhoto, updateUser]);
-
-    useEffect(() => {
-        if (!user?.id) {
-            setInterestNotifications([]);
-            return;
-        }
-        fetchInterestNotifications();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
-
-    // Fallback refresh so notifications appear even if a live socket event is missed.
-    useEffect(() => {
-        if (!user?.id) return;
-        const interval = setInterval(() => {
-            fetchInterestNotifications();
-        }, 8000);
-        return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
-
-    useEffect(() => {
-        if (!user?.id) return;
-        let disposed = false;
-        let retryTimeout: ReturnType<typeof setTimeout>;
-        let connection: signalR.HubConnection | null = null;
-
-        const startConnection = async (attempt = 0) => {
-            if (disposed) return;
-            try {
-                connection = await connectMatrimonialHub(API_BASE_URL);
-                if (disposed) {
-                    await connection.stop();
-                    return;
-                }
-                await connection.invoke('JoinUserGroup', String(user.id));
-            } catch (error) {
-                if (connection) {
-                    connection.off('ReceiveInterestNotification');
-                    connection.off('InterestWithdrawn');
-                    await connection.stop().catch(() => {});
-                    connection = null;
-                }
-                if (disposed) return;
-                if (!isNegotiationStoppedError(error)) {
-                    console.error('Header SignalR connection failed:', error);
-                }
-                const delay = Math.min(5000 * 2 ** attempt, 30_000);
-                retryTimeout = setTimeout(() => startConnection(attempt + 1), delay);
-                return;
-            }
-
-            if (!connection) return;
-
-            connection.on('ReceiveInterestNotification', (payload) => {
-                const now = new Date().toISOString();
-                const liveTitle = payload?.title ?? payload?.Title;
-                const liveDesc = payload?.description ?? payload?.Description;
-                const inferred = { title: liveTitle, description: liveDesc };
-                setInterestNotifications(prev => [
-                    {
-                        id: `live-${Date.now()}`,
-                        title: liveTitle || notificationTitleFallback(inferred),
-                        description:
-                            liveDesc ||
-                            (isInterestBackNotification(inferred)
-                                ? 'A member reciprocated — interest back.'
-                                : 'Someone is interested in your profile.'),
-                        referenceId:
-                            payload?.referenceId ??
-                            payload?.ReferenceId ??
-                            payload?.interestedUserId ??
-                            payload?.InterestedUserId,
-                        referenceType: 'MatrimonialInterest',
-                        isRead: false,
-                        createdOn: payload?.createdOn || now,
-                    },
-                    ...prev
-                ]);
-            });
-
-            connection.on('InterestWithdrawn', (payload) => {
-                const refRaw = payload?.referenceId ?? payload?.ReferenceId ?? payload?.interestedUserId ?? payload?.InterestedUserId;
-                const refNum = Number(refRaw);
-                if (!Number.isFinite(refNum) || refNum <= 0) return;
-                setInterestNotifications((prev) =>
-                    prev.filter((n) => referenceIdFromNotification(n) !== refNum)
-                );
-            });
-        };
-
-        startConnection();
-
-        return () => {
-            disposed = true;
-            clearTimeout(retryTimeout);
-            if (connection) {
-                connection.off('ReceiveInterestNotification');
-                connection.off('InterestWithdrawn');
-                connection.stop();
-            }
-        };
-    }, [user?.id, API_BASE_URL]);
-
-    const markInterestNotificationRead = async (notification: any) => {
-        const notificationId = notification?.id;
-        if (user?.id && notificationId && !String(notificationId).startsWith('live-')) {
-            try {
-                await fetch(
-                    `${API_BASE_URL}/Matrimonial/MarkInterestNotificationRead?notificationId=${notificationId}&userId=${user.id}`,
-                    { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-                );
-            } catch {
-                // no-op
-            }
-        }
-        setInterestNotifications((prev) =>
-            prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
-        );
-    };
 
     const handleViewInterestProfile = async (notification: any) => {
         if (user?.isVerified === false) {
@@ -364,7 +191,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 }
             }
 
-            fetchInterestNotifications();
+            refreshInterestNotifications();
             setTimeout(() => setActionToast(''), 2500);
             setNotificationOpen(false);
         } catch {
@@ -458,7 +285,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                     setNotificationOpen(next);
                                     if (next) {
                                         setProfileMenuOpen(false);
-                                        fetchInterestNotifications();
+                                        refreshInterestNotifications();
                                     }
                                 }}
                                 className="w-10 h-10 rounded-full border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center relative"
