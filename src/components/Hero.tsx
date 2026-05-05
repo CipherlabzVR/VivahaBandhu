@@ -20,7 +20,7 @@ const DEFAULT_HERO_STATS = {
 const HERO_BG_VIDEO =
     'https://res.cloudinary.com/dbyuqt5xh/video/upload/q_auto/f_auto/v1777450897/Animate_flakes_move_river_202604291348_rszmkk.mp4';
 const HERO_COUPLE_IMG =
-    'https://res.cloudinary.com/dbyuqt5xh/image/upload/q_auto/f_auto/v1777450931/Picsart_26-04-29_13-46-56-397_1_wyxb8c.png';
+    'https://res.cloudinary.com/df52tya8p/image/upload/q_auto/f_auto/v1777957492/Picsart_26-05-05_10-30-47-506_gxogmo.webp';
 
 interface HeroProps {
     onOpenRegister: () => void;
@@ -307,13 +307,13 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                         )}
                     </div>
 
-                    <div className="relative z-0 flex min-h-[min(72vh,760px)] items-end justify-center lg:-ml-4 lg:min-h-0 lg:justify-end xl:-ml-8">
-                        <div className="relative w-full max-w-2xl translate-x-6 translate-y-10 sm:translate-x-8 sm:translate-y-12 lg:max-w-4xl lg:translate-x-10 lg:translate-y-11 xl:max-w-[min(58rem,100%)] xl:translate-x-16 xl:translate-y-10">
-                            <div className="pointer-events-none absolute -inset-6 -z-10 rounded-[40%] bg-black/25 blur-3xl lg:-inset-10" aria-hidden />
+                    <div className="relative z-0 flex min-h-[min(76vh,820px)] items-end justify-center lg:-ml-4 lg:min-h-0 lg:justify-end xl:-ml-8">
+                        <div className="relative w-full max-w-3xl translate-x-6 translate-y-12 sm:translate-x-8 sm:translate-y-16 lg:max-w-[min(56rem,100%)] lg:translate-x-8 lg:translate-y-14 xl:max-w-[min(72rem,100%)] xl:translate-x-12 xl:translate-y-12">
+                            <div className="pointer-events-none absolute -inset-8 -z-10 rounded-[40%] bg-black/25 blur-3xl lg:-inset-12" aria-hidden />
                             <img
                                 src={HERO_COUPLE_IMG}
                                 alt=""
-                                className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.06] md:scale-[1.08] lg:scale-[1.12]"
+                                className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.14] md:scale-[1.2] lg:scale-[1.28]"
                                 width={800}
                                 height={1200}
                                 draggable={false}
@@ -337,7 +337,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                     </div>
                 </div>
 
-                <div className="relative z-20 mx-auto mt-2 max-w-6xl">
+                <div className="relative z-20 mx-auto mt-2 w-full max-w-none">
                     <div className={statsPanelClass}>
                         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4 lg:gap-5 xl:gap-6">
                     <div className={statRowClass}>

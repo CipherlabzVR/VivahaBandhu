@@ -3021,6 +3021,7 @@
         }
 
         .profile-detail-photo img {
+            display: block;
             width: 200px;
             height: 250px;
             object-fit: cover;

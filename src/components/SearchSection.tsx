@@ -380,7 +380,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                 </svg>
                             </span>
                             <input
-                                type="search"
+                                type="text"
+                                inputMode="search"
+                                enterKeyHint="search"
                                 value={searchInput}
                                 onChange={(e) => { setSearchInput(e.target.value); setShowSuggestions(true); setHighlightedSuggestion(-1); }}
                                 onFocus={() => { if (searchInput.trim()) setShowSuggestions(true); }}
