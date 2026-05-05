@@ -131,8 +131,9 @@ export default function SubscriptionCheckoutPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const applySuccessUserPatch = () => {
+    const applySuccessUserPatch = (subscriptionExpiresAt?: string) => {
         const p = checkoutPlan;
+        const expPatch = subscriptionExpiresAt ? { subscriptionExpiresAt } : {};
         if (isMatchmakerAccount) {
             if (p === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
                 updateUser({
@@ -140,6 +141,7 @@ export default function SubscriptionCheckoutPage() {
                     matchmakerTier: 'DIAMOND',
                     matchmakerMaxClientProfiles: 10,
                     matchmakerCanAddClients: true,
+                    ...expPatch,
                 });
             } else if (p === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
                 updateUser({
@@ -147,10 +149,11 @@ export default function SubscriptionCheckoutPage() {
                     matchmakerTier: 'GOLD',
                     matchmakerMaxClientProfiles: 5,
                     matchmakerCanAddClients: true,
+                    ...expPatch,
                 });
             }
         } else {
-            updateUser({ isSubscribed: true, matchmakerTier: undefined });
+            updateUser({ isSubscribed: true, matchmakerTier: undefined, ...expPatch });
         }
     };
 
@@ -192,7 +195,17 @@ export default function SubscriptionCheckoutPage() {
                 subscriptionPlan
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                applySuccessUserPatch();
+                const rawUntil =
+                    (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
+                        ?.subscribedUntil ??
+                    (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
+                        ?.SubscribedUntil;
+                let untilIso: string | undefined;
+                if (rawUntil != null && String(rawUntil).trim() !== '') {
+                    const d = new Date(String(rawUntil));
+                    if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
+                }
+                applySuccessUserPatch(untilIso);
                 setSuccess(
                     isMatchmakerAccount
                         ? 'Payment successful. Your matchmaker subscription is active.'
@@ -200,7 +213,7 @@ export default function SubscriptionCheckoutPage() {
                 );
                 showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
                 window.setTimeout(() => {
-                    router.push('/search');
+                    router.replace('/');
                 }, 800);
             } else {
                 setError(res?.message || 'Failed to activate subscription.');
@@ -247,13 +260,13 @@ export default function SubscriptionCheckoutPage() {
                         }
                         setSuccess(
                             'Slip received! Our admin team will review your payment and activate your subscription shortly. ' +
-                            'You will be redirected to your profile in a moment.'
+                            'You will be redirected to the home page in a moment.'
                         );
                         setBankSlipFile(null);
                         setBankSlipPreview(null);
                         setBankRemarks('');
                         window.setTimeout(() => {
-                            router.push('/profile');
+                            router.replace('/');
                         }, 2000);
                     } else {
                         setError(res?.message || 'Failed to submit bank transfer.');

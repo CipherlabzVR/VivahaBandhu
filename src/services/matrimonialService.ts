@@ -213,31 +213,36 @@ export const matrimonialService = {
      * Login for matrimonial users (uses existing User/SignIn endpoint)
      */
     async login(data: MatrimonialLoginRequest): Promise<MatrimonialLoginResponse> {
+        const response = await fetch(`${API_BASE_URL}/User/SignIn`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                email: data.email,
+                password: data.password,
+            }),
+        });
+
+        let body: Record<string, unknown> = {};
         try {
-            const response = await fetch(`${API_BASE_URL}/User/SignIn`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    email: data.email,
-                    password: data.password,
-                }),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Login failed: ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            return result;
-        } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            }
-            throw new Error('An unexpected error occurred during login');
+            body = (await response.json()) as Record<string, unknown>;
+        } catch {
+            body = {};
         }
+
+        const apiMsg = String(body.message ?? body.Message ?? '').trim();
+
+        if (!response.ok) {
+            const fallback =
+                apiMsg ||
+                (response.status === 401
+                    ? 'Invalid email or password.'
+                    : `Sign-in failed (${response.status}). Please try again.`);
+            throw new Error(fallback);
+        }
+
+        return body as unknown as MatrimonialLoginResponse;
     },
 
     /**
@@ -1035,6 +1040,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     matchmakerClientProfileCount?: number;
     matchmakerCanAddClients?: boolean;
     matchmakerDailyFullProfileViewsRemaining?: number;
+    subscriptionExpiresAt?: string;
 } {
     if (!r || typeof r !== 'object') {
         return {};
@@ -1050,6 +1056,17 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     const mmPaid =
         tier.toUpperCase() === 'GOLD' || tier.toUpperCase() === 'DIAMOND';
     const isPremiumSelf = !!(mx.IsPremiumSubscribed ?? mx.isPremiumSubscribed);
+
+    const toIsoExpiry = (raw: unknown): string | undefined => {
+        if (raw == null || raw === '') return undefined;
+        const d = new Date(String(raw));
+        return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+    };
+
+    const subscriptionExpiresAt =
+        accountType === 'Matchmaker'
+            ? toIsoExpiry(mx.MatchmakerSubscriptionUntilUtc ?? mx.matchmakerSubscriptionUntilUtc)
+            : toIsoExpiry(mx.SelfPremiumSubscriptionUntilUtc ?? mx.selfPremiumSubscriptionUntilUtc);
 
     const maxCli = mx.MatchmakerMaxClientProfiles ?? mx.matchmakerMaxClientProfiles;
     const cntCli = mx.MatchmakerClientProfileCount ?? mx.matchmakerClientProfileCount;
@@ -1071,6 +1088,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
             accountType === 'Matchmaker'
                 ? mmPaid
                 : isPremiumSelf,
+        subscriptionExpiresAt,
     };
 }
 

@@ -8,6 +8,7 @@ import { getStoredToken } from '../../utils/authStorage';
 import { sanitizeNameInput } from '../../utils/nameInput';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
+import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -701,6 +702,7 @@ export default function ProfileCompletionForm({
     scrollContainerRef?: RefObject<HTMLElement | null>;
 }) {
     const { user, updateUser } = useAuth();
+    const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const router = useRouter();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
@@ -1497,6 +1499,25 @@ export default function ProfileCompletionForm({
 
     return (
         <div className="profile-completion-form">
+            {bankPremiumAwaitingApproval && (
+                <div
+                    role="status"
+                    style={{
+                        marginBottom: '1.25rem',
+                        padding: '0.85rem 1rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                        border: '1px solid #fcd34d',
+                        color: '#92400e',
+                        fontSize: '0.92rem',
+                        lineHeight: 1.5,
+                    }}
+                >
+                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Premium payment — awaiting approval</strong>
+                    Your bank transfer slip was received and is being reviewed. You can finish your profile below; premium
+                    features will unlock once the payment is approved.
+                </div>
+            )}
             <div className="steps-indicator" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}>
                 {[1, 2, 3, 4, 5, 6].map(i => (
                     <button

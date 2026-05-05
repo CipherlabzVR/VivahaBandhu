@@ -29,6 +29,8 @@ interface User {
     matchmakerDailyFullProfileViewsRemaining?: number;
     /** Whether Self user has classic premium (not used for Matchmaker billing). */
     isPremiumSelfSubscribed?: boolean;
+    /** ISO UTC end date of current paid period (Self or Matchmaker), when the API provides it. */
+    subscriptionExpiresAt?: string;
     /** Whether the user wants an email when someone shows interest. Server-authoritative. */
     emailOnInterest?: boolean;
     horoscopeDocument?: string;
