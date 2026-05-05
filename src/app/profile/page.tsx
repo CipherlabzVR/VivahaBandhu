@@ -25,6 +25,7 @@ import { useMatrimonialNotifications } from '../../context/MatrimonialNotificati
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
+import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
 
 /** Matches .NET ApiResponse: property is PascalCase (`StatusCode`) unless server uses camelCase policy. */
 function apiResponseBusinessCode(body: Record<string, unknown> | null | undefined): number | undefined {
@@ -41,8 +42,17 @@ function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | unde
     return code === 200 || code === 1;
 }
 
+/** Display subscription end date from stored ISO string (UTC instant from API). */
+function formatSubscriptionExpiresDisplay(iso: string | undefined): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 function ProfilePageContent() {
     const { user, loading, updateUser, logout } = useAuth();
+    const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const { liveInterestRevision } = useMatrimonialNotifications();
     const { language, setLanguage } = useLanguage();
     const router = useRouter();
@@ -207,6 +217,16 @@ function ProfilePageContent() {
 
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
+
+                    const subUntil = r.subscriptionUntilUtc ?? r.SubscriptionUntilUtc;
+                    if (subUntil != null && String(subUntil).trim() !== '') {
+                        const exp = new Date(String(subUntil));
+                        if (!Number.isNaN(exp.getTime())) {
+                            profileUpdates.subscriptionExpiresAt = exp.toISOString();
+                        }
+                    } else if (!subscribed) {
+                        profileUpdates.subscriptionExpiresAt = undefined;
+                    }
 
                     const vwTier = r.viewerMatchmakerTier ?? r.ViewerMatchmakerTier;
                     if (vwTier != null && String(vwTier).trim() !== '') {
@@ -868,17 +888,15 @@ function ProfilePageContent() {
     };
 
     const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
-    const handleCancelSubscription = async () => {
+    const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
+    const handleConfirmCancelSubscription = async () => {
         if (!user?.id) return;
-        const confirmed = typeof window !== 'undefined' && window.confirm(
-            'Cancel your premium subscription?\n\nYou will lose premium benefits immediately. You can re-subscribe at any time.'
-        );
-        if (!confirmed) return;
         try {
             setIsCancellingSubscription(true);
             const res = await matrimonialService.cancelSubscription(Number(user.id));
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                updateUser?.({ ...user, isSubscribed: false } as any);
+                updateUser?.({ ...user, isSubscribed: false, subscriptionExpiresAt: undefined } as any);
+                setShowCancelSubscriptionModal(false);
                 showToast(res?.message || 'Subscription cancelled.', 'success');
             } else {
                 showToast(res?.message || 'Failed to cancel subscription.', 'error');
@@ -1488,6 +1506,21 @@ function ProfilePageContent() {
                                     <span className="badge" style={{ background: '#047857', color: '#fff', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>
                                         ✓ Premium Subscribed
                                     </span>
+                                ) : bankPremiumAwaitingApproval ? (
+                                    <span
+                                        className="badge"
+                                        style={{
+                                            background: '#fffbeb',
+                                            color: '#b45309',
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '20px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            border: '1px solid #fcd34d',
+                                        }}
+                                    >
+                                        Premium — payment pending approval
+                                    </span>
                                 ) : (
                                     <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                         Free Plan
@@ -1505,6 +1538,26 @@ function ProfilePageContent() {
                             </div>
                         </div>
                     </div>
+
+                    {bankPremiumAwaitingApproval && (
+                        <div
+                            role="status"
+                            style={{
+                                marginBottom: '1.5rem',
+                                padding: '1rem 1.25rem',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                                border: '1px solid #fcd34d',
+                                color: '#92400e',
+                            }}
+                        >
+                            <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Bank transfer under review</strong>
+                            <span style={{ fontSize: '0.95rem', lineHeight: 1.5 }}>
+                                We received your payment slip. Our team will verify it and activate your premium access. This usually doesn&apos;t take long —
+                                you can keep using the site on the free plan until then.
+                            </span>
+                        </div>
+                    )}
 
                     <div className="profile-details-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem' }}>
                         <div className="detail-group">
@@ -1713,10 +1766,14 @@ function ProfilePageContent() {
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
                             {user.accountType === 'Matchmaker' ? (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankPremiumAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankPremiumAwaitingApproval && !user.isSubscribed ? '1px solid #fcd34d' : undefined }}>
                                     <div>
-                                        <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : '#374151' }}>
-                                            {user.isSubscribed ? `Matchmaker ${(user.matchmakerTier || '').toUpperCase()} — active` : 'Matchmaker free'}
+                                        <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : bankPremiumAwaitingApproval ? '#b45309' : '#374151' }}>
+                                            {user.isSubscribed
+                                                ? `Matchmaker ${(user.matchmakerTier || '').toUpperCase()} — active`
+                                                : bankPremiumAwaitingApproval
+                                                    ? 'Matchmaker plan — payment pending approval'
+                                                    : 'Matchmaker free'}
                                         </div>
                                         <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
                                             {user.isSubscribed
@@ -1725,19 +1782,30 @@ function ProfilePageContent() {
                                                     : user.matchmakerTier?.toUpperCase() === 'DIAMOND'
                                                         ? 'Unlimited full-detail views. Up to 10 client profiles.'
                                                         : 'Paid matchmaker subscription active.'
-                                                : 'Browse basic listings only — no contacts, messaging, or client profiles until you upgrade.'}
+                                                : bankPremiumAwaitingApproval
+                                                    ? 'Your bank transfer slip is being reviewed. We will activate Gold or Diamond as soon as the payment is verified.'
+                                                    : 'Browse basic listings only — no contacts, messaging, or client profiles until you upgrade.'}
                                         </div>
+                                        {user.isSubscribed && user.subscriptionExpiresAt ? (
+                                            <div style={{ color: '#92400e', fontSize: '0.82rem', marginTop: 8 }}>
+                                                Subscription valid until{' '}
+                                                <strong>{formatSubscriptionExpiresDisplay(user.subscriptionExpiresAt)}</strong>
+                                                {' '}(6-month billing period).
+                                            </div>
+                                        ) : null}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                                         {user.isSubscribed ? (
                                             <button
                                                 type="button"
-                                                onClick={handleCancelSubscription}
+                                                onClick={() => setShowCancelSubscriptionModal(true)}
                                                 disabled={isCancellingSubscription}
                                                 style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
                                             >
                                                 {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
                                             </button>
+                                        ) : bankPremiumAwaitingApproval ? (
+                                            <span style={{ padding: '0.55rem 1rem', fontSize: '0.9rem', fontWeight: 600, color: '#92400e' }}>Awaiting verification</span>
                                         ) : (
                                             <button
                                                 type="button"
@@ -1750,26 +1818,37 @@ function ProfilePageContent() {
                                     </div>
                                 </div>
                             ) : (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankPremiumAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankPremiumAwaitingApproval && !user?.isSubscribed ? '1px solid #fcd34d' : undefined }}>
                                 <div>
-                                    <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : '#374151' }}>
-                                        {user?.isSubscribed ? 'Premium plan — active' : 'Free plan'}
+                                    <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : bankPremiumAwaitingApproval ? '#b45309' : '#374151' }}>
+                                        {user?.isSubscribed ? 'Premium plan — active' : bankPremiumAwaitingApproval ? 'Premium — payment pending approval' : 'Free plan'}
                                     </div>
                                     <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
                                         {user?.isSubscribed
                                             ? 'You enjoy unlimited messaging and premium visibility.'
-                                            : 'Upgrade to unlock unlimited messaging and the premium gold badge.'}
+                                            : bankPremiumAwaitingApproval
+                                                ? 'Your bank transfer slip is being reviewed. Premium benefits turn on once our team approves the payment.'
+                                                : 'Upgrade to unlock unlimited messaging and the premium gold badge.'}
                                     </div>
+                                    {user?.isSubscribed && user.subscriptionExpiresAt ? (
+                                        <div style={{ color: '#92400e', fontSize: '0.82rem', marginTop: 8 }}>
+                                            Subscription valid until{' '}
+                                            <strong>{formatSubscriptionExpiresDisplay(user.subscriptionExpiresAt)}</strong>
+                                            {' '}(6-month billing period).
+                                        </div>
+                                    ) : null}
                                 </div>
                                 {user?.isSubscribed ? (
                                     <button
                                         type="button"
-                                        onClick={handleCancelSubscription}
+                                        onClick={() => setShowCancelSubscriptionModal(true)}
                                         disabled={isCancellingSubscription}
                                         style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
                                     >
                                         {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
                                     </button>
+                                ) : bankPremiumAwaitingApproval ? (
+                                    <span style={{ padding: '0.55rem 1rem', fontSize: '0.9rem', fontWeight: 600, color: '#92400e' }}>Awaiting verification</span>
                                 ) : (
                                     <button
                                         type="button"
@@ -1802,6 +1881,64 @@ function ProfilePageContent() {
                                 </button>
                             </div>
                         </section>
+                    </div>
+                )}
+
+                {/* Cancel subscription confirmation */}
+                {showCancelSubscriptionModal && (
+                    <div
+                        className="modal-overlay active"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="cancel-subscription-title"
+                        style={{ zIndex: 1100 }}
+                    >
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                            <button
+                                type="button"
+                                className="modal-close"
+                                onClick={() => !isCancellingSubscription && setShowCancelSubscriptionModal(false)}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                            <div className="modal-header">
+                                <h2 id="cancel-subscription-title" style={{ color: '#92400e' }}>
+                                    Cancel your subscription?
+                                </h2>
+                            </div>
+                            <div className="modal-body">
+                                <p style={{ marginBottom: '1rem', color: '#374151', lineHeight: 1.55 }}>
+                                    You will lose premium benefits immediately. You can subscribe again whenever you like.
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        onClick={() => setShowCancelSubscriptionModal(false)}
+                                        disabled={isCancellingSubscription}
+                                    >
+                                        Keep subscription
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleConfirmCancelSubscription}
+                                        disabled={isCancellingSubscription}
+                                        style={{
+                                            padding: '0.6rem 1.1rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid #b45309',
+                                            background: isCancellingSubscription ? '#fde68a' : 'white',
+                                            color: '#92400e',
+                                            fontWeight: 600,
+                                            cursor: isCancellingSubscription ? 'not-allowed' : 'pointer',
+                                        }}
+                                    >
+                                        {isCancellingSubscription ? 'Cancelling…' : 'Yes, cancel subscription'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 

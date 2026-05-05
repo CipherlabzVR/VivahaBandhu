@@ -42,6 +42,8 @@ async function fetchMatrimonialSubscriptionSnapshot(
 
     matchmakerCanAddClients?: boolean;
 
+    subscriptionExpiresAt?: string;
+
 } | null> {
 
     const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
@@ -96,6 +98,24 @@ async function fetchMatrimonialSubscriptionSnapshot(
 
 
 
+    const subUntil = r.subscriptionUntilUtc ?? r.SubscriptionUntilUtc;
+
+    let subscriptionExpiresAt: string | undefined;
+
+    if (subUntil != null && String(subUntil).trim() !== '') {
+
+        const exp = new Date(String(subUntil));
+
+        if (!Number.isNaN(exp.getTime())) {
+
+            subscriptionExpiresAt = exp.toISOString();
+
+        }
+
+    }
+
+
+
     return {
 
         isSubscribed: subscribed,
@@ -111,6 +131,8 @@ async function fetchMatrimonialSubscriptionSnapshot(
         ...(typeof usedNum === 'number' && Number.isFinite(usedNum) ? { matchmakerClientProfileCount: usedNum } : {}),
 
         ...(typeof canAdd === 'boolean' ? { matchmakerCanAddClients: canAdd } : {}),
+
+        ...(subscriptionExpiresAt ? { subscriptionExpiresAt } : {}),
 
     };
 
@@ -187,6 +209,8 @@ export default function PremiumActivationListener() {
                     ? { matchmakerCanAddClients: snap.matchmakerCanAddClients }
 
                     : {}),
+
+                ...(snap.subscriptionExpiresAt ? { subscriptionExpiresAt: snap.subscriptionExpiresAt } : {}),
 
             });
 

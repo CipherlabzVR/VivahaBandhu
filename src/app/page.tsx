@@ -15,8 +15,10 @@ import Footer from '../components/Footer';
 import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
 import { matrimonialService } from '../services/matrimonialService';
+import { useAuth } from '../context/AuthContext';
 
 export default function Home() {
+  const { user } = useAuth();
   const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
   const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
   const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
@@ -61,6 +63,8 @@ export default function Home() {
     matrimonialService.saveCorsLink(webLink, true);
   }, []);
 
+  const showHomePricing = !user || user.isSubscribed !== true;
+
   return (
     <main>
       <Header
@@ -101,11 +105,13 @@ export default function Home() {
       <AnimateIn delay={150}>
         <FAQ />
       </AnimateIn>
+      {showHomePricing && (
       <AnimateIn delay={100}>
         <Pricing
           onOpenSubscription={() => openModal('subscription')}
         />
       </AnimateIn>
+      )}
       <AnimateIn delay={50}>
         <Footer />
       </AnimateIn>

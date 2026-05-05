@@ -25,7 +25,6 @@ import {
     CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
 } from '../constants/subscription';
 import WelcomePopup from './WelcomePopup';
-import Image from 'next/image';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge from './PremiumBadge';
@@ -48,6 +47,81 @@ function parentUserIdFromLoginResult(r: MatrimonialLoginResponse['result'] | und
     if (raw == null) return undefined;
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Map User/SignIn API error text to field-level or general login messages. */
+function applySignInMessageToLoginErrors(
+    raw: string,
+    setLoginEmailError: (v: string | null) => void,
+    setLoginPasswordError: (v: string | null) => void,
+    setLoginError: (v: string | null) => void,
+) {
+    const msg = raw.trim();
+    const lower = msg.toLowerCase();
+    setLoginEmailError(null);
+    setLoginPasswordError(null);
+
+    if (!msg) {
+        setLoginError('Sign-in failed. Please try again.');
+        return;
+    }
+
+    if (/invalid\s*email\s*or\s*password|incorrect\s*email\s*or\s*password/i.test(lower)) {
+        setLoginError('Email or password is incorrect. Please try again.');
+        return;
+    }
+
+    if (
+        /password\s*not\s*matched|password\s*not\s*match|incorrect\s*password|wrong\s*password|invalid\s*credentials|invalid\s*password/i.test(
+            msg,
+        )
+    ) {
+        setLoginPasswordError('Incorrect password. Try again or use Forgot password.');
+        return;
+    }
+
+    if (
+        /user\s*null|^user null$|no\s*account|account\s*not\s*found|user\s*not\s*found|unknown\s*user|email\s*not\s*found/i.test(
+            lower,
+        )
+    ) {
+        setLoginEmailError('No account found with this email address.');
+        return;
+    }
+
+    if (/email\s*not\s*confirmed|not\s*confirmed|confirm\s*your\s*email|verify\s*(your\s*)?email/i.test(msg)) {
+        setLoginError('Please verify your email before signing in.');
+        return;
+    }
+
+    if (/inactive|disabled|suspended|not\s*active/i.test(lower)) {
+        setLoginError('This account is not active. Please contact support if you need help.');
+        return;
+    }
+
+    if (/company\s*not\s*found/i.test(lower)) {
+        setLoginError('Your account cannot sign in from this app. Please contact support.');
+        return;
+    }
+
+    if (/too\s*many|try\s*again\s*in|lockout|locked|failed\s*verification\s*attempts/i.test(lower)) {
+        setLoginError(msg);
+        return;
+    }
+
+    if (/two-factor|2fa|authentication\s*required|verification\s*code/i.test(lower)) {
+        setLoginError(
+            msg.length > 400 ? 'Additional verification is required. Please try again or contact support.' : msg,
+        );
+        return;
+    }
+
+    if (/invalid\s*column|syntax\s*error|internal\s*server|database|500\b|\bsql\b/i.test(lower)) {
+        setLoginError('A server error occurred. Please try again later or contact support.');
+        return;
+    }
+
+    setLoginError(msg.length > 280 ? 'Sign-in failed. Please try again.' : msg);
 }
 
 interface ModalsProps {
@@ -615,8 +689,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
     const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
     const [forgotStep, setForgotStep] = useState<'entry' | 'verify'>('entry');
-    const [profilePhotoBase64, setProfilePhotoBase64] = useState('');
-    const [photoPreview, setPhotoPreview] = useState('');
 
     // Verification states
     const [showVerification, setShowVerification] = useState(false);
@@ -889,7 +961,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 email,
                 password,
                 accountType: registerAccountType,
-                profilePhotoBase64: registerAccountType === 'Self' ? profilePhotoBase64 : undefined,
             });
 
             console.log('Registration response:', response);
@@ -987,6 +1058,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         setIsLoading(true);
         setLoginError(null);
+        setLoginEmailError(null);
+        setLoginPasswordError(null);
 
         try {
             const response = await matrimonialService.login({
@@ -994,7 +1067,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 password: loginPassword,
             });
 
-            if (response.statusCode === 200 && response.result) {
+            const statusOk = Number(response.statusCode) === 200 || Number(response.statusCode) === 1;
+            if (statusOk && response.result) {
                 // Login successful
                 console.log('Login API response:', response.result);
                 const loginParentId = parentUserIdFromLoginResult(response.result);
@@ -1030,18 +1104,27 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     window.location.href = '/';
                 }, 100);
             } else {
-                const msg = response.message || '';
-                if (/password/i.test(msg)) {
-                    setLoginPasswordError('Incorrect password. Please try again.');
-                } else if (/email|user|not found|exist/i.test(msg)) {
-                    setLoginEmailError('No account found with this email address.');
-                } else {
-                    setLoginError('Invalid email or password. Please try again.');
-                }
+                const msg = String(response.message || (response as { Message?: string }).Message || '').trim();
+                applySignInMessageToLoginErrors(msg, setLoginEmailError, setLoginPasswordError, setLoginError);
             }
         } catch (error) {
             console.error('Login error:', error);
-            setLoginError('Unable to sign in. Please check your connection and try again.');
+            const raw = error instanceof Error ? error.message.trim() : '';
+            const lower = raw.toLowerCase();
+            if (
+                error instanceof TypeError ||
+                lower.includes('failed to fetch') ||
+                lower.includes('networkerror') ||
+                lower.includes('load failed') ||
+                lower === 'network request failed' ||
+                lower.includes('network error')
+            ) {
+                setLoginEmailError(null);
+                setLoginPasswordError(null);
+                setLoginError('Cannot reach the server. Check your internet connection and try again.');
+            } else {
+                applySignInMessageToLoginErrors(raw, setLoginEmailError, setLoginPasswordError, setLoginError);
+            }
         } finally {
             setIsLoading(false);
         }
@@ -1348,8 +1431,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setRegisteredUserId(null);
         setRegistrationSessionId(null);
         setRegisteredFirstName('');
-        setProfilePhotoBase64('');
-        setPhotoPreview('');
         setVerificationMethod('');
         setVerificationDigits(EMPTY_VERIFY_DIGITS());
         setVerificationError(null);
@@ -1380,8 +1461,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setIsSendingCode(false);
             setIsVerifying(false);
             setRegisteredFirstName('');
-            setProfilePhotoBase64('');
-            setPhotoPreview('');
             setConfirmPassword('');
             setShowRegisterPassword(false);
             setShowRegisterConfirmPassword(false);
@@ -2335,40 +2414,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     )}
                                 </div>
-                                {registerAccountType === 'Self' && (
-                                    <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                                        <label>Profile Photo</label>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', border: '1px dashed var(--cream-dark)', padding: '1rem', borderRadius: '8px' }}>
-                                            {photoPreview ? (
-                                                <div style={{ position: 'relative', width: '100px', height: '100px' }}>
-                                                    <Image src={photoPreview} alt="Preview" fill style={{ objectFit: 'cover', borderRadius: '50%' }} />
-                                                    <button type="button" onClick={() => { setProfilePhotoBase64(''); setPhotoPreview(''); }} style={{ position: 'absolute', top: -5, right: -5, background: 'red', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>✕</button>
-                                                </div>
-                                            ) : (
-                                                <div style={{ width: '100px', height: '100px', borderRadius: '50%', backgroundColor: 'var(--cream-light)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="var(--text-light)" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                            <input type="file" accept="image/*" id="profilePhoto" style={{ display: 'none' }} onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onloadend = () => {
-                                                        const base64String = reader.result as string;
-                                                        setPhotoPreview(base64String);
-                                                        setProfilePhotoBase64(base64String);
-                                                    };
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }} />
-                                            <label htmlFor="profilePhoto" className="btn btn-outline" style={{ cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '0.9rem', width: 'auto', display: 'inline-block', textAlign: 'center' }}>
-                                                {photoPreview ? 'Change Photo' : 'Upload Photo'}
-                                            </label>
-                                        </div>
-                                    </div>
-                                )}
                                 <div className="checkbox-group">
                                     <input
                                         type="checkbox"
