@@ -3,6 +3,7 @@ import { Playfair_Display, Source_Sans_3, Pacifico } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import { MatrimonialNotificationsProvider } from '../context/MatrimonialNotificationsContext';
+import { ChatUnreadProvider } from '../context/ChatUnreadContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
 import MessageFloatingButton from '../components/MessageFloatingButton';
 import GlobalToast from '../components/GlobalToast';
@@ -55,12 +56,14 @@ export default function RootLayout({
         <AuthProvider>
           <MatrimonialNotificationsProvider>
             <LanguageProvider>
-              <LoadingScreenWrapper>
-                {children}
-                <MessageFloatingButton />
-                <PremiumActivationListener />
-                <GlobalToast />
-              </LoadingScreenWrapper>
+              <ChatUnreadProvider>
+                <LoadingScreenWrapper>
+                  {children}
+                  <MessageFloatingButton />
+                  <PremiumActivationListener />
+                  <GlobalToast />
+                </LoadingScreenWrapper>
+              </ChatUnreadProvider>
             </LanguageProvider>
           </MatrimonialNotificationsProvider>
         </AuthProvider>

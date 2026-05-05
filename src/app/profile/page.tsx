@@ -22,6 +22,7 @@ import {
     referenceIdFromNotification,
 } from '../../utils/matrimonialInterestNotifications';
 import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
+import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 
@@ -387,12 +388,8 @@ function ProfilePageContent() {
                 const favoriteIdList = parseIdList(rawFavorites);
                 const uniqueIds = Array.from(new Set([...shortlistIdList, ...favoriteIdList]));
 
-                const formatListTime = (v: unknown): string => {
-                    if (v == null || v === '') return '';
-                    const d = new Date(v as string);
-                    if (Number.isNaN(d.getTime())) return '';
-                    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
-                };
+                const formatListTime = (v: unknown): string =>
+                    formatDeviceDateTime(v, { dateStyle: 'short', timeStyle: 'short' });
                 const details =
                     uniqueIds.length === 0
                         ? []
@@ -436,11 +433,7 @@ function ProfilePageContent() {
                     if (pr?.requestedId != null) byRequestedId.set(Number(pr.requestedId), pr);
                 }
 
-                const toMs = (v: unknown): number => {
-                    if (v == null) return 0;
-                    const t = new Date(v as string).getTime();
-                    return Number.isFinite(t) ? t : 0;
-                };
+                const toMs = (v: unknown): number => apiInstantToMs(v);
 
                 const favAct = interactionsRes?.result?.FavoriteActivity || interactionsRes?.result?.favoriteActivity || [];
                 const shortAct = interactionsRes?.result?.ShortlistActivity || interactionsRes?.result?.shortlistActivity || [];
@@ -546,12 +539,8 @@ function ProfilePageContent() {
                 }
                 setIncomingInterestProfiles(incomingInterestList);
 
-                const formatActivityWhen = (v: unknown): string => {
-                    if (v == null || v === '') return '';
-                    const d = new Date(v as string);
-                    if (Number.isNaN(d.getTime())) return '';
-                    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-                };
+                const formatActivityWhen = (v: unknown): string =>
+                    formatDeviceDateTime(v, { dateStyle: 'medium', timeStyle: 'short' });
 
                 const rows: any[] = [];
 

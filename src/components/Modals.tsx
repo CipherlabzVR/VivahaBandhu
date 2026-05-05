@@ -3066,10 +3066,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div
                                     className="profile-detail-photo"
                                     style={(selectedProfile.isPremium || selectedProfile.IsPremium) ? {
-                                        // Glowing gold ring for premium members.
+                                        // Match .profile-detail-photo img (15px corners); avoid 50% ellipse vs rectangular photo.
+                                        borderRadius: '15px',
+                                        overflow: 'hidden',
                                         boxShadow: '0 0 0 4px #fde68a, 0 0 0 6px #d97706, 0 8px 24px rgba(217, 119, 6, 0.45)',
-                                        borderRadius: '50%',
-                                        transition: 'box-shadow 0.2s'
+                                        transition: 'box-shadow 0.2s',
                                     } : undefined}
                                 >
                                     <img

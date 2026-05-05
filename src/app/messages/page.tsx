@@ -3,10 +3,12 @@
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useChatUnread } from '@/context/ChatUnreadContext';
 import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
 import * as signalR from '@microsoft/signalr';
 import { connectMatrimonialHub } from '@/utils/signalrHub';
+import { formatDeviceDate, formatDeviceTime, parseApiDateForDisplay } from '@/utils/deviceDateTime';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
@@ -20,8 +22,14 @@ function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
     const receiverId = Number((raw as any).receiverId ?? (raw as any).ReceiverId ?? 0);
     const content = String((raw as any).content ?? (raw as any).Content ?? '');
     const sentAtRaw = (raw as any).sentAt ?? (raw as any).SentAt;
-    const sentAt =
-        typeof sentAtRaw === 'string' ? sentAtRaw : sentAtRaw instanceof Date ? sentAtRaw.toISOString() : new Date().toISOString();
+    const parsed = parseApiDateForDisplay(
+        typeof sentAtRaw === 'string'
+            ? sentAtRaw
+            : sentAtRaw instanceof Date
+              ? sentAtRaw
+              : sentAtRaw
+    );
+    const sentAt = parsed ? parsed.toISOString() : new Date().toISOString();
     const isRead = !!((raw as any).isRead ?? (raw as any).IsRead);
     if (!Number.isFinite(senderId) || !Number.isFinite(receiverId)) return null;
     return { id, senderId, receiverId, content, sentAt, isRead };
@@ -34,15 +42,8 @@ function normalizeMessageContent(s: string) {
 type PresenceInfo = { isOnline: boolean; lastSeen: string | null };
 
 function toIsoLastSeen(raw: unknown): string | null {
-    if (raw == null) return null;
-    if (typeof raw === 'string') {
-        const d = new Date(raw);
-        return Number.isFinite(d.getTime()) ? d.toISOString() : null;
-    }
-    if (raw instanceof Date && Number.isFinite(raw.getTime())) {
-        return raw.toISOString();
-    }
-    return null;
+    const d = parseApiDateForDisplay(raw);
+    return d ? d.toISOString() : null;
 }
 
 /** Hub invoke + broadcast payloads (camelCase / PascalCase). */
@@ -63,9 +64,9 @@ function formatLastSeenLabel(lastSeen: string | null, isOnline: boolean, presenc
     void presenceClockTick;
     if (isOnline) return 'Online';
     if (!lastSeen) return 'Offline';
-    const d = new Date(lastSeen);
+    const d = parseApiDateForDisplay(lastSeen);
+    if (!d) return 'Offline';
     const t = d.getTime();
-    if (!Number.isFinite(t)) return 'Offline';
     const diffMs = Date.now() - t;
     const mins = Math.floor(diffMs / 60000);
     if (mins < 1) return 'Last seen just now';
@@ -78,8 +79,27 @@ function formatLastSeenLabel(lastSeen: string | null, isOnline: boolean, presenc
     return `Last seen ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
+/** API may return camelCase or PascalCase; default true when unknown (e.g. legacy rows). */
+function readMatrimonialChatEnabledFromRow(row: unknown): boolean {
+    if (!row || typeof row !== 'object') return true;
+    const o = row as Record<string, unknown>;
+    const v = o.isMatrimonialChatEnabled ?? o.IsMatrimonialChatEnabled;
+    if (v === false || v === 0) return false;
+    if (typeof v === 'string' && v.toLowerCase() === 'false') return false;
+    return true;
+}
+
+function peerDisplayName(contact: { firstName?: string; lastName?: string } | null): string {
+    if (!contact) return 'This member';
+    const a = String(contact.firstName ?? '').trim();
+    const b = String(contact.lastName ?? '').trim();
+    const name = [a, b].filter(Boolean).join(' ').trim();
+    return name || 'This member';
+}
+
 function MessagesContent() {
     const { user } = useAuth();
+    const { syncUnreadFromInbox } = useChatUnread();
     const router = useRouter();
     const searchParams = useSearchParams();
     const urlUserId = searchParams.get('userId');
@@ -124,11 +144,23 @@ function MessagesContent() {
     }, []);
 
     useEffect(() => {
-        if (!user?.id || typeof window === 'undefined') return;
-        const stored = localStorage.getItem(`chat_enabled_${user.id}`);
-        if (stored !== null) {
-            setChatEnabled(stored === 'true');
-        }
+        if (!user?.id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await matrimonialService.getProfile(Number(user.id), Number(user.id));
+                if (cancelled) return;
+                if (res.statusCode === 200 || res.statusCode === 1) {
+                    const r = res.result;
+                    if (r) setChatEnabled(readMatrimonialChatEnabledFromRow(r));
+                }
+            } catch {
+                if (!cancelled) setChatEnabled(true);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
     }, [user?.id]);
 
     useEffect(() => {
@@ -136,16 +168,43 @@ function MessagesContent() {
         return () => window.clearInterval(id);
     }, []);
 
-    const handleToggleChatEnabled = () => {
-        if (!user?.id || typeof window === 'undefined') return;
-        const next = !chatEnabled;
+    const handleToggleChatEnabled = async () => {
+        if (!user?.id) return;
+        const prev = chatEnabled;
+        const next = !prev;
         setChatEnabled(next);
-        localStorage.setItem(`chat_enabled_${user.id}`, String(next));
-        setChatStatusToast(next ? 'Chat enabled successfully' : 'Chat disabled successfully');
-        setTimeout(() => setChatStatusToast(''), 1800);
+        try {
+            const res = await matrimonialService.setMatrimonialChatEnabled(Number(user.id), next);
+            const ok = res.statusCode === 200 || res.statusCode === 1;
+            if (!ok) {
+                setChatEnabled(prev);
+                setChatStatusToast(String(res.message || res.Message || 'Could not update chat setting'));
+                setTimeout(() => setChatStatusToast(''), 2200);
+                return;
+            }
+            setChatStatusToast(next ? 'Chat is on' : 'Chat is off - others cannot message you');
+            setTimeout(() => setChatStatusToast(''), 1800);
+        } catch (err) {
+            setChatEnabled(prev);
+            const msg = err instanceof Error ? err.message : 'Could not update chat setting';
+            setChatStatusToast(msg);
+            setTimeout(() => setChatStatusToast(''), 2200);
+        }
     };
 
-    // 1. Initial Load & Setup SignalR connection
+    const peerChatOff =
+        !!selectedContact &&
+        Number(selectedContact.contactId) !== Number(user?.id) &&
+        !readMatrimonialChatEnabledFromRow(selectedContact);
+    const canSendInThread = chatEnabled && !peerChatOff;
+
+    useEffect(() => {
+        if (!selectedContact?.contactId) return;
+        const id = Number(selectedContact.contactId);
+        const row = inbox.find((c: { contactId?: number }) => Number(c.contactId) === id);
+        if (row) setSelectedContact(row);
+    }, [inbox, selectedContact?.contactId]);
+
     useEffect(() => {
         if (!user) {
             router.push('/');
@@ -358,7 +417,9 @@ function MessagesContent() {
         try {
             const res = await matrimonialService.getInbox(Number(user.id));
             if (res.statusCode === 200 || res.statusCode === 1) {
-                setInbox(res.result || []);
+                const rows = res.result || [];
+                setInbox(rows);
+                syncUnreadFromInbox(rows);
                 if (urlUserId && !selectedContactRef.current) {
                     handleSelectContact(Number(urlUserId));
                 }
@@ -381,13 +442,15 @@ function MessagesContent() {
                 lastName: "",
                 profilePhoto: null
             });
-            matrimonialService.getProfile(contactId).then(p => {
+            matrimonialService.getProfile(contactId, Number(user.id)).then((p) => {
                 if (p.statusCode === 200 && p.result) {
+                    const r = p.result;
                     setSelectedContact({
                         contactId: contactId,
-                        firstName: p.result.firstName || "User",
-                        lastName: p.result.lastName || "",
-                        profilePhoto: p.result.profilePhoto
+                        firstName: r.firstName || 'User',
+                        lastName: r.lastName || '',
+                        profilePhoto: r.profilePhoto,
+                        isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(r),
                     });
                 }
             }).catch(console.error);
@@ -473,7 +536,7 @@ function MessagesContent() {
 
     // Typing Indicator Trigger
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!chatEnabled) return;
+        if (!canSendInThread) return;
         setNewMessage(e.target.value);
 
         if (!isTyping) {
@@ -501,7 +564,7 @@ function MessagesContent() {
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!chatEnabled) return;
+        if (!canSendInThread) return;
         if (!newMessage.trim() || !user || !selectedContact) return;
 
         const content = newMessage.trim();
@@ -578,11 +641,11 @@ function MessagesContent() {
         <main className="min-h-screen bg-cream flex flex-col font-source-sans">
             <Header onOpenLogin={() => { }} onOpenRegister={() => { }} onOpenVerify={() => { }} />
 
-            <section className="flex-1 pt-[100px] pb-12 px-4 md:px-8 max-w-[1400px] mx-auto w-full flex flex-col">
-                <div className="flex-1 bg-white rounded-2xl md:rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gold/10 overflow-hidden flex flex-col md:flex-row min-h-[600px] md:h-[calc(100vh-150px)]">
+            <section className="flex-1 min-h-0 pt-[100px] pb-12 px-4 md:px-8 max-w-[1400px] mx-auto w-full flex flex-col">
+                <div className="flex-1 min-h-0 bg-white rounded-2xl md:rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gold/10 overflow-hidden flex flex-col md:flex-row min-h-[min(600px,calc(100dvh-170px))] md:h-[calc(100vh-150px)] md:max-h-[calc(100vh-150px)]">
 
                     {/* Inbox Sidebar List */}
-                    <div className={`w-full md:w-[380px] flex-col border-r border-gray-100 bg-[#fdfaf7] ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
+                    <div className={`w-full md:w-[380px] flex flex-col min-h-0 border-r border-gray-100 bg-[#fdfaf7] ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
                         <div className="p-6 border-b border-gold/10 bg-white">
                             <div className="flex items-start justify-between gap-3">
                                 <div>
@@ -600,7 +663,7 @@ function MessagesContent() {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                             {isLoading ? (
                                 <div className="p-8 text-center text-text-light animate-pulse">Loading conversations...</div>
                             ) : inbox.length === 0 ? (
@@ -623,13 +686,20 @@ function MessagesContent() {
                                             />
                                         </div>
                                         <div className="flex-1 overflow-hidden">
-                                            <div className="flex justify-between items-center mb-1">
+                                            <div className="flex justify-between items-center mb-1 gap-2">
                                                 <h4 className="font-semibold text-text-dark text-[1rem] truncate">
                                                     {contact.firstName} {contact.lastName}
                                                 </h4>
-                                                <span className="text-[0.7rem] text-text-light whitespace-nowrap ml-2">
-                                                    {new Date(contact.sentAt).toLocaleDateString()}
-                                                </span>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    {!readMatrimonialChatEnabledFromRow(contact) && (
+                                                        <span className="text-[0.65rem] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                                                            Chat off
+                                                        </span>
+                                                    )}
+                                                    <span className="text-[0.7rem] text-text-light whitespace-nowrap">
+                                                        {formatDeviceDate(contact.sentAt)}
+                                                    </span>
+                                                </div>
                                             </div>
                                             {(() => {
                                                 const pr = getPresenceFor(presenceMap, contact.contactId);
@@ -666,11 +736,11 @@ function MessagesContent() {
                     </div>
 
                     {/* Chat Window */}
-                    <div className={`flex-1 flex-col bg-white relative ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
+                    <div className={`flex-1 min-h-0 flex flex-col bg-white relative overflow-hidden ${!selectedContact ? 'hidden md:flex' : 'flex'}`}>
                         {selectedContact ? (
                             <>
                                 {/* Chat Header */}
-                                <div className="p-4 md:p-6 border-b border-gray-100 bg-white flex items-center sticky top-0 z-10 shadow-sm">
+                                <div className="shrink-0 p-4 md:p-6 border-b border-gray-100 bg-white flex items-center z-10 shadow-sm">
                                     <button
                                         className="md:hidden mr-4 w-8 h-8 rounded-full bg-cream flex items-center justify-center text-text-dark shadow-sm"
                                         onClick={() => setSelectedContact(null)}
@@ -703,7 +773,7 @@ function MessagesContent() {
                                 </div>
 
                                 {/* Messages Area */}
-                                <div className="flex-1 p-4 md:p-6 overflow-y-auto flex flex-col gap-4 bg-[url('/pattern-bg.png')] bg-opacity-5">
+                                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 flex flex-col gap-4 bg-[url('/pattern-bg.png')] bg-opacity-5">
                                     {messages.map((msg, index) => {
                                         const isMe = Number(msg.senderId) === Number(user.id);
                                         const rowKey =
@@ -742,7 +812,7 @@ function MessagesContent() {
 
                                                 <div className={`flex items-center gap-1.5 mt-1 ${isMe ? 'self-end' : 'self-start'}`}>
                                                     <span className="text-[0.65rem] text-text-light/70 font-medium">
-                                                        {new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        {formatDeviceTime(msg.sentAt)}
                                                     </span>
                                                     {isMe && (
                                                         <span className="text-[0.6rem] text-text-light/50">
@@ -773,10 +843,16 @@ function MessagesContent() {
                                 </div>
 
                                 {/* Message Input */}
-                                <div className="p-4 md:p-6 bg-white border-t border-gray-100">
+                                <div className="shrink-0 p-4 md:p-6 bg-white border-t border-gray-100">
                                     {!chatEnabled && (
                                         <div className="mb-3 px-4 py-2 rounded-xl bg-red-50 text-red-700 text-sm border border-red-100">
                                             Chat is currently disabled. Turn it on to send messages.
+                                        </div>
+                                    )}
+                                    {chatEnabled && peerChatOff && selectedContact && (
+                                        <div className="mb-3 px-4 py-3 rounded-xl bg-amber-50 text-amber-950 text-sm border border-amber-100 leading-relaxed">
+                                            <strong className="font-semibold">{peerDisplayName(selectedContact)}</strong> has turned off chat.
+                                            You {"can't"} send messages until they turn chat back on.
                                         </div>
                                     )}
                                     <form onSubmit={handleSendMessage} className="flex gap-3 bg-[#fdfaf7] border border-gold/20 p-2 rounded-full shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
@@ -787,11 +863,11 @@ function MessagesContent() {
                                             placeholder="Write your message..."
                                             className="flex-1 bg-transparent px-4 outline-none text-text-dark placeholder:text-text-light/50"
                                             autoComplete="off"
-                                            disabled={!chatEnabled}
+                                            disabled={!canSendInThread}
                                         />
                                         <button
                                             type="submit"
-                                            disabled={!newMessage.trim() || !chatEnabled}
+                                            disabled={!newMessage.trim() || !canSendInThread}
                                             className="bg-primary hover:bg-gold text-white border-none rounded-full w-10 h-10 md:w-12 md:h-12 flex items-center justify-center cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 ml-1">
