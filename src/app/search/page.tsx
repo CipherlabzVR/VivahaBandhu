@@ -1,24 +1,64 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
+import CustomDropdown from '../../components/CustomDropdown';
 import { matrimonialService } from '../../services/matrimonialService';
 import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
 import { religionFilterMatches } from '../../utils/religionMatch';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
+import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
+import { validateMatrimonialSearchAge } from '../../utils/matrimonialSearchAge';
+import {
+    type QuickSearchState,
+    quickSearchFromUrlParams,
+    writeQuickSearchSession,
+} from '../../utils/quickSearchSession';
+import { showToast } from '../../utils/toast';
 
 function SearchContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
+    const { language, t } = useLanguage();
     const { user, loading } = useAuth();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
+
+    const [quickFilters, setQuickFilters] = useState<QuickSearchState>(() => quickSearchFromUrlParams(searchParams));
+    const paramsKey = searchParams.toString();
+    useEffect(() => {
+        setQuickFilters(quickSearchFromUrlParams(searchParams));
+    }, [paramsKey, searchParams]);
+
+    const handleQuickFilterChange = useCallback((name: string, value: string) => {
+        setQuickFilters((prev) => ({ ...prev, [name]: value }));
+    }, []);
+
+    const applyQuickSearch = useCallback(() => {
+        const ageCheck = validateMatrimonialSearchAge(quickFilters.ageFrom, quickFilters.ageTo);
+        if (!ageCheck.ok) {
+            showToast(ageCheck.message, 'error');
+            return;
+        }
+        const next = new URLSearchParams();
+        next.set('gender', quickFilters.gender);
+        next.set('ageFrom', quickFilters.ageFrom);
+        next.set('ageTo', quickFilters.ageTo);
+        next.set('religion', quickFilters.religion);
+        const q = searchParams.get('q');
+        if (q) next.set('q', q);
+        const district = searchParams.get('district');
+        if (district) next.set('district', district);
+        writeQuickSearchSession(quickFilters);
+        router.replace(`/search?${next.toString()}`);
+    }, [quickFilters, router, searchParams]);
 
     useEffect(() => {
         if (loading) return;
@@ -116,7 +156,87 @@ function SearchContent() {
 
             <div style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px' }}>
                 <h1>Search Results</h1>
-                <p style={{ marginBottom: '2rem', color: '#666' }}>Found {results.length} profiles based on your criteria.</p>
+                <p style={{ marginBottom: '1rem', color: '#666' }}>Found {results.length} profiles based on your criteria.</p>
+
+                <div
+                    className={`mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-6 ${language === 'si' ? 'font-sinhala' : ''}`}
+                >
+                    <h2 className="mb-3 text-center font-playfair text-lg font-semibold text-text-dark">{t('quickSearch')}</h2>
+                    <div className="flex flex-wrap items-end gap-4">
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[150px]">
+                            <CustomDropdown
+                                name="gender"
+                                value={quickFilters.gender}
+                                onChange={handleQuickFilterChange}
+                                options={[
+                                    { value: 'Bride', label: 'Bride' },
+                                    { value: 'Groom', label: 'Groom' },
+                                ]}
+                                label={t('imLookingFor')}
+                            />
+                        </div>
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[120px]">
+                            <CustomDropdown
+                                name="ageFrom"
+                                value={quickFilters.ageFrom}
+                                onChange={handleQuickFilterChange}
+                                options={[18, 20, 22, 24, 26, 28, 30, 35, 40, 45, 50].map((age) => ({
+                                    value: age.toString(),
+                                    label: age.toString(),
+                                }))}
+                                label={t('ageFrom')}
+                            />
+                        </div>
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[120px]">
+                            <CustomDropdown
+                                name="ageTo"
+                                value={quickFilters.ageTo}
+                                onChange={handleQuickFilterChange}
+                                options={[20, 22, 24, 26, 28, 30, 32, 35, 40, 45, 50, 55, 60].map((age) => ({
+                                    value: age.toString(),
+                                    label: age.toString(),
+                                }))}
+                                label={t('ageTo')}
+                            />
+                        </div>
+                        <div className="w-full sm:w-[calc(50%-0.5rem)] md:flex-1 md:min-w-[150px]">
+                            <CustomDropdown
+                                name="religion"
+                                value={quickFilters.religion}
+                                onChange={handleQuickFilterChange}
+                                options={[
+                                    { value: '', label: 'Select Religion' },
+                                    ...MATRIMONIAL_RELIGION_OPTIONS.map((r) => ({ value: r, label: r })),
+                                ]}
+                                label={t('religion')}
+                            />
+                        </div>
+                        <div className="w-full md:w-auto md:min-w-[150px]">
+                            <button
+                                type="button"
+                                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-8 py-3 font-semibold text-white shadow-md transition-colors hover:bg-primary-dark hover:shadow-lg"
+                                onClick={applyQuickSearch}
+                            >
+                                <svg
+                                    className="h-5 w-5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    aria-hidden
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                    />
+                                </svg>
+                                {t('searchNow')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 {results.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem' }}>

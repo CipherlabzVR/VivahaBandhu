@@ -33,7 +33,26 @@ interface User {
     subscriptionExpiresAt?: string;
     /** Whether the user wants an email when someone shows interest. Server-authoritative. */
     emailOnInterest?: boolean;
+    /**
+     * Premium-only: when false, phone / WhatsApp / email are hidden from other viewers (server-enforced).
+     * Undefined defaults to visible (true) in UI.
+     */
+    showContactInformation?: boolean;
     horoscopeDocument?: string;
+    /** Additional horoscope page / image URL (stored on matrimonial profile). */
+    horoscopeDocument2?: string;
+    /** Additional horoscope page / image URL (third slot). */
+    horoscopeDocument3?: string;
+    /** True if accountType is Father / Mother / Relation. */
+    isFamilyParentAccount?: boolean;
+    /** Sub-account slot entitlements for family parents (1 from premium subscription + paid top-ups). */
+    familySubAccountSlotsPurchased?: number;
+    /** Sub-account slots already used (incremented on creation, never decremented on delete). */
+    familySubAccountSlotsConsumed?: number;
+    /** Hard cap on total slots a family parent can hold. */
+    familySubAccountSlotsMaxTotal?: number;
+    /** LKR cost to buy one additional family sub-account slot. */
+    familySubAccountAdditionalAmountLkr?: number;
 }
 
 interface AuthContextType {

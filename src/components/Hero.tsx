@@ -10,6 +10,13 @@ import {
     formatHeroStatCount,
     useHeroLiveStats,
 } from '../hooks/useHeroLiveStats';
+import { validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
+import {
+    DEFAULT_QUICK_SEARCH,
+    readQuickSearchSession,
+    writeQuickSearchSession,
+} from '../utils/quickSearchSession';
+import { showToast } from '../utils/toast';
 
 const DEFAULT_HERO_STATS = {
     verifiedProfiles: 50_000,
@@ -48,13 +55,12 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
 
     const heroVideoRef = useRef<HTMLVideoElement | null>(null);
     const [heroQuery, setHeroQuery] = useState('');
-    const [search, setSearch] = useState({
-        gender: 'Bride',
-        ageFrom: '20',
-        ageTo: '30',
-        religion: '',
-        district: 'Any',
-    });
+    const [search, setSearch] = useState({ ...DEFAULT_QUICK_SEARCH });
+
+    useEffect(() => {
+        const saved = readQuickSearchSession();
+        if (saved) setSearch(saved);
+    }, []);
 
     useEffect(() => {
         let retryTimer: ReturnType<typeof setInterval> | null = null;
@@ -96,6 +102,12 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
     };
 
     const handleSearch = () => {
+        const ageCheck = validateMatrimonialSearchAge(search.ageFrom, search.ageTo);
+        if (!ageCheck.ok) {
+            showToast(ageCheck.message, 'error');
+            return;
+        }
+        writeQuickSearchSession(search);
         const query = new URLSearchParams(search).toString();
         router.push(`/search?${query}`);
     };
@@ -203,7 +215,10 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                 value={heroQuery}
                                 onChange={(e) => setHeroQuery(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleHeroInlineSearch();
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleHeroInlineSearch();
+                                    }
                                 }}
                                 placeholder={t('heroNameSearchPlaceholder')}
                                 className="min-w-0 flex-1 border-0 bg-white px-4 py-3.5 text-text-dark placeholder:text-text-light/80 focus:outline-none focus:ring-0"
@@ -481,29 +496,6 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                     ...MATRIMONIAL_RELIGION_OPTIONS.map((r) => ({ value: r, label: r })),
                                 ]}
                                 label={t('religion')}
-                            />
-                        </div>
-                        <div className="w-full md:flex-1 md:min-w-[150px] sm:w-[calc(50%-0.5rem)]">
-                            <CustomDropdown
-                                name="district"
-                                value={search.district}
-                                onChange={handleChange}
-                                options={[
-                                    { value: 'Any', label: 'Any' },
-                                    { value: 'Colombo', label: 'Colombo' },
-                                    { value: 'Gampaha', label: 'Gampaha' },
-                                    { value: 'Kandy', label: 'Kandy' },
-                                    { value: 'Kalutara', label: 'Kalutara' },
-                                    { value: 'Galle', label: 'Galle' },
-                                    { value: 'Matara', label: 'Matara' },
-                                    { value: 'Kurunegala', label: 'Kurunegala' },
-                                    { value: 'Negombo', label: 'Negombo' },
-                                    { value: 'Jaffna', label: 'Jaffna' },
-                                    { value: 'Anuradhapura', label: 'Anuradhapura' },
-                                    { value: 'Moratuwa', label: 'Moratuwa' },
-                                    { value: 'Batticaloa', label: 'Batticaloa' },
-                                ]}
-                                label={t('district')}
                             />
                         </div>
                         <div className="w-full md:w-auto md:min-w-[150px]">

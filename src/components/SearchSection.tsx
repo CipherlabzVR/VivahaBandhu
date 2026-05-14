@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+'use client';
+
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
@@ -7,33 +9,129 @@ import MatchmakerBadge from './MatchmakerBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
+import { religionFilterMatches } from '../utils/religionMatch';
+
+import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
+}
+
+const BROWSE_FILTERS_STORAGE_KEY = 'cbass:browse-profile-filters';
+
+type BrowseFilterFields = {
+    gender: string;
+    minAge: string;
+    maxAge: string;
+    religion: string;
+    maritalStatus: string;
+    sortBy: string;
+};
+
+type ActiveBrowseFilters = BrowseFilterFields & { pageNumber: number; pageSize: number };
+
+const defaultBrowseFields = (): BrowseFilterFields => ({
+    gender: '',
+    minAge: '',
+    maxAge: '',
+    religion: '',
+    maritalStatus: '',
+    sortBy: 'latest',
+});
+
+function browseOwnerKey(user: { id: string } | null | undefined): string {
+    return user?.id != null && user.id !== '' ? `user:${user.id}` : 'anon';
+}
+
+function profileMatchesBrowseFilters(profile: any, f: BrowseFilterFields): boolean {
+    if (f.gender) {
+        const g = String(profile.gender ?? profile.Gender ?? '').trim();
+        if (g.toLowerCase() !== f.gender.trim().toLowerCase()) return false;
+    }
+    const age = Number(profile.age ?? profile.Age ?? 0);
+    if (f.minAge) {
+        const min = parseInt(f.minAge, 10);
+        if (!Number.isNaN(min) && age > 0 && age < min) return false;
+    }
+    if (f.maxAge) {
+        const max = parseInt(f.maxAge, 10);
+        if (!Number.isNaN(max) && age > 0 && age > max) return false;
+    }
+    if (f.religion && !religionFilterMatches(profile.religion ?? profile.Religion, f.religion)) return false;
+    if (f.maritalStatus) {
+        const ms = String(profile.maritalStatus ?? profile.MaritalStatus ?? '').trim();
+        if (ms !== f.maritalStatus) return false;
+    }
+    return true;
+}
+
+function sameBrowseFields(a: BrowseFilterFields, b: BrowseFilterFields): boolean {
+    return (
+        a.gender === b.gender &&
+        a.minAge === b.minAge &&
+        a.maxAge === b.maxAge &&
+        a.religion === b.religion &&
+        a.maritalStatus === b.maritalStatus &&
+        a.sortBy === b.sortBy
+    );
+}
+
+function loadSavedBrowseFields(ownerKey: string): BrowseFilterFields | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(BROWSE_FILTERS_STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw) as { ownerKey?: string } & Partial<BrowseFilterFields>;
+        if (data.ownerKey !== ownerKey) return null;
+        const d = defaultBrowseFields();
+        if (typeof data.gender === 'string') d.gender = data.gender;
+        if (typeof data.minAge === 'string') d.minAge = data.minAge;
+        if (typeof data.maxAge === 'string') d.maxAge = data.maxAge;
+        if (typeof data.religion === 'string') d.religion = data.religion;
+        if (typeof data.maritalStatus === 'string') d.maritalStatus = data.maritalStatus;
+        if (typeof data.sortBy === 'string') d.sortBy = data.sortBy;
+        return d;
+    } catch {
+        return null;
+    }
+}
+
+function persistBrowseFields(ownerKey: string, fields: BrowseFilterFields): void {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.setItem(BROWSE_FILTERS_STORAGE_KEY, JSON.stringify({ ownerKey, ...fields }));
+    } catch {
+        /* ignore quota / private mode */
+    }
+}
+
+function clearSavedBrowseFilters(): void {
+    if (typeof window === 'undefined') return;
+    try {
+        localStorage.removeItem(BROWSE_FILTERS_STORAGE_KEY);
+    } catch {
+        /* ignore */
+    }
 }
 
 export default function SearchSection({ onOpenProfileDetail }: SearchSectionProps) {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
     
     const [preferredSearch, setPreferredSearch] = useState(false);
 
-    // Filter states
-    const [filters, setFilters] = useState({
-        gender: '',
-        minAge: '',
-        maxAge: '',
-        religion: '',
-        maritalStatus: '',
-        sortBy: 'latest',
+    const [draftFilters, setDraftFilters] = useState<BrowseFilterFields>(defaultBrowseFields);
+    const [activeFilters, setActiveFilters] = useState<ActiveBrowseFilters>(() => ({
+        ...defaultBrowseFields(),
         pageNumber: 1,
-        pageSize: 99
-    });
+        pageSize: 99,
+    }));
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [actionToast, setActionToast] = useState('');
+    const [ageFilterError, setAgeFilterError] = useState<string | null>(null);
 
     // Free-text search
     const [searchInput, setSearchInput] = useState('');
@@ -42,14 +140,34 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const [highlightedSuggestion, setHighlightedSuggestion] = useState(-1);
     const searchBoxRef = useRef<HTMLDivElement | null>(null);
 
-    // Debounce input -> active search term
+    // Debounce input -> active search term; keep pagination aligned with current result set
     useEffect(() => {
         const handle = window.setTimeout(() => {
             setSearchTerm(searchInput.trim());
-            setFilters(prev => (prev.pageNumber === 1 ? prev : { ...prev, pageNumber: 1 }));
+            setActiveFilters(prev => (prev.pageNumber === 1 ? prev : { ...prev, pageNumber: 1 }));
         }, 250);
         return () => window.clearTimeout(handle);
     }, [searchInput]);
+
+    // After auth is ready, restore saved browse filters for this account (or anonymous)
+    useEffect(() => {
+        if (authLoading) return;
+        const ownerKey = browseOwnerKey(user);
+        const saved = loadSavedBrowseFields(ownerKey);
+        if (saved) {
+            const ageOk = validateMatrimonialSearchAge(saved.minAge, saved.maxAge);
+            const fields = ageOk.ok ? saved : { ...saved, minAge: '', maxAge: '' };
+            if (!ageOk.ok) {
+                persistBrowseFields(ownerKey, fields);
+            }
+            setDraftFilters(fields);
+            setActiveFilters(prev => ({ ...fields, pageNumber: 1, pageSize: prev.pageSize }));
+        } else {
+            const defaults = defaultBrowseFields();
+            setDraftFilters(defaults);
+            setActiveFilters((prev) => ({ ...defaults, pageNumber: 1, pageSize: prev.pageSize }));
+        }
+    }, [user?.id, authLoading]);
 
     // Close suggestion dropdown when clicking outside
     useEffect(() => {
@@ -83,17 +201,34 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         return haystack.includes(needle);
     };
 
+    const activeCriteria = useMemo(
+        (): BrowseFilterFields => ({
+            gender: activeFilters.gender,
+            minAge: activeFilters.minAge,
+            maxAge: activeFilters.maxAge,
+            religion: activeFilters.religion,
+            maritalStatus: activeFilters.maritalStatus,
+            sortBy: activeFilters.sortBy,
+        }),
+        [activeFilters]
+    );
+
+    const profilesMatchingActiveCriteria = useMemo(() => {
+        if (preferredSearch) return profiles;
+        return profiles.filter((p) => profileMatchesBrowseFilters(p, activeCriteria));
+    }, [profiles, activeCriteria, preferredSearch]);
+
     const filteredProfiles = useMemo(() => {
-        if (!searchTerm) return profiles;
-        return profiles.filter(p => matchesSearch(p, searchTerm));
-    }, [profiles, searchTerm]);
+        if (!searchTerm) return profilesMatchingActiveCriteria;
+        return profilesMatchingActiveCriteria.filter((p) => matchesSearch(p, searchTerm));
+    }, [profilesMatchingActiveCriteria, searchTerm]);
 
     const suggestions = useMemo(() => {
         const q = searchInput.trim().toLowerCase();
         if (!q || q.length < 1) return [] as { label: string; subLabel: string; profile: any }[];
         const seen = new Set<string>();
         const results: { label: string; subLabel: string; profile: any }[] = [];
-        for (const p of profiles) {
+        for (const p of profilesMatchingActiveCriteria) {
             if (!matchesSearch(p, q)) continue;
             const name = `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Unnamed';
             const key = `${p.userId || p.id}-${name}`;
@@ -104,7 +239,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             if (results.length >= 8) break;
         }
         return results;
-    }, [profiles, searchInput]);
+    }, [profilesMatchingActiveCriteria, searchInput]);
 
     const applySuggestion = (s: { label: string; profile: any }) => {
         setSearchInput(s.label);
@@ -118,24 +253,36 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         onOpenProfileDetail(s.profile);
     };
 
+    /** Apply free-text filter immediately (Enter) instead of waiting for debounce. */
+    const commitFreeTextSearch = useCallback(() => {
+        const q = searchInput.trim();
+        setSearchTerm(q);
+        setShowSuggestions(false);
+        setHighlightedSuggestion(-1);
+        setActiveFilters((prev) => (prev.pageNumber === 1 ? prev : { ...prev, pageNumber: 1 }));
+    }, [searchInput]);
+
     const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            if (showSuggestions && suggestions.length > 0 && highlightedSuggestion >= 0) {
+                e.preventDefault();
+                applySuggestion(suggestions[highlightedSuggestion]);
+            } else {
+                e.preventDefault();
+                commitFreeTextSearch();
+            }
+            return;
+        }
         if (!showSuggestions || suggestions.length === 0) {
             if (e.key === 'Escape') setShowSuggestions(false);
             return;
         }
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            setHighlightedSuggestion(prev => (prev + 1) % suggestions.length);
+            setHighlightedSuggestion((prev) => (prev + 1) % suggestions.length);
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            setHighlightedSuggestion(prev => (prev <= 0 ? suggestions.length - 1 : prev - 1));
-        } else if (e.key === 'Enter') {
-            if (highlightedSuggestion >= 0) {
-                e.preventDefault();
-                applySuggestion(suggestions[highlightedSuggestion]);
-            } else {
-                setShowSuggestions(false);
-            }
+            setHighlightedSuggestion((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
         } else if (e.key === 'Escape') {
             setShowSuggestions(false);
             setHighlightedSuggestion(-1);
@@ -145,24 +292,44 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const fetchProfiles = async () => {
         setLoading(true);
         try {
-            const searchParams: any = {
-                ...filters,
-                minAge: filters.minAge ? parseInt(filters.minAge) : null,
-                maxAge: filters.maxAge ? parseInt(filters.maxAge) : null,
-            };
+            const usePreferred = !!(preferredSearch && user?.id);
 
-            if (preferredSearch && user?.id) {
-                searchParams.preferredSearch = true;
-                searchParams.userId = Number(user.id);
-                searchParams.sortBy = 'best_match';
-            } else if (user?.id) {
-                searchParams.userId = Number(user.id);
-            }
-            
+            // Preferred search uses partner preferences only — do not send manual browse filters to the API.
+            const searchParams: Record<string, unknown> = usePreferred
+                ? {
+                    gender: null,
+                    minAge: null,
+                    maxAge: null,
+                    religion: null,
+                    maritalStatus: null,
+                    sortBy: 'best_match',
+                    pageNumber: activeFilters.pageNumber,
+                    pageSize: activeFilters.pageSize,
+                    preferredSearch: true,
+                    userId: Number(user.id),
+                }
+                : {
+                    gender: activeFilters.gender || null,
+                    minAge: activeFilters.minAge ? parseInt(activeFilters.minAge, 10) : null,
+                    maxAge: activeFilters.maxAge ? parseInt(activeFilters.maxAge, 10) : null,
+                    religion: activeFilters.religion || null,
+                    maritalStatus: activeFilters.maritalStatus || null,
+                    sortBy: activeFilters.sortBy,
+                    pageNumber: activeFilters.pageNumber,
+                    pageSize: activeFilters.pageSize,
+                    ...(user?.id ? { userId: Number(user.id) } : {}),
+                };
+
             const res = await matrimonialService.searchProfiles(searchParams);
-            if (res.statusCode === 200 && res.result) {
+            const ok = (res.statusCode === 200 || res.statusCode === 1) && res.result;
+            if (ok) {
                 setProfiles(res.result.profiles || res.result.Profiles || []);
                 setTotalCount(res.result.totalCount || res.result.TotalCount || 0);
+            } else {
+                setProfiles([]);
+                setTotalCount(0);
+                const msg = typeof res.message === 'string' && res.message.trim() ? res.message : null;
+                if (msg) showToast(msg, 'error');
             }
         } catch (error) {
             console.error("Failed to load profiles", error);
@@ -173,7 +340,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     useEffect(() => {
         fetchProfiles();
-    }, [filters, preferredSearch]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when applied criteria, mode, or account changes
+    }, [activeFilters, preferredSearch, user?.id]);
 
     useEffect(() => {
         const fetchInteractions = async () => {
@@ -197,25 +365,37 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
         const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value, pageNumber: 1 })); // Reset to page 1 on filter change
+        if (name === 'minAge' || name === 'maxAge') setAgeFilterError(null);
+        setDraftFilters((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleGenderToggle = (gender: string) => {
-        setFilters(prev => ({ ...prev, gender: prev.gender === gender ? '' : gender, pageNumber: 1 }));
+        setDraftFilters((prev) => ({ ...prev, gender: prev.gender === gender ? '' : gender }));
+    };
+
+    const handleSaveBrowseFilters = () => {
+        const ageCheck = validateMatrimonialSearchAge(draftFilters.minAge, draftFilters.maxAge);
+        if (!ageCheck.ok) {
+            setAgeFilterError(ageCheck.message);
+            showToast(ageCheck.message, 'error');
+            return;
+        }
+        setAgeFilterError(null);
+        const ownerKey = browseOwnerKey(user);
+        persistBrowseFields(ownerKey, draftFilters);
+        setActiveFilters((prev) => ({ ...draftFilters, pageNumber: 1, pageSize: prev.pageSize }));
+        showToast('Search saved. Results now match your chosen filters.', 'success');
     };
 
     const clearFilters = () => {
-        setFilters({
-            gender: '',
-            minAge: '',
-            maxAge: '',
-            religion: '',
-            maritalStatus: '',
-            sortBy: 'latest',
-            pageNumber: 1,
-            pageSize: 99
-        });
+        clearSavedBrowseFilters();
+        setAgeFilterError(null);
+        const cleared = defaultBrowseFields();
+        setDraftFilters(cleared);
+        setActiveFilters({ ...cleared, pageNumber: 1, pageSize: 99 });
     };
+
+    const filtersDirty = !sameBrowseFields(draftFilters, activeCriteria);
 
     const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
@@ -305,7 +485,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Sort By</label>
-                        <select name="sortBy" value={filters.sortBy} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
+                        <select name="sortBy" value={draftFilters.sortBy} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option value="latest">Latest First</option>
                             <option value="oldest">Oldest First</option>
                             <option value="age_asc">Age: Low to High</option>
@@ -318,14 +498,14 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         <div className="gender-toggle" style={{ display: 'flex', backgroundColor: '#f5f5f5', borderRadius: '8px', padding: '4px' }}>
                             <button 
                                 onClick={() => handleGenderToggle('Female')}
-                                className={`gender-btn ${filters.gender === 'Female' ? 'active' : ''}`} 
-                                style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: filters.gender === 'Female' ? 'white' : 'transparent', boxShadow: filters.gender === 'Female' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', color: filters.gender === 'Female' ? '#333' : '#666' }}>
+                                className={`gender-btn ${draftFilters.gender === 'Female' ? 'active' : ''}`} 
+                                style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: draftFilters.gender === 'Female' ? 'white' : 'transparent', boxShadow: draftFilters.gender === 'Female' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', color: draftFilters.gender === 'Female' ? '#333' : '#666' }}>
                                 Bride
                             </button>
                             <button 
                                 onClick={() => handleGenderToggle('Male')}
-                                className={`gender-btn ${filters.gender === 'Male' ? 'active' : ''}`} 
-                                style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: filters.gender === 'Male' ? 'white' : 'transparent', boxShadow: filters.gender === 'Male' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', color: filters.gender === 'Male' ? '#333' : '#666' }}>
+                                className={`gender-btn ${draftFilters.gender === 'Male' ? 'active' : ''}`} 
+                                style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', backgroundColor: draftFilters.gender === 'Male' ? 'white' : 'transparent', boxShadow: draftFilters.gender === 'Male' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none', cursor: 'pointer', color: draftFilters.gender === 'Male' ? '#333' : '#666' }}>
                                 Groom
                             </button>
                         </div>
@@ -334,15 +514,20 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Age Range</label>
                         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <input type="number" name="minAge" value={filters.minAge} onChange={handleFilterChange} placeholder="Min" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }} />
+                            <input type="number" name="minAge" min={MATRIMONIAL_MIN_SEARCH_AGE} inputMode="numeric" value={draftFilters.minAge} onChange={handleFilterChange} placeholder="Min" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }} />
                             <span>-</span>
-                            <input type="number" name="maxAge" value={filters.maxAge} onChange={handleFilterChange} placeholder="Max" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }} />
+                            <input type="number" name="maxAge" min={MATRIMONIAL_MIN_SEARCH_AGE} inputMode="numeric" value={draftFilters.maxAge} onChange={handleFilterChange} placeholder="Max" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }} />
                         </div>
+                        {ageFilterError ? (
+                            <p role="alert" style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#b45309' }}>
+                                {ageFilterError}
+                            </p>
+                        ) : null}
                     </div>
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Religion</label>
-                        <select name="religion" value={filters.religion} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
+                        <select name="religion" value={draftFilters.religion} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option value="">Select Religion</option>
                             {MATRIMONIAL_RELIGION_OPTIONS.map((r) => (
                                 <option key={r} value={r}>{r}</option>
@@ -352,7 +537,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Marital Status</label>
-                        <select name="maritalStatus" value={filters.maritalStatus} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
+                        <select name="maritalStatus" value={draftFilters.maritalStatus} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option value="">Any</option>
                             <option value="Never Married">Never Married</option>
                             <option value="Divorced">Divorced</option>
@@ -362,8 +547,22 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     </div>
 
                     <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 15px 0', fontSize: '14px', color: '#666' }}>Save this search as your preferred search criteria?</p>
-                        <button className="btn btn-primary" style={{ backgroundColor: '#d4af37', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '25px', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+                        <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#666' }}>
+                            Adjust filters, then click <strong>Save</strong> to apply them and keep this search for next time.
+                        </p>
+                        {filtersDirty && (
+                            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#b45309' }}>
+                                You have unsaved changes — results still reflect your last saved filters.
+                            </p>
+                        )}
+                        <button
+                            type="button"
+                            onClick={handleSaveBrowseFilters}
+                            className="btn btn-primary"
+                            style={{ backgroundColor: '#d4af37', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '25px', cursor: 'pointer', fontWeight: 600 }}
+                        >
+                            Save
+                        </button>
                     </div>
                 </aside>
                 )}
@@ -441,7 +640,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, padding: '12px 14px', background: 'white', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', color: '#6b7280', fontSize: '0.9rem' }}>
                                 {preferredSearch
                                     ? 'No matching profiles in current results. Try a different keyword or turn off Preferred Search.'
-                                    : 'No matching profiles in current results. Try adjusting your filters.'}
+                                    : (filtersDirty
+                                        ? 'No matches in the current (saved) results. Click Save to apply new filters, or clear the search box.'
+                                        : 'No matching profiles in current results. Try adjusting your filters.')}
                             </div>
                         )}
                     </div>
@@ -459,7 +660,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                             return;
                                         }
                                         setPreferredSearch(!preferredSearch);
-                                        setFilters(prev => ({ ...prev, pageNumber: 1 }));
+                                        setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
                                     }}
                                     style={{ opacity: 0, width: 0, height: 0 }} 
                                 />
@@ -474,7 +675,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     ? `Showing ${filteredProfiles.length} match${filteredProfiles.length === 1 ? '' : 'es'} for “${searchTerm}”`
                                     : `No matches for “${searchTerm}”`)
                                 : (totalCount > 0
-                                    ? `Showing ${(filters.pageNumber - 1) * filters.pageSize + 1}–${Math.min(filters.pageNumber * filters.pageSize, totalCount)} of ${totalCount} profiles`
+                                    ? `${filteredProfiles.length} shown on this page · ${(activeFilters.pageNumber - 1) * activeFilters.pageSize + 1}–${Math.min(activeFilters.pageNumber * activeFilters.pageSize, totalCount)} of ${totalCount} from search`
                                     : 'Showing 0 profiles')}
                         </p>
                     </div>
@@ -593,9 +794,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         </div>
                     )}
 
-                    {!loading && !searchTerm && totalCount > filters.pageSize && (() => {
-                        const totalPages = Math.ceil(totalCount / filters.pageSize);
-                        const currentPage = filters.pageNumber;
+                    {!loading && !searchTerm && totalCount > activeFilters.pageSize && (() => {
+                        const totalPages = Math.ceil(totalCount / activeFilters.pageSize);
+                        const currentPage = activeFilters.pageNumber;
 
                         const getPageNumbers = () => {
                             const pages: (number | 'ellipsis-start' | 'ellipsis-end')[] = [];
@@ -627,7 +828,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                         return (
                             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', marginTop: '40px', flexWrap: 'wrap' }}>
                                 <button
-                                    onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber - 1 }))}
+                                    onClick={() => setActiveFilters((prev) => ({ ...prev, pageNumber: prev.pageNumber - 1 }))}
                                     disabled={currentPage === 1}
                                     style={pageStyle(false, currentPage === 1)}
                                 >
@@ -639,7 +840,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     ) : (
                                         <button
                                             key={page}
-                                            onClick={() => setFilters(prev => ({ ...prev, pageNumber: page }))}
+                                            onClick={() => setActiveFilters((prev) => ({ ...prev, pageNumber: page }))}
                                             style={pageStyle(page === currentPage)}
                                         >
                                             {page}
@@ -647,7 +848,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     )
                                 )}
                                 <button
-                                    onClick={() => setFilters(prev => ({ ...prev, pageNumber: prev.pageNumber + 1 }))}
+                                    onClick={() => setActiveFilters((prev) => ({ ...prev, pageNumber: prev.pageNumber + 1 }))}
                                     disabled={currentPage >= totalPages}
                                     style={pageStyle(false, currentPage >= totalPages)}
                                 >

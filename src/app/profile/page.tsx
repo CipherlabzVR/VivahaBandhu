@@ -13,7 +13,12 @@ import { sanitizeNameInput } from '../../utils/nameInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, canonicalSriLankanPhoneDigits } from '../../utils/sriLankanPhone';
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
-import { isMatchmakerPaidTier } from '../../constants/subscription';
+import {
+    isMatchmakerPaidTier,
+    SELF_MANAGED_SUB_ACCOUNT_MAX_FREE,
+    SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM,
+} from '../../constants/subscription';
+import { AUTH_FIELD_MAX_LENGTH } from '../../constants/inputLimits';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
@@ -214,6 +219,14 @@ function ProfilePageContent() {
                     if (horoscopeDocument && horoscopeDocument.length > 0) {
                         profileUpdates.horoscopeDocument = withCacheBuster(horoscopeDocument);
                     }
+                    const horoscopeDocument2 = r.horoscopeDocument2 || r.HoroscopeDocument2;
+                    if (horoscopeDocument2 && horoscopeDocument2.length > 0) {
+                        profileUpdates.horoscopeDocument2 = withCacheBuster(horoscopeDocument2);
+                    }
+                    const horoscopeDocument3 = r.horoscopeDocument3 || r.HoroscopeDocument3;
+                    if (horoscopeDocument3 && horoscopeDocument3.length > 0) {
+                        profileUpdates.horoscopeDocument3 = withCacheBuster(horoscopeDocument3);
+                    }
 
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
@@ -257,6 +270,12 @@ function ProfilePageContent() {
                     if (emailOnInterest !== undefined && emailOnInterest !== null) {
                         profileUpdates.emailOnInterest = !!emailOnInterest;
                     }
+
+                    const showContact =
+                        r.showContactInformation ?? r.ShowContactInformation;
+                    if (showContact !== undefined && showContact !== null) {
+                        profileUpdates.showContactInformation = !!showContact;
+                    }
                     
                     // Update user context with all available data
                     if (Object.keys(profileUpdates).length > 0) {
@@ -267,10 +286,16 @@ function ProfilePageContent() {
                     const profileReligion = r.religion || r.Religion || '';
                     const profileStatus = r.status ?? r.Status;
 
-                    const isMatchmakerAccount = (profileUpdates.accountType || user?.accountType || '') === 'Matchmaker';
+                    const effectiveAccountType = profileUpdates.accountType || user?.accountType || '';
+                    const isMatchmakerAccount = effectiveAccountType === 'Matchmaker';
+                    const mergedParentUserId = profileUpdates.parentUserId ?? user?.parentUserId;
+                    const managedChildProfile = isManagedSubAccount({ parentUserId: mergedParentUserId });
 
                     if (isMatchmakerAccount) {
                         // Matchmakers manage sub-accounts, they don't need their own detailed profile.
+                        setProfileCompleted(true);
+                    } else if (managedChildProfile) {
+                        // Sub-account under a Self parent: basic signup only — no detailed wizard.
                         setProfileCompleted(true);
                     } else if (profileStatus === 0) {
                         setProfileCompleted(false);
@@ -285,15 +310,24 @@ function ProfilePageContent() {
                     if (Object.keys(profileUpdates).length > 0) {
                         updateUser(profileUpdates);
                     }
+                    if (isManagedSubAccount({ parentUserId: profileUpdates.parentUserId ?? user?.parentUserId })) {
+                        setProfileCompleted(true);
+                    }
                 }
             } else {
                 // Profile not found - still apply user data updates
                 if (Object.keys(profileUpdates).length > 0) {
                     updateUser(profileUpdates);
                 }
-                const isMatchmakerAccount = (profileUpdates.accountType || user?.accountType || '') === 'Matchmaker';
+                const effectiveAccountType2 = profileUpdates.accountType || user?.accountType || '';
+                const isMatchmakerAccount = effectiveAccountType2 === 'Matchmaker';
+                const managedOnlyUser = isManagedSubAccount({
+                    parentUserId: profileUpdates.parentUserId ?? user?.parentUserId,
+                });
                 if (isMatchmakerAccount) {
                     // Matchmakers don't need their own detailed matrimonial profile.
+                    setProfileCompleted(true);
+                } else if (managedOnlyUser) {
                     setProfileCompleted(true);
                 } else {
                     setProfileCompleted(false);
@@ -326,7 +360,8 @@ function ProfilePageContent() {
     const [phoneChangeBusy, setPhoneChangeBusy] = useState<'send' | 'confirm' | null>(null);
     /** After successful ConfirmPhoneChange, canonical digits that are allowed without re-verify until the field changes again. */
     const [phoneVerifiedCanonical, setPhoneVerifiedCanonical] = useState<string | null>(null);
-    const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
+    /** URL for HoroscopeLightbox — primary or secondary document. */
+    const [horoscopeViewSrc, setHoroscopeViewSrc] = useState<string | null>(null);
     const profileCompletionModalScrollRef = useRef<HTMLDivElement>(null);
 
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
@@ -706,10 +741,48 @@ function ProfilePageContent() {
         e.preventDefault();
         setSubAccountError(null);
 
+        if (user?.accountType === 'Self') {
+            const cap =
+                user.isSubscribed === true
+                    ? SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM
+                    : SELF_MANAGED_SUB_ACCOUNT_MAX_FREE;
+            if (subAccounts.length >= cap) {
+                setSubAccountError(
+                    user.isSubscribed === true
+                        ? `You already have the maximum of ${cap} sub-accounts.`
+                        : `Free accounts can create only ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account. Upgrade to Premium for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`,
+                );
+                return;
+            }
+        }
+
+        if (user?.accountType === 'Father' || user?.accountType === 'Mother' || user?.accountType === 'Relation') {
+            if (user.isSubscribed !== true) {
+                setSubAccountError('Subscribe to Premium to add a sub-account for your family member.');
+                return;
+            }
+            const purchased = Math.max(1, user.familySubAccountSlotsPurchased ?? 1);
+            const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
+            if (consumed >= purchased) {
+                const max = user.familySubAccountSlotsMaxTotal ?? 3;
+                const price = user.familySubAccountAdditionalAmountLkr ?? 1990;
+                setSubAccountError(
+                    purchased >= max
+                        ? `You have used all ${max} sub-account slots available on this account.`
+                        : `Your sub-account slot is already used. Pay LKR ${price.toLocaleString()} to add another (up to ${max} total).`,
+                );
+                return;
+            }
+        }
+
         // Required-field validation (mirrors the public register modal so matchmakers
         // create profiles that look identical to user-registered ones).
         if (!subAccountForm.firstName.trim() || !subAccountForm.lastName.trim()) {
             setSubAccountError('First and last name are required.');
+            return;
+        }
+        if (subAccountForm.firstName.trim().length > AUTH_FIELD_MAX_LENGTH || subAccountForm.lastName.trim().length > AUTH_FIELD_MAX_LENGTH) {
+            setSubAccountError(`First and last name cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters each.`);
             return;
         }
         if (!subAccountForm.nic.trim()) {
@@ -744,8 +817,16 @@ function ProfilePageContent() {
             setSubAccountError('Please enter a valid email address.');
             return;
         }
+        if (subAccountForm.email.length > AUTH_FIELD_MAX_LENGTH) {
+            setSubAccountError(`Email cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
+            return;
+        }
         if (subAccountForm.password.length < 6) {
             setSubAccountError('Password must be at least 6 characters.');
+            return;
+        }
+        if (subAccountForm.password.length > AUTH_FIELD_MAX_LENGTH || subAccountForm.confirmPassword.length > AUTH_FIELD_MAX_LENGTH) {
+            setSubAccountError(`Password cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
             return;
         }
         if (subAccountForm.password !== subAccountForm.confirmPassword) {
@@ -862,6 +943,8 @@ function ProfilePageContent() {
     };
 
     const [isSavingEmailPref, setIsSavingEmailPref] = useState(false);
+    const [isSavingContactVisibilityPref, setIsSavingContactVisibilityPref] = useState(false);
+    const [isPurchasingFamilySlot, setIsPurchasingFamilySlot] = useState(false);
     /**
      * Persist the email-on-interest toggle to the server so notifications are actually
      * sent (or not). We optimistically update the UI and roll it back on error.
@@ -887,6 +970,27 @@ function ProfilePageContent() {
         }
     };
 
+    const handleShowContactInformationToggle = async (show: boolean) => {
+        if (!user?.id) return;
+        const previous = user.showContactInformation !== false;
+        updateUser?.({ showContactInformation: show });
+        try {
+            setIsSavingContactVisibilityPref(true);
+            const res = await matrimonialService.setMatrimonialShowContactInformation(Number(user.id), show);
+            if (res?.statusCode === 200 || res?.statusCode === 1) {
+                updateUser?.({ showContactInformation: show });
+            } else {
+                updateUser?.({ showContactInformation: previous });
+                showToast(res?.message || 'Could not save preference. Please try again.', 'error');
+            }
+        } catch (err: unknown) {
+            updateUser?.({ showContactInformation: previous });
+            showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
+        } finally {
+            setIsSavingContactVisibilityPref(false);
+        }
+    };
+
     const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
     const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
     const handleConfirmCancelSubscription = async () => {
@@ -895,7 +999,12 @@ function ProfilePageContent() {
             setIsCancellingSubscription(true);
             const res = await matrimonialService.cancelSubscription(Number(user.id));
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                updateUser?.({ ...user, isSubscribed: false, subscriptionExpiresAt: undefined } as any);
+                updateUser?.({
+                    ...user,
+                    isSubscribed: false,
+                    subscriptionExpiresAt: undefined,
+                    showContactInformation: true,
+                } as any);
                 setShowCancelSubscriptionModal(false);
                 showToast(res?.message || 'Subscription cancelled.', 'success');
             } else {
@@ -1169,6 +1278,47 @@ function ProfilePageContent() {
                   ? user.matchmakerClientProfileCount
                   : subAccounts.length) < (user.matchmakerMaxClientProfiles ?? 0);
 
+    const selfManagedSubAccountCap =
+        user.isSubscribed === true ? SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM : SELF_MANAGED_SUB_ACCOUNT_MAX_FREE;
+    const canSelfParentCreateSubAccount =
+        user.accountType === 'Self' && subAccounts.length < selfManagedSubAccountCap;
+
+    // Father / Mother / Relation parents: subscription required to add the first sub-account; each
+    // additional sub-account costs LKR 1,990. Slots are entitlements (delete does NOT free a slot).
+    const isFamilyParentAccount =
+        user.accountType === 'Father' || user.accountType === 'Mother' || user.accountType === 'Relation'
+        || user.accountType === 'Sister' || user.accountType === 'Brother';
+    const familyExtraSlotPriceLkr = user.familySubAccountAdditionalAmountLkr ?? 1990;
+    const familySlotsMaxTotal = user.familySubAccountSlotsMaxTotal ?? 3;
+    const familySlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
+    const familySlotsConsumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
+    const familySlotsRemaining = Math.max(0, familySlotsPurchased - familySlotsConsumed);
+    const familyCanCreateSubAccount =
+        isFamilyParentAccount && user.isSubscribed === true && familySlotsRemaining > 0;
+    const familyCanBuyExtraSlot =
+        isFamilyParentAccount &&
+        user.isSubscribed === true &&
+        familySlotsPurchased >= 1 &&
+        familySlotsPurchased < familySlotsMaxTotal;
+    const handlePurchaseExtraFamilySlot = async () => {
+        if (!user?.id) return;
+        if (!familyCanBuyExtraSlot) return;
+        if (!window.confirm(`Pay LKR ${familyExtraSlotPriceLkr.toLocaleString()} to add one more sub-account slot?`)) return;
+        setIsPurchasingFamilySlot(true);
+        try {
+            const ref = `FAMILY_SLOT_${Date.now()}`;
+            const data = await matrimonialService.purchaseAdditionalFamilySubAccountSlot(Number(user.id), ref);
+            const r = (data?.result ?? data?.Result) as Record<string, unknown> | undefined;
+            const newPurchased = r ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? familySlotsPurchased + 1) : familySlotsPurchased + 1;
+            updateUser({ familySubAccountSlotsPurchased: newPurchased });
+            showToast(data?.message || 'Additional sub-account slot purchased.', 'success');
+        } catch (err) {
+            showToast(err instanceof Error ? err.message : 'Failed to purchase slot.', 'error');
+        } finally {
+            setIsPurchasingFamilySlot(false);
+        }
+    };
+
     return (
         <main>
             <Header 
@@ -1180,7 +1330,7 @@ function ProfilePageContent() {
             <div className="profile-page-container" style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h1>My Profile</h1>
-                    {!profileCompleted && user?.accountType !== 'Matchmaker' && (
+                    {!profileCompleted && user?.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
                         <div style={{ background: '#fff3cd', color: '#856404', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ffeeba' }}>
                             ⚠️ Your profile is incomplete. Please complete it to view matches.
                             <button onClick={() => {
@@ -1195,7 +1345,7 @@ function ProfilePageContent() {
                 </div>
 
                 {/* Detailed Profile Completion Modal — not shown for Matchmaker accounts */}
-                {isCompletionModalOpen && user?.accountType !== 'Matchmaker' && (
+                {isCompletionModalOpen && user?.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
                     <div
                         className="modal-overlay active profile-completion-overlay"
                         style={{ zIndex: 1000, alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
@@ -1235,6 +1385,17 @@ function ProfilePageContent() {
                                 <form onSubmit={async (e) => {
                                     e.preventDefault();
                                     try {
+                                        const fn = editForm.firstName.trim();
+                                        const ln = editForm.lastName.trim();
+                                        const em = editForm.email.trim();
+                                        if (fn.length > AUTH_FIELD_MAX_LENGTH || ln.length > AUTH_FIELD_MAX_LENGTH) {
+                                            showToast(`First and last name cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters each.`, 'error');
+                                            return;
+                                        }
+                                        if (em.length > AUTH_FIELD_MAX_LENGTH) {
+                                            showToast(`Email cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`, 'error');
+                                            return;
+                                        }
                                         const phoneErr = sriLankanPhoneFormatErrorIfInvalid(editForm.phone, 'Phone number');
                                         const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(editForm.whatsapp, 'WhatsApp number');
                                         if (phoneErr) {
@@ -1267,13 +1428,36 @@ function ProfilePageContent() {
                                             headers: { 'Authorization': `Bearer ${token}` }
                                         });
                                         const profileJson = profileRes.ok ? await profileRes.json() : null;
-                                        const existing = profileJson?.result || {};
+                                        const existing = (profileJson?.result || {}) as Record<string, unknown>;
+                                        const {
+                                            CountryOfOrigin: _stripCo,
+                                            CountryOfResidence: _stripCr,
+                                            CityOfResidence: _stripCity,
+                                            ResidencyStatus: _stripRs,
+                                            ...existingRest
+                                        } = existing;
 
                                         const updatePayload = {
-                                            ...existing,
+                                            ...existingRest,
                                             userId: Number(user.id),
-                                            gender: editForm.gender || existing.gender || existing.Gender || '',
+                                            gender:
+                                                editForm.gender ||
+                                                (existing.gender as string) ||
+                                                (existing.Gender as string) ||
+                                                '',
                                             dateOfBirth: editForm.dob ? `${editForm.dob}T00:00:00` : null,
+                                            countryOfOrigin: String(
+                                                existing.countryOfOrigin ?? existing.CountryOfOrigin ?? ''
+                                            ).trim(),
+                                            countryOfResidence: String(
+                                                existing.countryOfResidence ?? existing.CountryOfResidence ?? ''
+                                            ).trim(),
+                                            cityOfResidence: String(
+                                                existing.cityOfResidence ?? existing.CityOfResidence ?? ''
+                                            ).trim(),
+                                            residencyStatus: String(
+                                                existing.residencyStatus ?? existing.ResidencyStatus ?? ''
+                                            ).trim(),
                                         };
 
                                         const updateRes = await fetch(`${apiBase}/Matrimonial/UpdateProfile`, {
@@ -1346,11 +1530,11 @@ function ProfilePageContent() {
                                     <div className="form-row" style={{ display: 'flex', gap: '1rem' }}>
                                         <div className="form-group" style={{ flex: 1 }}>
                                             <label>First Name</label>
-                                            <input type="text" name="firstName" value={editForm.firstName} onChange={handleEditChange} />
+                                            <input type="text" name="firstName" value={editForm.firstName} maxLength={AUTH_FIELD_MAX_LENGTH} onChange={handleEditChange} />
                                         </div>
                                         <div className="form-group" style={{ flex: 1 }}>
                                             <label>Last Name</label>
-                                            <input type="text" name="lastName" value={editForm.lastName} onChange={handleEditChange} />
+                                            <input type="text" name="lastName" value={editForm.lastName} maxLength={AUTH_FIELD_MAX_LENGTH} onChange={handleEditChange} />
                                         </div>
                                     </div>
                                     <div className="form-group">
@@ -1473,7 +1657,7 @@ function ProfilePageContent() {
                                     </div>
                                     <div className="form-group">
                                         <label>Email Address</label>
-                                        <input type="email" name="email" value={editForm.email} onChange={handleEditChange} disabled style={{ backgroundColor: '#f0f0f0' }} />
+                                        <input type="email" name="email" value={editForm.email} maxLength={AUTH_FIELD_MAX_LENGTH} onChange={handleEditChange} disabled style={{ backgroundColor: '#f0f0f0' }} />
                                     </div>
                                     <div className="form-group">
                                         <label>Account Type</label>
@@ -1596,23 +1780,64 @@ function ProfilePageContent() {
                             <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Account Status</label>
                             <div style={{ fontWeight: 500, fontSize: '1.1rem', color: 'green' }}>Active</div>
                         </div>
-                        {user.horoscopeDocument && (
+                        {(user.horoscopeDocument || user.horoscopeDocument2 || user.horoscopeDocument3) && (
                             <div className="detail-group">
                                 <label style={{ display: 'block', color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Horoscope</label>
-                                <div style={{ fontWeight: 500, fontSize: '1.1rem' }}>
-                                    <button
-                                        onClick={() => setHoroscopePopupOpen(true)}
-                                        style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.1rem', fontWeight: 500 }}
-                                    >
-                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                            <polyline points="14 2 14 8 20 8"></polyline>
-                                            <line x1="16" y1="13" x2="8" y2="13"></line>
-                                            <line x1="16" y1="17" x2="8" y2="17"></line>
-                                            <polyline points="10 9 9 9 8 9"></polyline>
-                                        </svg>
-                                        View Horoscope
-                                    </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-start' }}>
+                                    {user.horoscopeDocument ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setHoroscopeViewSrc(user.horoscopeDocument!)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                padding: 0,
+                                                color: 'var(--primary)',
+                                                textDecoration: 'underline',
+                                                cursor: 'pointer',
+                                                fontSize: '1.05rem',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            View Horoscope — page 1
+                                        </button>
+                                    ) : null}
+                                    {user.horoscopeDocument2 ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setHoroscopeViewSrc(user.horoscopeDocument2!)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                padding: 0,
+                                                color: 'var(--primary)',
+                                                textDecoration: 'underline',
+                                                cursor: 'pointer',
+                                                fontSize: '1.05rem',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            View Horoscope — page 2
+                                        </button>
+                                    ) : null}
+                                    {user.horoscopeDocument3 ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => setHoroscopeViewSrc(user.horoscopeDocument3!)}
+                                            style={{
+                                                background: 'none',
+                                                border: 'none',
+                                                padding: 0,
+                                                color: 'var(--primary)',
+                                                textDecoration: 'underline',
+                                                cursor: 'pointer',
+                                                fontSize: '1.05rem',
+                                                fontWeight: 500,
+                                            }}
+                                        >
+                                            View Horoscope — page 3
+                                        </button>
+                                    ) : null}
                                 </div>
                             </div>
                         )}
@@ -1620,7 +1845,7 @@ function ProfilePageContent() {
 
                     <div className="profile-actions" style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid #eee', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                         <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
-                        {user.accountType !== 'Matchmaker' && (
+                        {user.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
                             <button className="btn btn-outline" onClick={() => {
                                 if (user?.isVerified === false) {
                                     window.dispatchEvent(new CustomEvent('open-verify-modal'));
@@ -1718,6 +1943,40 @@ function ProfilePageContent() {
                                         <option value="premium">Premium members only</option>
                                     </select>
                                 </div>
+                                {user.isSubscribed === true && user.accountType !== 'Matchmaker' && (
+                                    <label
+                                        style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            gap: '1rem',
+                                            padding: '0.85rem 1rem',
+                                            background: '#FDF8F3',
+                                            borderRadius: '10px',
+                                            cursor: isSavingContactVisibilityPref ? 'wait' : 'pointer',
+                                            opacity: isSavingContactVisibilityPref ? 0.7 : 1,
+                                        }}
+                                    >
+                                        <span>
+                                            <span style={{ display: 'block', fontWeight: 500 }}>
+                                                Show contact details to eligible viewers
+                                            </span>
+                                            <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
+                                                {isSavingContactVisibilityPref
+                                                    ? 'Saving…'
+                                                    : 'Phone, WhatsApp, and email stay masked when this is off — even for premium members who could normally view contacts.'}
+                                            </span>
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={user.showContactInformation !== false}
+                                            disabled={isSavingContactVisibilityPref}
+                                            onChange={(e) => void handleShowContactInformationToggle(e.target.checked)}
+                                            style={{ width: 18, height: 18 }}
+                                            aria-label="Show contact details to eligible viewers"
+                                        />
+                                    </label>
+                                )}
                             </div>
                         </section>
 
@@ -2001,19 +2260,92 @@ function ProfilePageContent() {
                     </div>
                 )}
 
-                {user?.accountType === 'Self' && (
+                {(user?.accountType === 'Self' || isFamilyParentAccount) && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                             <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Managed Accounts</h3>
-                            <button className="btn btn-primary" onClick={() => {
-                                if (user?.isVerified === false) {
-                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
-                                    return;
-                                }
-                                setIsCreateSubAccountModalOpen(true);
-                            }}>Create Sub-Account</button>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                {isFamilyParentAccount && familyCanBuyExtraSlot && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        disabled={isPurchasingFamilySlot}
+                                        onClick={handlePurchaseExtraFamilySlot}
+                                        title={`Buy one more sub-account slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()}`}
+                                    >
+                                        {isPurchasingFamilySlot
+                                            ? 'Processing…'
+                                            : `Buy extra slot (LKR ${familyExtraSlotPriceLkr.toLocaleString()})`}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    disabled={
+                                        isFamilyParentAccount
+                                            ? !familyCanCreateSubAccount
+                                            : !canSelfParentCreateSubAccount
+                                    }
+                                    onClick={() => {
+                                        if (user?.isVerified === false) {
+                                            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                            return;
+                                        }
+                                        if (isFamilyParentAccount) {
+                                            if (user.isSubscribed !== true) {
+                                                showToast('Subscribe to Premium to add a sub-account.', 'error');
+                                                return;
+                                            }
+                                            if (!familyCanCreateSubAccount) {
+                                                showToast(
+                                                    familyCanBuyExtraSlot
+                                                        ? `Your sub-account slot is already used. Buy an extra slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()} to add another.`
+                                                        : `You have used all ${familySlotsMaxTotal} sub-account slots available on this account.`,
+                                                    'error',
+                                                );
+                                                return;
+                                            }
+                                        } else if (!canSelfParentCreateSubAccount) {
+                                            showToast(
+                                                user.isSubscribed === true
+                                                    ? `You already have the maximum of ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts.`
+                                                    : `Free accounts can create only ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account. Upgrade to Premium for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`,
+                                                'error',
+                                            );
+                                            return;
+                                        }
+                                        setIsCreateSubAccountModalOpen(true);
+                                    }}
+                                >
+                                    Create Sub-Account
+                                </button>
+                            </div>
                         </div>
-                        <p style={{ color: '#666', marginBottom: '1.5rem' }}>You can create and manage multiple profiles under your main account.</p>
+                        <p style={{ color: '#666', marginBottom: '1rem' }}>
+                            {isFamilyParentAccount
+                                ? user.isSubscribed === true
+                                    ? `Slots used: ${familySlotsConsumed}/${familySlotsPurchased} (max ${familySlotsMaxTotal} total). Each additional slot costs LKR ${familyExtraSlotPriceLkr.toLocaleString()}. Slots are not refunded if a sub-account is deleted.`
+                                    : `Subscribe to Premium to unlock your first sub-account slot. Up to ${familySlotsMaxTotal} slots total — each additional slot costs LKR ${familyExtraSlotPriceLkr.toLocaleString()}.`
+                                : user.isSubscribed === true
+                                    ? `Premium: up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts (${subAccounts.length}/${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}).`
+                                    : `Free: ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account (${subAccounts.length}/${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE}). Upgrade for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`}
+                        </p>
+                        {isFamilyParentAccount && !familyCanCreateSubAccount && (
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                {user.isSubscribed !== true
+                                    ? 'A Premium subscription is required to add a sub-account.'
+                                    : familyCanBuyExtraSlot
+                                        ? `Your sub-account slot is already used. Buy another slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()} (up to ${familySlotsMaxTotal} total).`
+                                        : `You have used all ${familySlotsMaxTotal} sub-account slots available on this account.`}
+                            </p>
+                        )}
+                        {!isFamilyParentAccount && !canSelfParentCreateSubAccount && (
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                {user.isSubscribed === true
+                                    ? 'You have reached the sub-account limit for your plan.'
+                                    : `Upgrade to Premium to add up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts.`}
+                            </p>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
                             {subAccounts.length > 0 ? (
                                 subAccounts.map((subAccount: any) => (
@@ -2160,11 +2492,11 @@ function ProfilePageContent() {
                                         <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                                             <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                                                 <label>First Name *</label>
-                                                <input type="text" name="firstName" required value={subAccountForm.firstName} onChange={handleSubAccountChange} />
+                                                <input type="text" name="firstName" required maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.firstName} onChange={handleSubAccountChange} />
                                             </div>
                                             <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
                                                 <label>Last Name *</label>
-                                                <input type="text" name="lastName" required value={subAccountForm.lastName} onChange={handleSubAccountChange} />
+                                                <input type="text" name="lastName" required maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.lastName} onChange={handleSubAccountChange} />
                                             </div>
                                         </div>
 
@@ -2234,7 +2566,7 @@ function ProfilePageContent() {
 
                                         <div className="form-group">
                                             <label>Email Address *</label>
-                                            <input type="email" name="email" required placeholder="client@email.com" value={subAccountForm.email} onChange={handleSubAccountChange} />
+                                            <input type="email" name="email" required placeholder="client@email.com" maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.email} onChange={handleSubAccountChange} />
                                         </div>
 
                                         <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -2246,6 +2578,7 @@ function ProfilePageContent() {
                                                         name="password"
                                                         required
                                                         minLength={6}
+                                                        maxLength={AUTH_FIELD_MAX_LENGTH}
                                                         value={subAccountForm.password}
                                                         onChange={handleSubAccountChange}
                                                         style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
@@ -2265,6 +2598,7 @@ function ProfilePageContent() {
                                                         name="confirmPassword"
                                                         required
                                                         minLength={6}
+                                                        maxLength={AUTH_FIELD_MAX_LENGTH}
                                                         value={subAccountForm.confirmPassword}
                                                         onChange={handleSubAccountChange}
                                                         style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
@@ -2784,10 +3118,10 @@ function ProfilePageContent() {
             </div>
 
             <HoroscopeLightbox
-                key={user?.horoscopeDocument || ''}
-                open={horoscopePopupOpen && !!user?.horoscopeDocument}
-                src={user?.horoscopeDocument || ''}
-                onClose={() => setHoroscopePopupOpen(false)}
+                key={horoscopeViewSrc || 'closed'}
+                open={!!horoscopeViewSrc}
+                src={horoscopeViewSrc || ''}
+                onClose={() => setHoroscopeViewSrc(null)}
             />
 
             <Footer />

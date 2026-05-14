@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useMemo, useRef, type ReactNode, type CSSProperties, type RefObject } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -91,7 +91,7 @@ function OptionMultiSelect({
                                 }}
                                 aria-label={`Remove ${c}`}
                             >
-                                ×
+                                Ã—
                             </button>
                         </span>
                     ))
@@ -531,7 +531,7 @@ function CountryMultiSelect({
                                 }}
                                 aria-label={`Remove ${c}`}
                             >
-                                ×
+                                Ã—
                             </button>
                         </span>
                     ))
@@ -704,21 +704,39 @@ export default function ProfileCompletionForm({
     const { user, updateUser } = useAuth();
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const router = useRouter();
-    const [step, setStep] = useState(1);
+    /**
+     * Father / Mother / Relation / Sister / Brother accounts only need to fill the
+     * Partner Preferences section in the detailed profile editor. The other steps
+     * (personal, family, education, horoscope etc.) are not relevant because they're
+     * managing matches on behalf of someone else.
+     */
+    const isPartnerPrefsOnly =
+        user?.accountType === 'Father' ||
+        user?.accountType === 'Mother' ||
+        user?.accountType === 'Relation' ||
+        user?.accountType === 'Sister' ||
+        user?.accountType === 'Brother';
+    const [step, setStep] = useState(isPartnerPrefsOnly ? 5 : 1);
+    useEffect(() => {
+        if (isPartnerPrefsOnly && step !== 5) setStep(5);
+    }, [isPartnerPrefsOnly, step]);
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
     const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
-    const [horoscopePopupOpen, setHoroscopePopupOpen] = useState(false);
+    type HoroscopeViewerSlot = null | 'horoscopeDocument' | 'horoscopeDocument2' | 'horoscopeDocument3';
+    const [horoscopeViewerSlot, setHoroscopeViewerSlot] = useState<HoroscopeViewerSlot>(null);
     const horoscopeFileInputRef = useRef<HTMLInputElement>(null);
+    const horoscopeDocument2FileInputRef = useRef<HTMLInputElement>(null);
+    const horoscopeDocument3FileInputRef = useRef<HTMLInputElement>(null);
     const profilePhotoFileInputRef = useRef<HTMLInputElement>(null);
     const upload1FileInputRef = useRef<HTMLInputElement>(null);
     const upload2FileInputRef = useRef<HTMLInputElement>(null);
     const upload3FileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        if (horoscopePopupOpen) setHoroscopePopupOpen(false);
+        setHoroscopeViewerSlot(null);
     }, [step]);
 
     useEffect(() => {
@@ -754,6 +772,8 @@ export default function ProfileCompletionForm({
         smokingHabits: '',
         horoscope: '',
         horoscopeDocument: '',
+        horoscopeDocument2: '',
+        horoscopeDocument3: '',
 
         // Parents - Father
         fatherName: '',
@@ -934,7 +954,7 @@ export default function ProfileCompletionForm({
                             religion: v('religion') || prev.religion,
                             maritalStatus: v('maritalStatus') || prev.maritalStatus,
                             qualificationLevel: v('qualificationLevel') || prev.qualificationLevel,
-                            occupation: v('occupation') || prev.occupation,
+                            occupation: sanitizeNameInput(String(v('occupation') || prev.occupation || '')),
                             countryOfOrigin: v('countryOfOrigin') || prev.countryOfOrigin,
                             countryOfResidence: v('countryOfResidence') || prev.countryOfResidence,
                             cityOfResidence: v('cityOfResidence') || prev.cityOfResidence,
@@ -945,16 +965,18 @@ export default function ProfileCompletionForm({
                             smokingHabits: v('smokingHabits') || prev.smokingHabits,
                             horoscope: v('horoscope') || prev.horoscope,
                             horoscopeDocument: v('horoscopeDocument') || prev.horoscopeDocument,
+                            horoscopeDocument2: v('horoscopeDocument2') || prev.horoscopeDocument2,
+                            horoscopeDocument3: v('horoscopeDocument3') || prev.horoscopeDocument3,
                             fatherName: v('fatherName') || prev.fatherName,
                             fatherCountryOfResidence: vOpt('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
-                            fatherOccupation: v('fatherOccupation') || prev.fatherOccupation,
+                            fatherOccupation: sanitizeNameInput(String(v('fatherOccupation') || prev.fatherOccupation || '')),
                             fatherEthnicity: vOpt('fatherEthnicity') || prev.fatherEthnicity,
                             fatherReligion: v('fatherReligion') || prev.fatherReligion,
                             fatherCaste: vOpt('fatherCaste') || prev.fatherCaste,
                             fatherRemarks: vOpt('fatherRemarks') || prev.fatherRemarks,
                             motherName: v('motherName') || prev.motherName,
                             motherCountryOfResidence: vOpt('motherCountryOfResidence') || prev.motherCountryOfResidence,
-                            motherOccupation: v('motherOccupation') || prev.motherOccupation,
+                            motherOccupation: sanitizeNameInput(String(v('motherOccupation') || prev.motherOccupation || '')),
                             motherEthnicity: vOpt('motherEthnicity') || prev.motherEthnicity,
                             motherReligion: v('motherReligion') || prev.motherReligion,
                             motherCaste: vOpt('motherCaste') || prev.motherCaste,
@@ -1008,6 +1030,10 @@ export default function ProfileCompletionForm({
         if (name === 'fatherName' || name === 'motherName') {
             nextValue = sanitizeNameInput(value);
         }
+        // Job titles / occupations: letters, spaces, hyphen and apostrophe only (no digits).
+        else if (name === 'occupation' || name === 'fatherOccupation' || name === 'motherOccupation') {
+            nextValue = sanitizeNameInput(value);
+        }
         // Partner age fields must be digits only. type="number" still allows
         // "e", "+", "-", "." through, and pasting a string slips in - strip
         // anything that isn't a digit and cap at 3 chars (max 999, plenty).
@@ -1035,6 +1061,22 @@ export default function ProfileCompletionForm({
             case 'upload3':
                 if (!formData.upload2) {
                     return { ok: false, message: 'Please upload Gallery Photo 2 before Gallery Photo 3.' };
+                }
+                break;
+            case 'horoscopeDocument2':
+                if (!formData.horoscopeDocument) {
+                    return {
+                        ok: false,
+                        message: 'Upload the primary horoscope document first (step 3), then add an extra page here if needed.',
+                    };
+                }
+                break;
+            case 'horoscopeDocument3':
+                if (!formData.horoscopeDocument2) {
+                    return {
+                        ok: false,
+                        message: 'Upload horoscope page 2 before adding a third page.',
+                    };
                 }
                 break;
         }
@@ -1107,13 +1149,24 @@ export default function ProfileCompletionForm({
                 if (fieldName === 'horoscopeDocument') {
                     updateUser({ horoscopeDocument: withCacheBuster(cleanUrl) });
                 }
+                if (fieldName === 'horoscopeDocument2') {
+                    updateUser({ horoscopeDocument2: withCacheBuster(cleanUrl) });
+                }
+                if (fieldName === 'horoscopeDocument3') {
+                    updateUser({ horoscopeDocument3: withCacheBuster(cleanUrl) });
+                }
 
                 // Persist key file fields to the matrimonial profile *immediately* so the
                 // S3 URL survives the user refreshing, closing the tab or jumping
                 // backwards in the wizard before the final submit. Without this the
                 // upload only lives in local React state until the very last step,
                 // which is what made the horoscope appear "lost" between pages.
-                if (fieldName === 'horoscopeDocument' || fieldName === 'profilePhoto') {
+                if (
+                    fieldName === 'horoscopeDocument' ||
+                    fieldName === 'horoscopeDocument2' ||
+                    fieldName === 'horoscopeDocument3' ||
+                    fieldName === 'profilePhoto'
+                ) {
                     void persistFieldUpdate(fieldName, cleanUrl);
                 }
             } else {
@@ -1183,6 +1236,10 @@ export default function ProfileCompletionForm({
                 setSubmitError('Minimum partner age must be at least 18.');
                 return false;
             }
+            if (maxAge < 18) {
+                setSubmitError('Maximum partner age must be at least 18.');
+                return false;
+            }
             if (maxAge <= minAge) {
                 setSubmitError('Maximum partner age must be greater than Minimum age.');
                 return false;
@@ -1236,9 +1293,18 @@ export default function ProfileCompletionForm({
         // (the entity's int default) without lying about the value.
         const parsedMin = parseInt(formData.partnerMinAge, 10);
         const parsedMax = parseInt(formData.partnerMaxAge, 10);
+        const uid = user?.id != null && String(user.id).trim() !== '' ? Number(user.id) : 0;
+        const base = withOptionalPlaceholders(formData);
         return {
-            userId: user?.id,
-            ...withOptionalPlaceholders(formData),
+            userId: uid,
+            ...base,
+            // Ensure location & residency always serialize (never rely on sparse/dropped fields from spread).
+            countryOfOrigin: String(formData.countryOfOrigin ?? '').trim(),
+            countryOfResidence: String(formData.countryOfResidence ?? '').trim(),
+            cityOfResidence: String(formData.cityOfResidence ?? '').trim(),
+            residencyStatus: String(formData.residencyStatus ?? '').trim(),
+            partnerCountryOfOrigin: String(formData.partnerCountryOfOrigin ?? '').trim(),
+            partnerCountryOfResidence: String(formData.partnerCountryOfResidence ?? '').trim(),
             height: parseFloat(formData.height) || 0,
             partnerMinAge: Number.isFinite(parsedMin) ? parsedMin : 0,
             partnerMaxAge: Number.isFinite(parsedMax) ? parsedMax : 0,
@@ -1331,7 +1397,14 @@ export default function ProfileCompletionForm({
     };
 
     const clearUploadedField = async (
-        fieldName: 'horoscopeDocument' | 'profilePhoto' | 'upload1' | 'upload2' | 'upload3',
+        fieldName:
+            | 'horoscopeDocument'
+            | 'horoscopeDocument2'
+            | 'horoscopeDocument3'
+            | 'profilePhoto'
+            | 'upload1'
+            | 'upload2'
+            | 'upload3',
     ) => {
         if (fieldName === 'upload1' || fieldName === 'upload2' || fieldName === 'upload3') {
             const cascadeFields =
@@ -1368,8 +1441,65 @@ export default function ProfileCompletionForm({
         const msg =
             fieldName === 'profilePhoto'
                 ? 'Remove your main profile photo? Gallery photos stay on your profile until you change them; you can upload a new main photo afterwards.'
-                : 'Remove the uploaded horoscope document?';
+                : fieldName === 'horoscopeDocument'
+                  ? 'Remove the primary horoscope document? Any additional horoscope pages you uploaded will be removed too.'
+                  : fieldName === 'horoscopeDocument2'
+                    ? 'Remove horoscope page 2? Page 3 (if any) will also be removed.'
+                    : 'Remove the additional horoscope page?';
         if (!window.confirm(msg)) return;
+
+        if (fieldName === 'horoscopeDocument') {
+            setFormData((prev) => ({
+                ...prev,
+                horoscopeDocument: '',
+                horoscopeDocument2: '',
+                horoscopeDocument3: '',
+            }));
+            setPreviewBusters((prev) => {
+                const next = { ...prev };
+                delete next.horoscopeDocument;
+                delete next.horoscopeDocument2;
+                delete next.horoscopeDocument3;
+                return next;
+            });
+            setSubmitError('');
+            updateUser({ horoscopeDocument: '', horoscopeDocument2: '', horoscopeDocument3: '' });
+            setHoroscopeViewerSlot(null);
+            await persistFieldUpdate('horoscopeDocument', '');
+            await persistFieldUpdate('horoscopeDocument2', '');
+            await persistFieldUpdate('horoscopeDocument3', '');
+            return;
+        }
+
+        if (fieldName === 'horoscopeDocument2') {
+            setFormData((prev) => ({ ...prev, horoscopeDocument2: '', horoscopeDocument3: '' }));
+            setPreviewBusters((prev) => {
+                const next = { ...prev };
+                delete next.horoscopeDocument2;
+                delete next.horoscopeDocument3;
+                return next;
+            });
+            setSubmitError('');
+            updateUser({ horoscopeDocument2: '', horoscopeDocument3: '' });
+            setHoroscopeViewerSlot(null);
+            await persistFieldUpdate('horoscopeDocument2', '');
+            await persistFieldUpdate('horoscopeDocument3', '');
+            return;
+        }
+
+        if (fieldName === 'horoscopeDocument3') {
+            setFormData((prev) => ({ ...prev, horoscopeDocument3: '' }));
+            setPreviewBusters((prev) => {
+                const next = { ...prev };
+                delete next.horoscopeDocument3;
+                return next;
+            });
+            setSubmitError('');
+            updateUser({ horoscopeDocument3: '' });
+            setHoroscopeViewerSlot(null);
+            await persistFieldUpdate('horoscopeDocument3', '');
+            return;
+        }
 
         setFormData((prev) => ({ ...prev, [fieldName]: '' }));
         setPreviewBusters((prev) => {
@@ -1381,9 +1511,6 @@ export default function ProfileCompletionForm({
 
         if (fieldName === 'profilePhoto') {
             updateUser({ profilePhoto: '' });
-        } else {
-            updateUser({ horoscopeDocument: '' });
-            setHoroscopePopupOpen(false);
         }
 
         await persistFieldUpdate(fieldName, '');
@@ -1481,6 +1608,12 @@ export default function ProfileCompletionForm({
                 if (formData.horoscopeDocument) {
                     updateUser({ horoscopeDocument: withCacheBuster(formData.horoscopeDocument) });
                 }
+                if (formData.horoscopeDocument2) {
+                    updateUser({ horoscopeDocument2: withCacheBuster(formData.horoscopeDocument2) });
+                }
+                if (formData.horoscopeDocument3) {
+                    updateUser({ horoscopeDocument3: withCacheBuster(formData.horoscopeDocument3) });
+                }
                 setSuccessMessage('Profile updated successfully!');
                 setTimeout(() => {
                     setSuccessMessage('');
@@ -1496,6 +1629,11 @@ export default function ProfileCompletionForm({
             setLoading(false);
         }
     };
+
+    const horoscopeLightboxSrc =
+        horoscopeViewerSlot && formData[horoscopeViewerSlot]
+            ? previewSrc(horoscopeViewerSlot, formData[horoscopeViewerSlot])
+            : '';
 
     return (
         <div className="profile-completion-form">
@@ -1513,11 +1651,12 @@ export default function ProfileCompletionForm({
                         lineHeight: 1.5,
                     }}
                 >
-                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Premium payment — awaiting approval</strong>
+                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Premium payment â€” awaiting approval</strong>
                     Your bank transfer slip was received and is being reviewed. You can finish your profile below; premium
                     features will unlock once the payment is approved.
                 </div>
             )}
+            {!isPartnerPrefsOnly && (
             <div className="steps-indicator" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}>
                 {[1, 2, 3, 4, 5, 6].map(i => (
                     <button
@@ -1543,6 +1682,7 @@ export default function ProfileCompletionForm({
                     </button>
                 ))}
             </div>
+            )}
 
             <form onSubmit={(e) => e.preventDefault()}>
                 {successMessage && <div style={{ color: '#2e7d32', marginBottom: '1rem', padding: '12px 16px', background: '#e8f5e9', borderRadius: '8px', fontWeight: 600, textAlign: 'center', fontSize: '1rem' }}>{successMessage}</div>}
@@ -1710,6 +1850,7 @@ export default function ProfileCompletionForm({
                                 </select>
                             </div>
                             {formData.horoscope === 'Required' && (
+                                <>
                                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
                                     <label>Upload Horoscope Document</label>
                                     <input
@@ -1727,7 +1868,7 @@ export default function ProfileCompletionForm({
                                                 key={`${formData.horoscopeDocument}-${previewBusters['horoscopeDocument'] ?? 'n'}`}
                                                 src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
                                                 alt="Horoscope"
-                                                onClick={() => setHoroscopePopupOpen(true)}
+                                                onClick={() => setHoroscopeViewerSlot('horoscopeDocument')}
                                                 style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
                                             />
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
@@ -1751,7 +1892,7 @@ export default function ProfileCompletionForm({
                                             <div>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setHoroscopePopupOpen(true)}
+                                                    onClick={() => setHoroscopeViewerSlot('horoscopeDocument')}
                                                     style={{ background: 'none', border: 'none', padding: 0, marginTop: '0.25rem', color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', fontSize: '0.85rem' }}
                                                 >
                                                     View Full Image
@@ -1760,6 +1901,133 @@ export default function ProfileCompletionForm({
                                         </div>
                                     )}
                                 </div>
+                                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                                    <label>Additional horoscope page 2 (optional)</label>
+                                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: '#777', lineHeight: 1.45 }}>
+                                        If your horoscope has a second page, upload it here. Upload the{' '}
+                                        <strong>first page above</strong> before using this slot.
+                                    </p>
+                                    <input
+                                        ref={horoscopeDocument2FileInputRef}
+                                        type="file"
+                                        accept="image/*,.pdf,.doc,.docx"
+                                        onChange={(e) => handleFileChange(e, 'horoscopeDocument2')}
+                                        disabled={uploading['horoscopeDocument2'] || !formData.horoscopeDocument}
+                                        style={formData.horoscopeDocument2 ? { display: 'none' } : undefined}
+                                    />
+                                    {!formData.horoscopeDocument ? (
+                                        <small style={{ color: '#888', fontSize: '0.78rem', display: 'block' }}>
+                                            Upload the primary horoscope first.
+                                        </small>
+                                    ) : null}
+                                    {uploading['horoscopeDocument2'] && (
+                                        <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>
+                                    )}
+                                    {formData.horoscopeDocument2 ? (
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            {!/\.pdf($|\?)/i.test(formData.horoscopeDocument2) &&
+                                            /\.(png|jpe?g|gif|webp|bmp|svg)($|\?)/i.test(formData.horoscopeDocument2) ? (
+                                                <img
+                                                    key={`${formData.horoscopeDocument2}-${previewBusters['horoscopeDocument2'] ?? 'n'}`}
+                                                    src={previewSrc('horoscopeDocument2', formData.horoscopeDocument2)}
+                                                    alt="Horoscope page 2"
+                                                    onClick={() => setHoroscopeViewerSlot('horoscopeDocument2')}
+                                                    style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
+                                                />
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHoroscopeViewerSlot('horoscopeDocument2')}
+                                                    style={{ ...imageActionBtn, marginTop: '0.35rem' }}
+                                                >
+                                                    Open uploaded file
+                                                </button>
+                                            )}
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => horoscopeDocument2FileInputRef.current?.click()}
+                                                    disabled={uploading['horoscopeDocument2'] || !formData.horoscopeDocument}
+                                                    style={imageActionBtn}
+                                                >
+                                                    Replace file
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void clearUploadedField('horoscopeDocument2')}
+                                                    disabled={uploading['horoscopeDocument2']}
+                                                    style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                                    <label>Additional horoscope page 3 (optional)</label>
+                                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: '#777', lineHeight: 1.45 }}>
+                                        If your horoscope has a third page, upload it here. Upload{' '}
+                                        <strong>page 2 above</strong> before using this slot.
+                                    </p>
+                                    <input
+                                        ref={horoscopeDocument3FileInputRef}
+                                        type="file"
+                                        accept="image/*,.pdf,.doc,.docx"
+                                        onChange={(e) => handleFileChange(e, 'horoscopeDocument3')}
+                                        disabled={uploading['horoscopeDocument3'] || !formData.horoscopeDocument2}
+                                        style={formData.horoscopeDocument3 ? { display: 'none' } : undefined}
+                                    />
+                                    {!formData.horoscopeDocument2 ? (
+                                        <small style={{ color: '#888', fontSize: '0.78rem', display: 'block' }}>
+                                            Upload page 2 first.
+                                        </small>
+                                    ) : null}
+                                    {uploading['horoscopeDocument3'] && (
+                                        <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>
+                                    )}
+                                    {formData.horoscopeDocument3 ? (
+                                        <div style={{ marginTop: '0.5rem' }}>
+                                            {!/\.pdf($|\?)/i.test(formData.horoscopeDocument3) &&
+                                            /\.(png|jpe?g|gif|webp|bmp|svg)($|\?)/i.test(formData.horoscopeDocument3) ? (
+                                                <img
+                                                    key={`${formData.horoscopeDocument3}-${previewBusters['horoscopeDocument3'] ?? 'n'}`}
+                                                    src={previewSrc('horoscopeDocument3', formData.horoscopeDocument3)}
+                                                    alt="Horoscope page 3"
+                                                    onClick={() => setHoroscopeViewerSlot('horoscopeDocument3')}
+                                                    style={{ width: '120px', height: '120px', objectFit: 'cover', borderRadius: '6px', cursor: 'pointer', border: '1px solid #ddd' }}
+                                                />
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHoroscopeViewerSlot('horoscopeDocument3')}
+                                                    style={{ ...imageActionBtn, marginTop: '0.35rem' }}
+                                                >
+                                                    Open uploaded file
+                                                </button>
+                                            )}
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => horoscopeDocument3FileInputRef.current?.click()}
+                                                    disabled={uploading['horoscopeDocument3'] || !formData.horoscopeDocument2}
+                                                    style={imageActionBtn}
+                                                >
+                                                    Replace file
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void clearUploadedField('horoscopeDocument3')}
+                                                    disabled={uploading['horoscopeDocument3']}
+                                                    style={{ ...imageActionBtn, borderColor: '#fca5a5', color: '#b91c1c', background: '#fef2f2' }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                </>
                             )}
                         </div>
                     </div>
@@ -1908,7 +2176,7 @@ export default function ProfileCompletionForm({
                                     />
                                 </div>
                                 <small style={{ color: '#888', fontSize: '0.78rem' }}>
-                                    Minimum age must be at least 18. Maximum must be greater than Minimum.
+                                    Minimum and maximum partner age must be at least 18. Maximum must be greater than minimum.
                                 </small>
                             </div>
                             <div className="form-group">
@@ -1971,23 +2239,29 @@ export default function ProfileCompletionForm({
                             </div>
 
                             <div className="form-group">
-                                <label>Country of Origin</label>
-                                <select name="partnerCountryOfOrigin" value={formData.partnerCountryOfOrigin} onChange={handleChange}>
-                                    <option value="">Anyway</option>
-                                    {countryOptions.map((country) => (
-                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
-                                    ))}
-                                </select>
+                                <CountryMultiSelect
+                                    idPrefix="partner-origin"
+                                    label={<>Country of Origin (Preferred)</>}
+                                    hint="(optional — select one or more; leave empty for any)"
+                                    value={formData.partnerCountryOfOrigin}
+                                    onChange={(v) =>
+                                        setFormData((prev) => ({ ...prev, partnerCountryOfOrigin: v }))
+                                    }
+                                    countries={countryOptions}
+                                />
                             </div>
 
                             <div className="form-group">
-                                <label>Country of Residence</label>
-                                <select name="partnerCountryOfResidence" value={formData.partnerCountryOfResidence} onChange={handleChange}>
-                                    <option value="">Anywhere</option>
-                                    {countryOptions.map((country) => (
-                                        <option key={country.isoCode} value={country.name}>{country.name}</option>
-                                    ))}
-                                </select>
+                                <CountryMultiSelect
+                                    idPrefix="partner-residence"
+                                    label={<>Country of Residence (Preferred)</>}
+                                    hint="(optional — select one or more; leave empty for anywhere)"
+                                    value={formData.partnerCountryOfResidence}
+                                    onChange={(v) =>
+                                        setFormData((prev) => ({ ...prev, partnerCountryOfResidence: v }))
+                                    }
+                                    countries={countryOptions}
+                                />
                             </div>
 
                             <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -2006,6 +2280,7 @@ export default function ProfileCompletionForm({
                                 <label>About yourself</label>
                                 <textarea name="remarks" value={formData.remarks} onChange={handleChange} rows={3}></textarea>
                             </div>
+
 
                             <div className="form-group" style={{ gridColumn: '1/-1' }}>
                                 <hr style={{ margin: '1.5rem 0', border: 'none', borderTop: '1px solid #eee' }} />
@@ -2177,12 +2452,16 @@ export default function ProfileCompletionForm({
                     </div>
                 )}
 
-                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
-                    {step > 1 ? (
+                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: isPartnerPrefsOnly ? 'flex-end' : 'space-between' }}>
+                    {!isPartnerPrefsOnly && (step > 1 ? (
                         <button type="button" className="btn btn-outline" onClick={handlePrev}>Previous</button>
-                    ) : <div></div>}
+                    ) : <div></div>)}
 
-                    {step < 6 ? (
+                    {isPartnerPrefsOnly ? (
+                        <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
+                            {loading ? 'Saving...' : 'Save Partner Preferences'}
+                        </button>
+                    ) : step < 6 ? (
                         <button type="button" className="btn btn-primary" onClick={handleNext}>Next</button>
                     ) : (
                         <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
@@ -2230,10 +2509,10 @@ export default function ProfileCompletionForm({
             `}</style>
 
             <HoroscopeLightbox
-                key={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
-                open={horoscopePopupOpen && !!formData.horoscopeDocument}
-                src={previewSrc('horoscopeDocument', formData.horoscopeDocument)}
-                onClose={() => setHoroscopePopupOpen(false)}
+                key={horoscopeLightboxSrc || 'closed'}
+                open={!!horoscopeLightboxSrc}
+                src={horoscopeLightboxSrc}
+                onClose={() => setHoroscopeViewerSlot(null)}
             />
         </div>
     );

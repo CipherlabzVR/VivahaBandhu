@@ -1,6 +1,6 @@
 /**
  * Canonical religion keys aligned with Matrimonial NormalizeReligionValue (backend).
- * Used so filters match profiles when synonyms differ (e.g. Buddhist vs Buddhism).
+ * Christianity and Catholic are distinct (separate browse filters and partner matching).
  */
 export function canonicalReligionKey(value: string | null | undefined): string {
     const normalized = (value ?? '').trim().toLowerCase();
@@ -14,7 +14,8 @@ export function canonicalReligionKey(value: string | null | undefined): string {
         case 'christian':
             return 'christianity';
         case 'catholic':
-            return 'christianity';
+        case 'roman catholic':
+            return 'catholic';
         default:
             return normalized;
     }
