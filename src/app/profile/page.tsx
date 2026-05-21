@@ -18,7 +18,7 @@ import {
     SELF_MANAGED_SUB_ACCOUNT_MAX_FREE,
     SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM,
 } from '../../constants/subscription';
-import { AUTH_FIELD_MAX_LENGTH } from '../../constants/inputLimits';
+import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../constants/inputLimits';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
@@ -825,8 +825,8 @@ function ProfilePageContent() {
             setSubAccountError('Password must be at least 6 characters.');
             return;
         }
-        if (subAccountForm.password.length > AUTH_FIELD_MAX_LENGTH || subAccountForm.confirmPassword.length > AUTH_FIELD_MAX_LENGTH) {
-            setSubAccountError(`Password cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
+        if (subAccountForm.password.length > PASSWORD_MAX_LENGTH || subAccountForm.confirmPassword.length > PASSWORD_MAX_LENGTH) {
+            setSubAccountError(`Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`);
             return;
         }
         if (subAccountForm.password !== subAccountForm.confirmPassword) {
@@ -2578,7 +2578,7 @@ function ProfilePageContent() {
                                                         name="password"
                                                         required
                                                         minLength={6}
-                                                        maxLength={AUTH_FIELD_MAX_LENGTH}
+                                                        maxLength={PASSWORD_MAX_LENGTH}
                                                         value={subAccountForm.password}
                                                         onChange={handleSubAccountChange}
                                                         style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
@@ -2598,7 +2598,7 @@ function ProfilePageContent() {
                                                         name="confirmPassword"
                                                         required
                                                         minLength={6}
-                                                        maxLength={AUTH_FIELD_MAX_LENGTH}
+                                                        maxLength={PASSWORD_MAX_LENGTH}
                                                         value={subAccountForm.confirmPassword}
                                                         onChange={handleSubAccountChange}
                                                         style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}

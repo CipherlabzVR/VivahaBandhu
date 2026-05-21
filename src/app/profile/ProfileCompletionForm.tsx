@@ -1021,18 +1021,62 @@ export default function ProfileCompletionForm({
         }
     }, [formData.countryOfResidence, formData.cityOfResidence]);
 
+    const LETTERS_ONLY_FIELDS = new Set([
+        'fatherName',
+        'motherName',
+        'occupation',
+        'fatherOccupation',
+        'motherOccupation',
+    ]);
+
+    /** Transient inline error per field (e.g. "Numbers are not allowed in Occupation."). */
+    const [lettersOnlyErrors, setLettersOnlyErrors] = useState<Record<string, string | null>>({});
+
+    const lettersOnlyLabel = (name: string): string => {
+        switch (name) {
+            case 'fatherName': return "Father's name";
+            case 'motherName': return "Mother's name";
+            case 'occupation': return 'Occupation';
+            case 'fatherOccupation': return "Father's occupation";
+            case 'motherOccupation': return "Mother's occupation";
+            default: return 'This field';
+        }
+    };
+
+    /** Block digits / symbols from being typed into letters-only fields BEFORE they enter the DOM value. */
+    const handleLettersOnlyBeforeInput: React.FormEventHandler<HTMLInputElement> = (e) => {
+        const target = e.target as HTMLInputElement;
+        if (!LETTERS_ONLY_FIELDS.has(target.name)) return;
+        const native = e.nativeEvent as InputEvent;
+        const incoming = native.data;
+        if (incoming == null) return;
+        if (!/^[\p{L}\s'-]+$/u.test(incoming)) {
+            e.preventDefault();
+            setLettersOnlyErrors((prev) => ({
+                ...prev,
+                [target.name]: `${lettersOnlyLabel(target.name)} can only contain letters — numbers and symbols are not allowed.`,
+            }));
+        }
+    };
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         let nextValue: string = value;
-        // Name fields must accept letters only (no digits / symbols).
+        // Letters-only fields: names + occupations (own / father / mother).
         // Father / Mother names are the only "name" inputs in this wizard;
         // own-name lives on AppUser and is edited from profile/page.tsx.
-        if (name === 'fatherName' || name === 'motherName') {
+        if (LETTERS_ONLY_FIELDS.has(name)) {
             nextValue = sanitizeNameInput(value);
-        }
-        // Job titles / occupations: letters, spaces, hyphen and apostrophe only (no digits).
-        else if (name === 'occupation' || name === 'fatherOccupation' || name === 'motherOccupation') {
-            nextValue = sanitizeNameInput(value);
+            // If sanitize had to strip something (e.g. pasted "Engineer123"),
+            // surface a transient inline message so the user understands why.
+            if (nextValue !== value) {
+                setLettersOnlyErrors((prev) => ({
+                    ...prev,
+                    [name]: `${lettersOnlyLabel(name)} can only contain letters — numbers and symbols are not allowed.`,
+                }));
+            } else if (lettersOnlyErrors[name]) {
+                setLettersOnlyErrors((prev) => ({ ...prev, [name]: null }));
+            }
         }
         // Partner age fields must be digits only. type="number" still allows
         // "e", "+", "-", "." through, and pasting a string slips in - strip
@@ -1042,6 +1086,14 @@ export default function ProfileCompletionForm({
         }
         setFormData(prev => ({ ...prev, [name]: nextValue }));
     };
+
+    /** Auto-clear letters-only validation messages a couple of seconds after the last bad keystroke. */
+    useEffect(() => {
+        const hasAny = Object.values(lettersOnlyErrors).some(Boolean);
+        if (!hasAny) return;
+        const id = window.setTimeout(() => setLettersOnlyErrors({}), 3000);
+        return () => window.clearTimeout(id);
+    }, [lettersOnlyErrors]);
 
     // Enforce sequential photo uploads: a gallery slot is only writable
     // once the prior slot already has a stored URL. The Main Profile Photo
@@ -1754,7 +1806,24 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>
-                                <input type="text" name="occupation" value={formData.occupation} onChange={handleChange} placeholder="Current Job Title" />
+                                <input
+                                    type="text"
+                                    name="occupation"
+                                    value={formData.occupation}
+                                    onChange={handleChange}
+                                    onBeforeInput={handleLettersOnlyBeforeInput}
+                                    placeholder="Current Job Title"
+                                    autoComplete="organization-title"
+                                    inputMode="text"
+                                />
+                                <span style={{ color: 'var(--text-light)', fontSize: '0.78rem', display: 'block', marginTop: '0.25rem' }}>
+                                    Letters only — numbers and symbols are not allowed.
+                                </span>
+                                {lettersOnlyErrors.occupation && (
+                                    <span style={{ color: '#b91c1c', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                                        {lettersOnlyErrors.occupation}
+                                    </span>
+                                )}
                             </div>
                         </div>
 
@@ -2055,7 +2124,22 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>
-                                <input type="text" name="fatherOccupation" value={formData.fatherOccupation} onChange={handleChange} />
+                                <input
+                                    type="text"
+                                    name="fatherOccupation"
+                                    value={formData.fatherOccupation}
+                                    onChange={handleChange}
+                                    onBeforeInput={handleLettersOnlyBeforeInput}
+                                    inputMode="text"
+                                />
+                                <span style={{ color: 'var(--text-light)', fontSize: '0.78rem', display: 'block', marginTop: '0.25rem' }}>
+                                    Letters only — numbers and symbols are not allowed.
+                                </span>
+                                {lettersOnlyErrors.fatherOccupation && (
+                                    <span style={{ color: '#b91c1c', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                                        {lettersOnlyErrors.fatherOccupation}
+                                    </span>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label>Ethnicity</label>
@@ -2108,7 +2192,22 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>
-                                <input type="text" name="motherOccupation" value={formData.motherOccupation} onChange={handleChange} />
+                                <input
+                                    type="text"
+                                    name="motherOccupation"
+                                    value={formData.motherOccupation}
+                                    onChange={handleChange}
+                                    onBeforeInput={handleLettersOnlyBeforeInput}
+                                    inputMode="text"
+                                />
+                                <span style={{ color: 'var(--text-light)', fontSize: '0.78rem', display: 'block', marginTop: '0.25rem' }}>
+                                    Letters only — numbers and symbols are not allowed.
+                                </span>
+                                {lettersOnlyErrors.motherOccupation && (
+                                    <span style={{ color: '#b91c1c', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>
+                                        {lettersOnlyErrors.motherOccupation}
+                                    </span>
+                                )}
                             </div>
                             <div className="form-group">
                                 <label>Ethnicity</label>
