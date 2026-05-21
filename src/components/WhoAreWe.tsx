@@ -96,20 +96,15 @@ export default function WhoAreWe() {
                         <p className="text-slate-600 text-lg leading-relaxed mb-6">
                             {t('whoAreWePara2')}
                         </p>
-                        <ul className="space-y-3 text-slate-600">
-                            <li className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
-                                {t('whoAreWeBullet1')}
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
-                                {t('whoAreWeBullet2')}
-                            </li>
-                            <li className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
-                                {t('whoAreWeBullet3')}
-                            </li>
-                        </ul>
+                        <p className="text-slate-600 text-lg leading-relaxed mb-6">
+                            {t('whoAreWePara3')}
+                        </p>
+                        <p className="text-slate-600 text-lg leading-relaxed mb-6">
+                            {t('whoAreWePara4')}
+                        </p>
+                        <p className="text-slate-600 text-lg leading-relaxed mb-6">
+                            {t('whoAreWePara5')}
+                        </p>
                     </div>
 
                     {/* Right: Image & Floating Hearts */}

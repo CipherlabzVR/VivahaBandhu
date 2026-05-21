@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { useState, useEffect, useRef, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, mapUserFieldsFromSignInResult, type RecoveryAccount, type ForgotPasswordInitiateRequest, type MatrimonialLoginResponse } from '../services/matrimonialService';
@@ -24,6 +24,8 @@ import {
     CHECKOUT_PLAN_MATCHMAKER_GOLD,
     CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
 } from '../constants/subscription';
+import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
+import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
@@ -41,6 +43,12 @@ function viewerProfileUserId(p: Record<string, unknown> | null | undefined): num
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** Eating / drinking / smoking preference from API; blank or placeholder "-" → em dash */
+function partnerPreferenceHabitDisplay(v: unknown): string {
+    const s = v != null ? String(v).trim() : '';
+    return s && s !== '-' ? s : '—';
+}
+
 function parentUserIdFromLoginResult(r: MatrimonialLoginResponse['result'] | undefined): number | undefined {
     if (!r) return undefined;
     const raw = r.parentUserId ?? r.ParentUserId;
@@ -49,20 +57,52 @@ function parentUserIdFromLoginResult(r: MatrimonialLoginResponse['result'] | und
     return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/** Parse "try again in N minute(s)" from API lockout messages (matrimonial sign-in / 2FA). */
+function parseLockoutMinutesFromMessage(msg: string): number | null {
+    const m = msg.match(/try\s+again\s+in\s+(\d+)\s+minute/i);
+    if (!m) return null;
+    const n = parseInt(m[1], 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** MM:SS (e.g. 01:00 → 00:00) for lockout + verify-code resend cooldowns. */
+function formatSecondsMmSs(totalSeconds: number): string {
+    const s = Math.max(0, Math.floor(totalSeconds));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+}
+
 /** Map User/SignIn API error text to field-level or general login messages. */
 function applySignInMessageToLoginErrors(
     raw: string,
     setLoginEmailError: (v: string | null) => void,
     setLoginPasswordError: (v: string | null) => void,
     setLoginError: (v: string | null) => void,
+    setLoginLockoutUntilMs: (v: number | null) => void,
 ) {
     const msg = raw.trim();
     const lower = msg.toLowerCase();
     setLoginEmailError(null);
     setLoginPasswordError(null);
+    setLoginLockoutUntilMs(null);
 
     if (!msg) {
         setLoginError('Sign-in failed. Please try again.');
+        return;
+    }
+
+    if (/\battempt(s)?\s+remaining\b/i.test(lower)) {
+        setLoginError(msg);
+        return;
+    }
+
+    if (/too\s+many\s+incorrect\s+password/i.test(lower)) {
+        const mins = parseLockoutMinutesFromMessage(msg);
+        if (mins != null) {
+            setLoginLockoutUntilMs(Date.now() + mins * 60 * 1000);
+        }
+        setLoginError(msg);
         return;
     }
 
@@ -105,6 +145,10 @@ function applySignInMessageToLoginErrors(
     }
 
     if (/too\s*many|try\s*again\s*in|lockout|locked|failed\s*verification\s*attempts/i.test(lower)) {
+        const mins = parseLockoutMinutesFromMessage(msg);
+        if (mins != null) {
+            setLoginLockoutUntilMs(Date.now() + mins * 60 * 1000);
+        }
         setLoginError(msg);
         return;
     }
@@ -122,6 +166,88 @@ function applySignInMessageToLoginErrors(
     }
 
     setLoginError(msg.length > 280 ? 'Sign-in failed. Please try again.' : msg);
+}
+
+/** Forgot-password verify step (code sent) — survives modal close / refresh within TTL. */
+const MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY = 'cbass_matrimonial_forgot_verify_v1';
+const MATRIMONIAL_FORGOT_VERIFY_TTL_MS = 15 * 60 * 1000;
+/** Minimum wait before sending or resending verification codes (registration verify + forgot password). */
+const VERIFY_CODE_RESEND_COOLDOWN_MS = 60_000;
+
+type PersistedForgotVerifyV1 = {
+    v: 1;
+    userId: number;
+    sentVia: string;
+    successMessage: string;
+    savedAt: number;
+    selectedAccount: RecoveryAccount | null;
+    initiatePayload?: ForgotPasswordInitiateRequest;
+    resendUnlockAtMs?: number;
+};
+
+function clearForgotVerifyPersisted(): void {
+    if (typeof window === 'undefined') return;
+    try {
+        sessionStorage.removeItem(MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY);
+    } catch {
+        /* ignore */
+    }
+}
+
+function readForgotVerifyPersisted(): PersistedForgotVerifyV1 | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = sessionStorage.getItem(MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as PersistedForgotVerifyV1;
+        if (
+            parsed.v !== 1 ||
+            typeof parsed.userId !== 'number' ||
+            typeof parsed.sentVia !== 'string' ||
+            typeof parsed.successMessage !== 'string' ||
+            typeof parsed.savedAt !== 'number'
+        ) {
+            sessionStorage.removeItem(MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY);
+            return null;
+        }
+        if (Date.now() - parsed.savedAt > MATRIMONIAL_FORGOT_VERIFY_TTL_MS) {
+            sessionStorage.removeItem(MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY);
+            return null;
+        }
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
+function writeForgotVerifyPersisted(snapshot: {
+    userId: number;
+    sentVia: string;
+    successMessage: string;
+    selectedAccount: RecoveryAccount | null;
+    initiatePayload?: ForgotPasswordInitiateRequest | null;
+    resendUnlockAtMs?: number | null;
+}): void {
+    if (typeof window === 'undefined') return;
+    try {
+        const payload: PersistedForgotVerifyV1 = {
+            v: 1,
+            userId: snapshot.userId,
+            sentVia: snapshot.sentVia,
+            successMessage: snapshot.successMessage,
+            savedAt: Date.now(),
+            selectedAccount: snapshot.selectedAccount,
+        };
+        if (snapshot.initiatePayload != null) {
+            payload.initiatePayload = snapshot.initiatePayload;
+        }
+        if (snapshot.resendUnlockAtMs != null) {
+            payload.resendUnlockAtMs = snapshot.resendUnlockAtMs;
+        }
+        sessionStorage.setItem(MATRIMONIAL_FORGOT_VERIFY_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+        /* quota / private mode */
+    }
 }
 
 interface ModalsProps {
@@ -193,6 +319,7 @@ function checkPasswordPolicy(password: string) {
 }
 
 function passwordPassesPolicy(password: string): boolean {
+    if (password.length > PASSWORD_MAX_LENGTH) return false;
     const c = checkPasswordPolicy(password);
     return c.minLength && c.hasUpper && c.hasLower && c.hasDigit && c.hasSpecial;
 }
@@ -251,6 +378,7 @@ function RegisterPasswordFields({
                         placeholder="Create a strong password"
                         value={password}
                         onChange={(e) => onPasswordChange(e.target.value)}
+                        maxLength={PASSWORD_MAX_LENGTH}
                         style={{ borderColor: errors.password ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                         autoComplete="new-password"
                     />
@@ -288,6 +416,7 @@ function RegisterPasswordFields({
                 })()}
                 <ul style={{ listStyle: 'none', padding: '0.5rem 0 0', margin: 0, borderTop: '1px solid #eee', marginTop: '0.35rem' }}>
                     {ruleRow(pwdChecks.minLength, 'At least 6 characters')}
+                    {ruleRow(password.length <= PASSWORD_MAX_LENGTH, `No more than ${PASSWORD_MAX_LENGTH} characters`)}
                     {ruleRow(pwdChecks.hasUpper, 'One uppercase letter (A–Z)')}
                     {ruleRow(pwdChecks.hasLower, 'One lowercase letter (a–z)')}
                     {ruleRow(pwdChecks.hasDigit, 'One number (0–9)')}
@@ -304,6 +433,7 @@ function RegisterPasswordFields({
                         placeholder="Re-enter your password"
                         value={confirmPassword}
                         onChange={(e) => onConfirmChange(e.target.value)}
+                        maxLength={PASSWORD_MAX_LENGTH}
                         style={{ borderColor: errors.confirmPassword ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                         autoComplete="new-password"
                     />
@@ -576,16 +706,18 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             }));
                         } else if (res?.message) {
                             setProfileAccessMessage(res.message);
-                            if (String(res.message).toLowerCase().includes('daily profile view limit reached')) {
+                            if (String(res.message).toLowerCase().includes('daily profile view limit')) {
                                 setIsProfileLockedByDailyLimit(true);
+                                showToast('Subscribe to keep viewing full profiles today.', 'info');
                             }
                         }
                     } catch (error) {
                         console.error("Failed to load detailed profile", error);
                         if (error instanceof Error && error.message) {
                             setProfileAccessMessage(error.message);
-                            if (error.message.toLowerCase().includes('daily profile view limit reached')) {
+                            if (error.message.toLowerCase().includes('daily profile view limit')) {
                                 setIsProfileLockedByDailyLimit(true);
+                                showToast('Subscribe to keep viewing full profiles today.', 'info');
                             }
                         }
                     } finally {
@@ -667,6 +799,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [loginPasswordError, setLoginPasswordError] = useState<string | null>(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    /** Wall-clock deadline when API reports a temporary lockout ("try again in N minute(s)"). */
+    const [loginLockoutUntilMs, setLoginLockoutUntilMs] = useState<number | null>(null);
+    const [loginLockoutTick, setLoginLockoutTick] = useState(0);
     const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
     const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
@@ -689,6 +824,67 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
     const [isForgotSubmitting, setIsForgotSubmitting] = useState(false);
     const [forgotStep, setForgotStep] = useState<'entry' | 'verify'>('entry');
+    const [forgotLastInitiatePayload, setForgotLastInitiatePayload] = useState<ForgotPasswordInitiateRequest | null>(null);
+    const [forgotResendUnlockAtMs, setForgotResendUnlockAtMs] = useState<number | null>(null);
+    const [forgotResendTick, setForgotResendTick] = useState(0);
+
+    const forgotResendSecondsLeft = useMemo(() => {
+        if (forgotStep !== 'verify' || forgotResendUnlockAtMs == null) return 0;
+        return Math.max(0, Math.ceil((forgotResendUnlockAtMs - Date.now()) / 1000));
+    }, [forgotStep, forgotResendUnlockAtMs, forgotResendTick]);
+
+    useEffect(() => {
+        if (forgotStep !== 'verify' || forgotResendUnlockAtMs == null || Date.now() >= forgotResendUnlockAtMs) {
+            return;
+        }
+        const id = window.setInterval(() => setForgotResendTick((x) => x + 1), 1000);
+        return () => window.clearInterval(id);
+    }, [forgotStep, forgotResendUnlockAtMs]);
+
+    const loginLockoutRemainingSec = useMemo(() => {
+        if (loginLockoutUntilMs == null) return 0;
+        return Math.max(0, Math.ceil((loginLockoutUntilMs - Date.now()) / 1000));
+    }, [loginLockoutUntilMs, loginLockoutTick]);
+
+    useEffect(() => {
+        if (loginLockoutUntilMs == null || Date.now() >= loginLockoutUntilMs) return;
+        const id = window.setInterval(() => setLoginLockoutTick((x) => x + 1), 1000);
+        return () => window.clearInterval(id);
+    }, [loginLockoutUntilMs]);
+
+    useEffect(() => {
+        if (loginLockoutUntilMs == null) return;
+        if (loginLockoutRemainingSec > 0) return;
+        setLoginLockoutUntilMs(null);
+        setLoginError(null);
+    }, [loginLockoutUntilMs, loginLockoutRemainingSec]);
+
+    useEffect(() => {
+        if (activeModal !== 'login') return;
+        const snap = readForgotVerifyPersisted();
+        if (!snap) return;
+        setForgotRecoveryUserId(snap.userId);
+        setForgotSentVia(snap.sentVia);
+        setForgotSuccess(snap.successMessage);
+        setForgotSelectedAccount(snap.selectedAccount);
+        setForgotLastInitiatePayload(snap.initiatePayload ?? null);
+        const unlock = snap.resendUnlockAtMs;
+        setForgotResendUnlockAtMs(unlock != null && Date.now() < unlock ? unlock : null);
+        setForgotStep('verify');
+        setShowForgotPassword(true);
+        setForgotError(null);
+        setForgotCode('');
+        setForgotNewPassword('');
+        setForgotConfirmPassword('');
+        writeForgotVerifyPersisted({
+            userId: snap.userId,
+            sentVia: snap.sentVia,
+            successMessage: snap.successMessage,
+            selectedAccount: snap.selectedAccount,
+            initiatePayload: snap.initiatePayload ?? null,
+            resendUnlockAtMs: unlock != null && Date.now() < unlock ? unlock : null,
+        });
+    }, [activeModal]);
 
     // Verification states
     const [showVerification, setShowVerification] = useState(false);
@@ -708,8 +904,22 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [isSendingCode, setIsSendingCode] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
     const [codeSent, setCodeSent] = useState(false);
+    /** Next allowed send/resend for registration / verify-account OTP (shared across channels). */
+    const [verifyResendUnlockAtMs, setVerifyResendUnlockAtMs] = useState<number | null>(null);
+    const [verifyResendTick, setVerifyResendTick] = useState(0);
     const [showWelcomePopup, setShowWelcomePopup] = useState(false);
     const [registeredFirstName, setRegisteredFirstName] = useState('');
+
+    const verifyResendSecondsLeft = useMemo(() => {
+        if (verifyResendUnlockAtMs == null) return 0;
+        return Math.max(0, Math.ceil((verifyResendUnlockAtMs - Date.now()) / 1000));
+    }, [verifyResendUnlockAtMs, verifyResendTick]);
+
+    useEffect(() => {
+        if (verifyResendUnlockAtMs == null || Date.now() >= verifyResendUnlockAtMs) return;
+        const id = window.setInterval(() => setVerifyResendTick((x) => x + 1), 1000);
+        return () => window.clearInterval(id);
+    }, [verifyResendUnlockAtMs]);
 
     // When opening register as matchmaker, lock account type to Matchmaker
     useEffect(() => {
@@ -732,12 +942,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const validateForm = () => {
         const newErrors: { [key: string]: string } = {};
         if (!firstName.trim()) newErrors.firstName = 'First Name is required';
-        else {
+        else if (firstName.trim().length > AUTH_FIELD_MAX_LENGTH) {
+            newErrors.firstName = `First name cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters`;
+        } else {
             const fnErr = nameLettersOnlyError(firstName, 'First name');
             if (fnErr) newErrors.firstName = fnErr;
         }
         if (!lastName.trim()) newErrors.lastName = 'Last Name is required';
-        else {
+        else if (lastName.trim().length > AUTH_FIELD_MAX_LENGTH) {
+            newErrors.lastName = `Last name cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters`;
+        } else {
             const lnErr = nameLettersOnlyError(lastName, 'Last name');
             if (lnErr) newErrors.lastName = lnErr;
         }
@@ -767,15 +981,21 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
         if (!email) {
             newErrors.email = 'Email is required';
+        } else if (email.length > AUTH_FIELD_MAX_LENGTH) {
+            newErrors.email = `Email cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters`;
         } else if (!/\S+@\S+\.\S+/.test(email)) {
             newErrors.email = 'Email is invalid';
         }
         if (!password) newErrors.password = 'Password is required';
-        else if (!passwordPassesPolicy(password)) {
+        else if (password.length > PASSWORD_MAX_LENGTH) {
+            newErrors.password = `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters`;
+        } else if (!passwordPassesPolicy(password)) {
             newErrors.password = 'Password must satisfy all requirements below';
         }
         if (!confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
-        else if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+        else if (confirmPassword.length > PASSWORD_MAX_LENGTH) {
+            newErrors.confirmPassword = `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters`;
+        } else if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
 
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -925,10 +1145,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setVerificationDigits(EMPTY_VERIFY_DIGITS());
             setVerificationError(null);
             setSendCodeError(null);
+            setVerifyResendUnlockAtMs(null);
+            setVerifyResendTick(0);
             setVerificationResumeHint(
                 response.message ||
                     'Continue where you left off. Choose a method to receive a code if you need a new one.',
             );
+            setVerifyResendUnlockAtMs(null);
+            setVerifyResendTick(0);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Could not resume registration.';
             setRegisterError(msg);
@@ -994,6 +1218,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 setCodeSent(false); // Reset code sent state - user must select method first
                 setVerificationMethod(''); // Reset verification method
                 setVerificationDigits(EMPTY_VERIFY_DIGITS()); // Reset verification code
+                setVerifyResendUnlockAtMs(null);
+                setVerifyResendTick(0);
                 setVerificationError(null); // Reset errors
                 setSendCodeError(null); // Reset send code errors
                 setRegisterError(null);
@@ -1037,6 +1263,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         if (!loginEmail.trim()) {
             setLoginEmailError('Email is required.');
             hasError = true;
+        } else if (loginEmail.trim().length > AUTH_FIELD_MAX_LENGTH) {
+            setLoginEmailError(`Email cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
+            hasError = true;
         } else if (!emailRegex.test(loginEmail.trim())) {
             setLoginEmailError('Please enter a valid email address.');
             hasError = true;
@@ -1050,6 +1279,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         } else if (loginPassword.length < 6) {
             setLoginPasswordError('Password must be at least 6 characters.');
             hasError = true;
+        } else if (loginPassword.length > PASSWORD_MAX_LENGTH) {
+            setLoginPasswordError(`Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`);
+            hasError = true;
         } else {
             setLoginPasswordError(null);
         }
@@ -1058,6 +1290,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         setIsLoading(true);
         setLoginError(null);
+        setLoginLockoutUntilMs(null);
         setLoginEmailError(null);
         setLoginPasswordError(null);
 
@@ -1086,6 +1319,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     accountType: response.result.AccountType || response.result.accountType || response.result.role || 'Free Member',
                     profilePhoto: response.result.ProfilePhoto || response.result.profilePhoto || '',
                     horoscopeDocument: response.result.HoroscopeDocument || response.result.horoscopeDocument || '',
+                    horoscopeDocument2:
+                        response.result.HoroscopeDocument2 || response.result.horoscopeDocument2 || '',
+                    horoscopeDocument3:
+                        response.result.HoroscopeDocument3 || response.result.horoscopeDocument3 || '',
                     isVerified: response.result.status === 1,
                     ...(loginParentId !== undefined ? { parentUserId: loginParentId } : {}),
                     ...signInExtras,
@@ -1105,7 +1342,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 }, 100);
             } else {
                 const msg = String(response.message || (response as { Message?: string }).Message || '').trim();
-                applySignInMessageToLoginErrors(msg, setLoginEmailError, setLoginPasswordError, setLoginError);
+                applySignInMessageToLoginErrors(
+                    msg,
+                    setLoginEmailError,
+                    setLoginPasswordError,
+                    setLoginError,
+                    setLoginLockoutUntilMs,
+                );
             }
         } catch (error) {
             console.error('Login error:', error);
@@ -1121,16 +1364,27 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             ) {
                 setLoginEmailError(null);
                 setLoginPasswordError(null);
+                setLoginLockoutUntilMs(null);
                 setLoginError('Cannot reach the server. Check your internet connection and try again.');
             } else {
-                applySignInMessageToLoginErrors(raw, setLoginEmailError, setLoginPasswordError, setLoginError);
+                applySignInMessageToLoginErrors(
+                    raw,
+                    setLoginEmailError,
+                    setLoginPasswordError,
+                    setLoginError,
+                    setLoginLockoutUntilMs,
+                );
             }
         } finally {
             setIsLoading(false);
         }
     };
 
-    const resetForgotPasswordState = () => {
+    const resetForgotPasswordState = (options?: { discardPersistedSession?: boolean }) => {
+        const discardPersisted = options?.discardPersistedSession !== false;
+        if (discardPersisted) {
+            clearForgotVerifyPersisted();
+        }
         setShowForgotPassword(false);
         setForgotMode('contact');
         setForgotContactMethod('email');
@@ -1153,7 +1407,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotSuccess(null);
         setForgotStep('entry');
         setIsForgotSubmitting(false);
+        setForgotLastInitiatePayload(null);
+        setForgotResendUnlockAtMs(null);
+        setForgotResendTick(0);
         setLoginError(null);
+        setLoginLockoutUntilMs(null);
+        setLoginLockoutTick(0);
         setLoginEmailError(null);
         setLoginPasswordError(null);
     };
@@ -1161,6 +1420,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const handleSearchRecoveryAccounts = async () => {
         const raw = forgotSearchName.trim();
         setForgotSearchResults([]);
+
+        if (raw.length > AUTH_FIELD_MAX_LENGTH) {
+            setForgotError(`Name cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
+            return;
+        }
 
         if (raw.length < 2) {
             setForgotError('Enter at least 2 letters of a first or last name to search.');
@@ -1216,6 +1480,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 setForgotError(emailFmtErr);
                 return;
             }
+            if (emailVal.length > AUTH_FIELD_MAX_LENGTH) {
+                setForgotError(`Email cannot exceed ${AUTH_FIELD_MAX_LENGTH} characters.`);
+                return;
+            }
             payload = { email: emailVal, deliveryMethod: forgotContactMethod };
         } else if (forgotContactMethod === 'phone') {
             const phoneVal = forgotContactPhone.trim();
@@ -1258,10 +1526,22 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 return;
             }
 
+            const successMsg = `We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`;
+            const unlockAt = Date.now() + VERIFY_CODE_RESEND_COOLDOWN_MS;
             setForgotRecoveryUserId(Number(userId));
             setForgotSentVia(sentVia);
             setForgotStep('verify');
-            setForgotSuccess(`We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`);
+            setForgotSuccess(successMsg);
+            setForgotLastInitiatePayload(payload);
+            setForgotResendUnlockAtMs(unlockAt);
+            writeForgotVerifyPersisted({
+                userId: Number(userId),
+                sentVia,
+                successMessage: successMsg,
+                selectedAccount: null,
+                initiatePayload: payload,
+                resendUnlockAtMs: unlockAt,
+            });
         } catch (error) {
             setForgotError(
                 error instanceof Error ? error.message : 'We couldn’t send a verification code. Try again in a moment.'
@@ -1278,10 +1558,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setForgotSelectedAccount(account);
 
         try {
-            const response = await matrimonialService.initiateForgotPassword({
+            const initiatePayload: ForgotPasswordInitiateRequest = {
                 userId: account.userId,
                 deliveryMethod: forgotSearchDeliveryMethod,
-            });
+            };
+            const response = await matrimonialService.initiateForgotPassword(initiatePayload);
             const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
             const userId = response?.result?.userId;
             const sentVia = formatForgotDeliveryChannel(response?.result?.sentVia ?? forgotSearchDeliveryMethod);
@@ -1291,12 +1572,71 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 return;
             }
 
+            const successMsg = `We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`;
+            const unlockAt = Date.now() + VERIFY_CODE_RESEND_COOLDOWN_MS;
             setForgotRecoveryUserId(Number(userId));
             setForgotSentVia(sentVia);
             setForgotStep('verify');
-            setForgotSuccess(`We sent a 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`);
+            setForgotSuccess(successMsg);
+            setForgotLastInitiatePayload(initiatePayload);
+            setForgotResendUnlockAtMs(unlockAt);
+            writeForgotVerifyPersisted({
+                userId: Number(userId),
+                sentVia,
+                successMessage: successMsg,
+                selectedAccount: account,
+                initiatePayload: initiatePayload,
+                resendUnlockAtMs: unlockAt,
+            });
         } catch (error) {
             setForgotError(error instanceof Error ? error.message : 'We couldn’t send a verification code. Try again shortly.');
+        } finally {
+            setIsForgotSubmitting(false);
+        }
+    };
+
+    const handleForgotResendCode = async () => {
+        if (
+            forgotStep !== 'verify' ||
+            forgotLastInitiatePayload == null ||
+            forgotResendSecondsLeft > 0 ||
+            isForgotSubmitting
+        ) {
+            return;
+        }
+
+        setIsForgotSubmitting(true);
+        setForgotError(null);
+
+        try {
+            const response = await matrimonialService.initiateForgotPassword(forgotLastInitiatePayload);
+            const statusOk = response?.statusCode === 200 || response?.statusCode === 201;
+            const userId = response?.result?.userId;
+            const sentVia = formatForgotDeliveryChannel(
+                response?.result?.sentVia ?? forgotLastInitiatePayload.deliveryMethod,
+            );
+
+            if (!statusOk || !userId) {
+                setForgotError(response?.message || 'We couldn’t resend the code. Try again shortly.');
+                return;
+            }
+
+            const successMsg = `We sent a new 6-digit code to ${sentVia}. It expires in 10 minutes — enter it below.`;
+            const unlockAt = Date.now() + VERIFY_CODE_RESEND_COOLDOWN_MS;
+            setForgotRecoveryUserId(Number(userId));
+            setForgotSentVia(sentVia);
+            setForgotSuccess(successMsg);
+            setForgotResendUnlockAtMs(unlockAt);
+            writeForgotVerifyPersisted({
+                userId: Number(userId),
+                sentVia,
+                successMessage: successMsg,
+                selectedAccount: forgotSelectedAccount,
+                initiatePayload: forgotLastInitiatePayload,
+                resendUnlockAtMs: unlockAt,
+            });
+        } catch (error) {
+            setForgotError(error instanceof Error ? error.message : 'We couldn’t resend the verification code.');
         } finally {
             setIsForgotSubmitting(false);
         }
@@ -1316,6 +1656,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         if (!forgotNewPassword || forgotNewPassword.length < 6) {
             setForgotError('Choose a new password with at least 6 characters.');
+            return;
+        }
+
+        if (forgotNewPassword.length > PASSWORD_MAX_LENGTH || forgotConfirmPassword.length > PASSWORD_MAX_LENGTH) {
+            setForgotError(`Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`);
             return;
         }
 
@@ -1425,6 +1770,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     };
 
+    /** Clear every user-entered field on the registration form (name, NIC, DOB, gender, contacts, email, password, terms, …). */
+    const resetRegistrationForm = () => {
+        setFirstName('');
+        setLastName('');
+        setNic('');
+        setDob('');
+        setGender('');
+        setPhone('');
+        setWhatsapp('');
+        setIsWhatsAppSame(false);
+        setEmail('');
+        setPassword('');
+        setConfirmPassword('');
+        setShowRegisterPassword(false);
+        setShowRegisterConfirmPassword(false);
+        setRegisterAccountType(registerAsMatchmaker ? 'Matchmaker' : 'Self');
+        setTermsAccepted(false);
+        setLoginTermsAccepted(false);
+        setRegisterRememberMe(false);
+        setErrors({});
+        setRegisterError(null);
+    };
+
     const handleWelcomePopupClose = () => {
         setShowWelcomePopup(false);
         // Reset all registration/verification state after welcome popup closes
@@ -1439,17 +1807,42 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         setIsSendingCode(false);
         setIsVerifying(false);
         setShowVerification(false);
+        setVerifyResendUnlockAtMs(null);
+        setVerifyResendTick(0);
+        // Wipe the registration form so a returning visitor starts fresh.
+        resetRegistrationForm();
         // User is usually already on `/` after verify (modal closed). Avoid router + full reload (double load).
         if (pathname !== '/') {
             router.replace('/');
         }
     };
 
+    // Clear the registration form whenever the user transitions from signed-in to signed-out (logout).
+    const wasLoggedInRef = useRef<boolean>(!!user);
+    useEffect(() => {
+        if (wasLoggedInRef.current && !user) {
+            resetRegistrationForm();
+        }
+        wasLoggedInRef.current = !!user;
+    }, [user]);
+
     const close = () => {
         // Don't reset welcome popup state if it should be shown
         // Only reset if welcome popup is not active
         if (!showWelcomePopup) {
-            resetForgotPasswordState();
+            if (forgotStep === 'verify' && forgotRecoveryUserId != null) {
+                writeForgotVerifyPersisted({
+                    userId: forgotRecoveryUserId,
+                    sentVia: forgotSentVia,
+                    successMessage:
+                        forgotSuccess ??
+                        `We sent a 6-digit code to ${forgotSentVia || 'your selected method'}. It expires in 10 minutes — enter it below.`,
+                    selectedAccount: forgotSelectedAccount,
+                    initiatePayload: forgotLastInitiatePayload,
+                    resendUnlockAtMs: forgotResendUnlockAtMs,
+                });
+            }
+            resetForgotPasswordState({ discardPersistedSession: false });
             setShowVerification(false);
             setRegisteredUserId(null);
             setRegistrationSessionId(null);
@@ -1466,6 +1859,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setShowRegisterConfirmPassword(false);
             setShowLoginPassword(false);
             setVerificationResumeHint(null);
+            setVerifyResendUnlockAtMs(null);
+            setVerifyResendTick(0);
         }
         onClose();
     };
@@ -1511,6 +1906,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             return;
         }
 
+        if (verifyResendSecondsLeft > 0) {
+            setSendCodeError(`Please wait ${formatSecondsMmSs(verifyResendSecondsLeft)} before requesting another code.`);
+            return;
+        }
+
         setIsSendingCode(true);
         setSendCodeError(null);
         setVerificationError(null);
@@ -1523,6 +1923,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 setVerificationMethod(method);
                 setCodeSent(true);
                 setSendCodeError(null);
+                setVerificationDigits(EMPTY_VERIFY_DIGITS());
+                setVerificationError(null);
+                setVerifyResendUnlockAtMs(Date.now() + VERIFY_CODE_RESEND_COOLDOWN_MS);
             } else {
                 setSendCodeError(response.message || 'Failed to send verification code');
             }
@@ -1578,6 +1981,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     accountType: registerAccountType || fallbackUser?.accountType,
                     profilePhoto: fallbackUser?.profilePhoto,
                     horoscopeDocument: fallbackUser?.horoscopeDocument,
+                    horoscopeDocument2: fallbackUser?.horoscopeDocument2,
+                    horoscopeDocument3: fallbackUser?.horoscopeDocument3,
                     isVerified: true,
                 };
 
@@ -1613,7 +2018,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         gender: r.Gender || r.gender || userToLogin.gender,
                         accountType: r.AccountType || r.accountType || r.role || userToLogin.accountType,
                         profilePhoto: r.ProfilePhoto || r.profilePhoto || userToLogin.profilePhoto,
-                        horoscopeDocument: r.HoroscopeDocument || r.horoscopeDocument || userToLogin.horoscopeDocument,
+                        horoscopeDocument:
+                            r.HoroscopeDocument || r.horoscopeDocument || userToLogin.horoscopeDocument,
+                        horoscopeDocument2:
+                            r.HoroscopeDocument2 || r.horoscopeDocument2 || userToLogin.horoscopeDocument2,
+                        horoscopeDocument3:
+                            r.HoroscopeDocument3 || r.horoscopeDocument3 || userToLogin.horoscopeDocument3,
                         isVerified: r.status === 1 ? true : userToLogin.isVerified,
                         ...(loginParentId !== undefined ? { parentUserId: loginParentId } : {}),
                         ...signInExtras,
@@ -1650,11 +2060,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     };
 
+    /** Resend OTP using the same channel the user already chose (Email / Phone / WhatsApp). */
     const handleResendCode = () => {
-        setCodeSent(false);
-        setVerificationDigits(EMPTY_VERIFY_DIGITS());
-        setVerificationError(null);
-        setSendCodeError(null);
+        const method = verificationMethod.trim();
+        if (!method) {
+            setSendCodeError('Choose how to receive your code first, or use “Change method”.');
+            return;
+        }
+        void handleSendVerificationCode(method);
     };
 
     return (
@@ -1704,12 +2117,41 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
                                 {!codeSent ? (
                                     <div className="verification-methods">
+                                        {verifyResendSecondsLeft > 0 && (
+                                            <p
+                                                style={{
+                                                    textAlign: 'center',
+                                                    color: 'var(--text-light)',
+                                                    fontSize: '0.88rem',
+                                                    marginBottom: '1rem',
+                                                }}
+                                                aria-live="polite"
+                                            >
+                                                Next code in{' '}
+                                                <strong
+                                                    style={{
+                                                        fontVariantNumeric: 'tabular-nums',
+                                                        color: 'var(--text-dark)',
+                                                        fontSize: '1.15rem',
+                                                        letterSpacing: '0.04em',
+                                                    }}
+                                                >
+                                                    {formatSecondsMmSs(verifyResendSecondsLeft)}
+                                                </strong>
+                                            </p>
+                                        )}
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('Email')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('Email')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
-                                            }}>
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
+                                            }}
+                                            >
                                             <div className="method-icon email-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                     <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="currentColor" />
@@ -1727,10 +2169,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
 
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('Phone')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('Phone')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
                                             }}>
                                             <div className="method-icon phone-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1749,10 +2196,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
 
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('WhatsApp')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('WhatsApp')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
                                             }}>
                                             <div className="method-icon whatsapp-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1844,49 +2296,108 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
                                                 Didn't receive the code?
                                             </p>
-                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleResendCode}
-                                                    className="resend-button"
-                                                    disabled={isSendingCode}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: 'var(--primary)',
-                                                        cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                        textDecoration: 'underline',
-                                                        fontSize: '0.9rem',
-                                                        fontWeight: '500',
-                                                        opacity: isSendingCode ? 0.5 : 1
-                                                    }}
-                                                >
-                                                    {isSendingCode ? 'Sending...' : 'Resend Code'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setCodeSent(false);
-                                                        setVerificationDigits(EMPTY_VERIFY_DIGITS());
-                                                        setVerificationError(null);
-                                                        setSendCodeError(null);
-                                                    }}
-                                                    className="resend-button"
-                                                    disabled={isSendingCode || isVerifying}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: 'var(--text-light)',
-                                                        cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
-                                                        textDecoration: 'underline',
-                                                        fontSize: '0.9rem',
-                                                        fontWeight: '500',
-                                                        opacity: (isSendingCode || isVerifying) ? 0.5 : 1
-                                                    }}
-                                                >
-                                                    Change Method
-                                                </button>
-                                            </div>
+                                            {verifyResendSecondsLeft > 0 ? (
+                                                <>
+                                                    <p
+                                                        style={{ fontSize: '0.88rem', color: 'var(--text-light)', margin: '0 0 0.6rem' }}
+                                                        aria-live="polite"
+                                                    >
+                                                        Next code in{' '}
+                                                        <strong
+                                                            style={{
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                                color: 'var(--text-dark)',
+                                                                fontSize: '1.15rem',
+                                                                letterSpacing: '0.04em',
+                                                            }}
+                                                        >
+                                                            {formatSecondsMmSs(verifyResendSecondsLeft)}
+                                                        </strong>
+                                                    </p>
+                                                    <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="resend-button"
+                                                            aria-disabled="true"
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: 'var(--primary)',
+                                                                cursor: 'not-allowed',
+                                                                textDecoration: 'underline',
+                                                                fontSize: '0.9rem',
+                                                                fontWeight: '500',
+                                                                opacity: 0.45,
+                                                            }}
+                                                        >
+                                                            Resend Code
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="resend-button"
+                                                            aria-disabled="true"
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: 'var(--text-light)',
+                                                                cursor: 'not-allowed',
+                                                                textDecoration: 'underline',
+                                                                fontSize: '0.9rem',
+                                                                fontWeight: '500',
+                                                                opacity: 0.45,
+                                                            }}
+                                                        >
+                                                            Change Method
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleResendCode}
+                                                        className="resend-button"
+                                                        disabled={isSendingCode}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: 'var(--primary)',
+                                                            cursor: isSendingCode ? 'not-allowed' : 'pointer',
+                                                            textDecoration: 'underline',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: '500',
+                                                            opacity: isSendingCode ? 0.5 : 1,
+                                                        }}
+                                                    >
+                                                        {isSendingCode ? 'Sending...' : 'Resend Code'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCodeSent(false);
+                                                            setVerificationDigits(EMPTY_VERIFY_DIGITS());
+                                                            setVerificationError(null);
+                                                            setSendCodeError(null);
+                                                        }}
+                                                        className="resend-button"
+                                                        disabled={isSendingCode || isVerifying}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: 'var(--text-light)',
+                                                            cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
+                                                            textDecoration: 'underline',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: '500',
+                                                            opacity: (isSendingCode || isVerifying) ? 0.5 : 1,
+                                                        }}
+                                                    >
+                                                        Change Method
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -1899,7 +2410,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <h3 style={{ margin: 0 }}>Forgot Password</h3>
                                             <button
                                                 type="button"
-                                                onClick={resetForgotPasswordState}
+                                                onClick={() => resetForgotPasswordState()}
                                                 style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
                                             >
                                                 Back to Login
@@ -1981,6 +2492,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                     onChange={(e) => { setForgotContactEmail(e.target.value); setForgotError(null); }}
                                                                     placeholder="your@email.com"
                                                                     autoComplete="email"
+                                                                    maxLength={AUTH_FIELD_MAX_LENGTH}
                                                                 />
                                                                 <span style={{ fontSize: '0.78rem', color: 'var(--text-light)', display: 'block', marginTop: '0.25rem' }}>
                                                                     Same email as on your profile — complete address with @ (example: name@gmail.com).
@@ -2073,6 +2585,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                                     setForgotSuccess(null);
                                                                 }}
                                                                 placeholder="First name or full name"
+                                                                maxLength={AUTH_FIELD_MAX_LENGTH}
                                                             />
                                                         </div>
                                                         <button
@@ -2137,6 +2650,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             onChange={(e) => setForgotNewPassword(e.target.value)}
                                                             placeholder="New password"
                                                             autoComplete="new-password"
+                                                            maxLength={PASSWORD_MAX_LENGTH}
                                                             style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                                                         />
                                                         <PasswordVisibilityToggle
@@ -2157,6 +2671,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             onChange={(e) => setForgotConfirmPassword(e.target.value)}
                                                             placeholder="Confirm password"
                                                             autoComplete="new-password"
+                                                            maxLength={PASSWORD_MAX_LENGTH}
                                                             style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                                                         />
                                                         <PasswordVisibilityToggle
@@ -2176,6 +2691,73 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 >
                                                     {isForgotSubmitting ? 'Resetting...' : 'Reset Password'}
                                                 </button>
+
+                                                <div style={{ textAlign: 'center', marginTop: '1.15rem' }}>
+                                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', margin: '0 0 0.35rem' }}>
+                                                        Didn&apos;t receive the code?
+                                                    </p>
+                                                    {forgotResendSecondsLeft > 0 ? (
+                                                        <>
+                                                            <p
+                                                                style={{ fontSize: '0.88rem', color: 'var(--text-light)', margin: '0 0 0.6rem' }}
+                                                                aria-live="polite"
+                                                            >
+                                                                Next code in{' '}
+                                                                <strong
+                                                                    style={{
+                                                                        fontVariantNumeric: 'tabular-nums',
+                                                                        color: 'var(--text-dark)',
+                                                                        fontSize: '1.15rem',
+                                                                        letterSpacing: '0.04em',
+                                                                    }}
+                                                                >
+                                                                    {formatSecondsMmSs(forgotResendSecondsLeft)}
+                                                                </strong>
+                                                            </p>
+                                                            <button
+                                                                type="button"
+                                                                disabled
+                                                                aria-disabled="true"
+                                                                style={{
+                                                                    background: 'none',
+                                                                    border: 'none',
+                                                                    color: 'var(--primary)',
+                                                                    cursor: 'not-allowed',
+                                                                    textDecoration: 'underline',
+                                                                    fontSize: '0.9rem',
+                                                                    fontWeight: 500,
+                                                                    opacity: 0.45,
+                                                                    padding: 0,
+                                                                }}
+                                                            >
+                                                                Resend code
+                                                            </button>
+                                                        </>
+                                                    ) : forgotLastInitiatePayload ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={handleForgotResendCode}
+                                                            disabled={isForgotSubmitting}
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: 'var(--primary)',
+                                                                cursor: isForgotSubmitting ? 'not-allowed' : 'pointer',
+                                                                textDecoration: 'underline',
+                                                                fontSize: '0.9rem',
+                                                                fontWeight: 500,
+                                                                opacity: isForgotSubmitting ? 0.55 : 1,
+                                                                padding: 0,
+                                                            }}
+                                                        >
+                                                            {isForgotSubmitting ? 'Sending...' : 'Resend code'}
+                                                        </button>
+                                                    ) : (
+                                                        <p style={{ fontSize: '0.82rem', color: 'var(--text-light)', margin: 0 }}>
+                                                            Use &quot;Back to Login&quot; and open Forgot password again to request a new code.
+                                                        </p>
+                                                    )}
+                                                </div>
                                             </>
                                         )}
 
@@ -2191,16 +2773,28 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         )}
                                     </div>
                                 ) : (
-                                    <>
+                                    <form
+                                        style={{ margin: 0 }}
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            void handleLogin();
+                                        }}
+                                    >
                                         <div className="form-group">
                                             <label>Email</label>
                                             <input
                                                 type="email"
                                                 placeholder="Enter your email"
                                                 value={loginEmail}
-                                                onChange={(e) => { setLoginEmail(e.target.value); setLoginEmailError(null); setLoginError(null); }}
+                                                onChange={(e) => {
+                                                    setLoginEmail(e.target.value);
+                                                    setLoginEmailError(null);
+                                                    setLoginError(null);
+                                                    setLoginLockoutUntilMs(null);
+                                                }}
                                                 style={{ borderColor: loginEmailError ? 'red' : '' }}
                                                 autoComplete="username"
+                                                maxLength={AUTH_FIELD_MAX_LENGTH}
                                             />
                                             {loginEmailError && (
                                                 <span style={{ color: 'red', fontSize: '0.8rem', display: 'block', marginTop: '0.3rem' }}>
@@ -2215,9 +2809,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     type={showLoginPassword ? 'text' : 'password'}
                                                     placeholder="Enter your password"
                                                     value={loginPassword}
-                                                    onChange={(e) => { setLoginPassword(e.target.value); setLoginPasswordError(null); setLoginError(null); }}
+                                                    onChange={(e) => {
+                                                        setLoginPassword(e.target.value);
+                                                        setLoginPasswordError(null);
+                                                        setLoginError(null);
+                                                        setLoginLockoutUntilMs(null);
+                                                    }}
                                                     style={{ borderColor: loginPasswordError ? 'red' : '', width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
                                                     autoComplete="current-password"
+                                                    maxLength={PASSWORD_MAX_LENGTH}
                                                 />
                                                 <PasswordVisibilityToggle
                                                     passwordVisible={showLoginPassword}
@@ -2265,13 +2865,35 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 borderRadius: '6px',
                                                 borderLeft: '3px solid #ef4444',
                                             }}>
-                                                {loginError}
+                                                {loginLockoutUntilMs != null && loginLockoutRemainingSec > 0 ? (
+                                                    <>
+                                                        <strong style={{ display: 'block', color: '#991b1b', marginBottom: '0.35rem' }}>
+                                                            Account temporarily locked
+                                                        </strong>
+                                                        <span style={{ display: 'block' }}>{loginError}</span>
+                                                        <span
+                                                            style={{
+                                                                display: 'block',
+                                                                marginTop: '0.5rem',
+                                                                fontWeight: 600,
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                                letterSpacing: '0.02em',
+                                                                color: '#7f1d1d',
+                                                            }}
+                                                            aria-live="polite"
+                                                        >
+                                                            Time remaining: {formatSecondsMmSs(loginLockoutRemainingSec)}
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    loginError
+                                                )}
                                             </div>
                                         )}
                                         <button
                                             className="btn btn-primary"
                                             style={{ width: '100%', justifyContent: 'center' }}
-                                            onClick={handleLogin}
+                                            type="submit"
                                             disabled={isLoading}
                                         >
                                             {isLoading ? 'Logging in...' : 'Login'}
@@ -2291,22 +2913,36 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 Forgot Password?
                                             </a>
                                         </p>
-                                    </>
+                                    </form>
                                 )}
                             </div>
                         ) : (
                             <div id="registerTab" className="tab-content active">
                                 <p style={{ textAlign: 'center', marginBottom: '1rem' }}>Create a new account to get started</p>
 
+                                <form
+                                    style={{ margin: 0 }}
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        if (isLoading) return;
+                                        if (!loginTermsAccepted) {
+                                            setRegisterError(
+                                                'Please agree to the Terms of Service and Privacy Policy to continue.',
+                                            );
+                                            return;
+                                        }
+                                        void handleRegister();
+                                    }}
+                                >
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
-                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} style={{ borderColor: errors.firstName ? 'red' : '' }} />
+                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.firstName ? 'red' : '' }} />
                                         {errors.firstName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.firstName}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Last Name *</label>
-                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} style={{ borderColor: errors.lastName ? 'red' : '' }} />
+                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.lastName ? 'red' : '' }} />
                                         {errors.lastName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.lastName}</span>}
                                     </div>
                                 </div>
@@ -2378,7 +3014,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                                 <div className="form-group">
                                     <label>Email Address *</label>
-                                    <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} style={{ borderColor: errors.email ? 'red' : '' }} />
+                                    <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.email ? 'red' : '' }} />
                                     {errors.email && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.email}</span>}
                                 </div>
                                 <RegisterPasswordFields
@@ -2405,7 +3041,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     ) : (
                                         <div className="account-types">
-                                            {['Self', 'Father', 'Mother', 'Relation', 'Matchmaker'].map(type => (
+                                            {['Self', 'Father', 'Mother', 'Relation', 'Sister', 'Brother', 'Matchmaker'].map(type => (
                                                 <div key={type} className={`account-type ${registerAccountType === type ? 'selected' : ''}`} onClick={() => setRegisterAccountType(type)}>
                                                     <span>👤</span>
                                                     {type}
@@ -2430,7 +3066,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={loginTermsAccepted}
                                         onChange={(e) => setLoginTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="termsLogin">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+                                    <label htmlFor="termsLogin">
+                                        I agree to the{' '}
+                                        <Link href="/terms-of-service" className="font-medium text-primary underline underline-offset-2 hover:text-primary-dark" target="_blank" rel="noopener noreferrer">
+                                            Terms of Service
+                                        </Link>
+                                        {' '}and{' '}
+                                        <Link href="/privacy-policy" className="font-medium text-primary underline underline-offset-2 hover:text-primary-dark" target="_blank" rel="noopener noreferrer">
+                                            Privacy Policy
+                                        </Link>
+                                    </label>
                                 </div>
                                 {registerError && (
                                     <RegisterErrorBox
@@ -2445,13 +3090,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         width: '100%',
                                         justifyContent: 'center',
                                         opacity: (loginTermsAccepted && !isLoading) ? 1 : 0.5,
-                                        cursor: (loginTermsAccepted && !isLoading) ? 'pointer' : 'not-allowed',
+                                        cursor: isLoading ? 'wait' : (loginTermsAccepted ? 'pointer' : 'not-allowed'),
                                     }}
-                                    disabled={!loginTermsAccepted || isLoading}
-                                    onClick={handleRegister}
+                                    type="submit"
+                                    disabled={isLoading}
+                                    aria-disabled={!loginTermsAccepted || isLoading}
                                 >
                                     {isLoading ? 'Registering...' : 'Create Free Account →'}
                                 </button>
+                                </form>
                                 <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                                     Already have an account?{' '}
                                     <a
@@ -2515,12 +3162,41 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
                                 {!codeSent ? (
                                     <div className="verification-methods">
+                                        {verifyResendSecondsLeft > 0 && (
+                                            <p
+                                                style={{
+                                                    textAlign: 'center',
+                                                    color: 'var(--text-light)',
+                                                    fontSize: '0.88rem',
+                                                    marginBottom: '1rem',
+                                                }}
+                                                aria-live="polite"
+                                            >
+                                                Next code in{' '}
+                                                <strong
+                                                    style={{
+                                                        fontVariantNumeric: 'tabular-nums',
+                                                        color: 'var(--text-dark)',
+                                                        fontSize: '1.15rem',
+                                                        letterSpacing: '0.04em',
+                                                    }}
+                                                >
+                                                    {formatSecondsMmSs(verifyResendSecondsLeft)}
+                                                </strong>
+                                            </p>
+                                        )}
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('Email')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('Email')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
-                                            }}>
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
+                                            }}
+                                            >
                                             <div className="method-icon email-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                                     <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill="currentColor" />
@@ -2538,10 +3214,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
 
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('Phone')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('Phone')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
                                             }}>
                                             <div className="method-icon phone-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2560,10 +3241,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
 
                                         <div className="verification-method-card"
-                                            onClick={() => !isSendingCode && handleSendVerificationCode('WhatsApp')}
+                                            onClick={() =>
+                                                !isSendingCode &&
+                                                verifyResendSecondsLeft === 0 &&
+                                                handleSendVerificationCode('WhatsApp')
+                                            }
                                             style={{
-                                                cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                opacity: isSendingCode ? 0.6 : 1
+                                                cursor:
+                                                    isSendingCode || verifyResendSecondsLeft > 0 ? 'not-allowed' : 'pointer',
+                                                opacity: isSendingCode || verifyResendSecondsLeft > 0 ? 0.6 : 1,
                                             }}>
                                             <div className="method-icon whatsapp-icon">
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2655,49 +3341,108 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <p style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
                                                 Didn't receive the code?
                                             </p>
-                                            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleResendCode}
-                                                    className="resend-button"
-                                                    disabled={isSendingCode}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: 'var(--primary)',
-                                                        cursor: isSendingCode ? 'not-allowed' : 'pointer',
-                                                        textDecoration: 'underline',
-                                                        fontSize: '0.9rem',
-                                                        fontWeight: '500',
-                                                        opacity: isSendingCode ? 0.5 : 1
-                                                    }}
-                                                >
-                                                    {isSendingCode ? 'Sending...' : 'Resend Code'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setCodeSent(false);
-                                                        setVerificationDigits(EMPTY_VERIFY_DIGITS());
-                                                        setVerificationError(null);
-                                                        setSendCodeError(null);
-                                                    }}
-                                                    className="resend-button"
-                                                    disabled={isSendingCode || isVerifying}
-                                                    style={{
-                                                        background: 'none',
-                                                        border: 'none',
-                                                        color: 'var(--text-light)',
-                                                        cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
-                                                        textDecoration: 'underline',
-                                                        fontSize: '0.9rem',
-                                                        fontWeight: '500',
-                                                        opacity: (isSendingCode || isVerifying) ? 0.5 : 1
-                                                    }}
-                                                >
-                                                    Change Method
-                                                </button>
-                                            </div>
+                                            {verifyResendSecondsLeft > 0 ? (
+                                                <>
+                                                    <p
+                                                        style={{ fontSize: '0.88rem', color: 'var(--text-light)', margin: '0 0 0.6rem' }}
+                                                        aria-live="polite"
+                                                    >
+                                                        Next code in{' '}
+                                                        <strong
+                                                            style={{
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                                color: 'var(--text-dark)',
+                                                                fontSize: '1.15rem',
+                                                                letterSpacing: '0.04em',
+                                                            }}
+                                                        >
+                                                            {formatSecondsMmSs(verifyResendSecondsLeft)}
+                                                        </strong>
+                                                    </p>
+                                                    <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="resend-button"
+                                                            aria-disabled="true"
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: 'var(--primary)',
+                                                                cursor: 'not-allowed',
+                                                                textDecoration: 'underline',
+                                                                fontSize: '0.9rem',
+                                                                fontWeight: '500',
+                                                                opacity: 0.45,
+                                                            }}
+                                                        >
+                                                            Resend Code
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            disabled
+                                                            className="resend-button"
+                                                            aria-disabled="true"
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: 'var(--text-light)',
+                                                                cursor: 'not-allowed',
+                                                                textDecoration: 'underline',
+                                                                fontSize: '0.9rem',
+                                                                fontWeight: '500',
+                                                                opacity: 0.45,
+                                                            }}
+                                                        >
+                                                            Change Method
+                                                        </button>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleResendCode}
+                                                        className="resend-button"
+                                                        disabled={isSendingCode}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: 'var(--primary)',
+                                                            cursor: isSendingCode ? 'not-allowed' : 'pointer',
+                                                            textDecoration: 'underline',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: '500',
+                                                            opacity: isSendingCode ? 0.5 : 1,
+                                                        }}
+                                                    >
+                                                        {isSendingCode ? 'Sending...' : 'Resend Code'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCodeSent(false);
+                                                            setVerificationDigits(EMPTY_VERIFY_DIGITS());
+                                                            setVerificationError(null);
+                                                            setSendCodeError(null);
+                                                        }}
+                                                        className="resend-button"
+                                                        disabled={isSendingCode || isVerifying}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: 'var(--text-light)',
+                                                            cursor: (isSendingCode || isVerifying) ? 'not-allowed' : 'pointer',
+                                                            textDecoration: 'underline',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: '500',
+                                                            opacity: (isSendingCode || isVerifying) ? 0.5 : 1,
+                                                        }}
+                                                    >
+                                                        Change Method
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -2718,15 +3463,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                 </div>
 
+                                <form
+                                    style={{ margin: 0 }}
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        if (isLoading) return;
+                                        if (!termsAccepted) {
+                                            setRegisterError(
+                                                'Please agree to the Terms of Service and Privacy Policy to continue.',
+                                            );
+                                            return;
+                                        }
+                                        void handleRegister();
+                                    }}
+                                >
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>First Name *</label>
-                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} style={{ borderColor: errors.firstName ? 'red' : '' }} />
+                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.firstName ? 'red' : '' }} />
                                         {errors.firstName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.firstName}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
                                         <label>Last Name *</label>
-                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} style={{ borderColor: errors.lastName ? 'red' : '' }} />
+                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.lastName ? 'red' : '' }} />
                                         {errors.lastName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.lastName}</span>}
                                     </div>
                                 </div>
@@ -2798,7 +3557,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                                 <div className="form-group">
                                     <label>Email Address *</label>
-                                    <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} style={{ borderColor: errors.email ? 'red' : '' }} />
+                                    <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.email ? 'red' : '' }} />
                                     {errors.email && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.email}</span>}
                                 </div>
                                 <RegisterPasswordFields
@@ -2825,7 +3584,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     ) : (
                                         <div className="account-types">
-                                            {['Self', 'Father', 'Mother', 'Relation', 'Matchmaker'].map(type => (
+                                            {['Self', 'Father', 'Mother', 'Relation', 'Sister', 'Brother', 'Matchmaker'].map(type => (
                                                 <div key={type} className={`account-type ${registerAccountType === type ? 'selected' : ''}`} onClick={() => setRegisterAccountType(type)}>
                                                     <span>👤</span>
                                                     {type}
@@ -2850,7 +3609,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         checked={termsAccepted}
                                         onChange={(e) => setTermsAccepted(e.target.checked)}
                                     />
-                                    <label htmlFor="terms">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+                                    <label htmlFor="terms">
+                                        I agree to the{' '}
+                                        <Link href="/terms-of-service" className="font-medium text-primary underline underline-offset-2 hover:text-primary-dark" target="_blank" rel="noopener noreferrer">
+                                            Terms of Service
+                                        </Link>
+                                        {' '}and{' '}
+                                        <Link href="/privacy-policy" className="font-medium text-primary underline underline-offset-2 hover:text-primary-dark" target="_blank" rel="noopener noreferrer">
+                                            Privacy Policy
+                                        </Link>
+                                    </label>
                                 </div>
                                 {registerError && (
                                     <RegisterErrorBox
@@ -2865,13 +3633,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         width: '100%',
                                         justifyContent: 'center',
                                         opacity: (termsAccepted && !isLoading) ? 1 : 0.5,
-                                        cursor: (termsAccepted && !isLoading) ? 'pointer' : 'not-allowed'
+                                        cursor: isLoading ? 'wait' : (termsAccepted ? 'pointer' : 'not-allowed'),
                                     }}
-                                    disabled={!termsAccepted || isLoading}
-                                    onClick={handleRegister}
+                                    type="submit"
+                                    disabled={isLoading}
+                                    aria-disabled={!termsAccepted || isLoading}
                                 >
                                     {isLoading ? 'Registering...' : 'Create Free Account →'}
                                 </button>
+                                </form>
                                 <p style={{ textAlign: 'center', marginTop: '1rem', color: 'var(--text-light)', fontSize: '0.9rem' }}>
                                     Already have an account? <a href="#" style={{ color: 'var(--primary)' }} onClick={(e) => { e.preventDefault(); onSwitch('login'); }}>Login</a>
                                 </p>
@@ -3106,6 +3876,35 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         : null}
                                 </div>
                             )}
+                            {isProfileLockedByDailyLimit && (
+                                <div
+                                    role="alert"
+                                    style={{
+                                        marginBottom: '1.25rem',
+                                        padding: '1.1rem 1.25rem',
+                                        borderRadius: '12px',
+                                        background: 'linear-gradient(135deg, #fdf8f3 0%, #fff7ed 100%)',
+                                        border: '2px solid var(--primary-light, #e9c46a)',
+                                        boxShadow: '0 4px 18px rgba(217, 119, 6, 0.12)',
+                                    }}
+                                >
+                                    <strong style={{ display: 'block', fontSize: '1.05rem', color: '#92400e', marginBottom: '0.45rem' }}>
+                                        You&apos;ve reached today&apos;s free profile views
+                                    </strong>
+                                    <p style={{ margin: '0 0 1rem 0', fontSize: '0.92rem', color: '#78350f', lineHeight: 1.5 }}>
+                                        Free members can open up to <strong>10 profiles per day</strong>. Subscribe to unlock unlimited
+                                        views, full details, contact information, and messaging.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        className="btn btn-primary"
+                                        style={{ width: '100%', justifyContent: 'center', padding: '0.85rem 1rem', fontWeight: 600 }}
+                                        onClick={() => onSwitch('subscription')}
+                                    >
+                                        Subscribe to see more
+                                    </button>
+                                </div>
+                            )}
                             {/* Profile Header */}
                             <div className="profile-detail-header">
                                 <div
@@ -3163,11 +3962,20 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                         Preview only — visitor actions are disabled here.
                                                     </p>
                                                 )}
+                                                {isProfileLockedByDailyLimit && (
+                                                    <p style={{ fontSize: '0.85rem', color: '#92400e', margin: '0 0 0.5rem 0', width: '100%' }}>
+                                                        Upgrade to keep browsing full profiles today.
+                                                    </p>
+                                                )}
                                                 <button
                                                     type="button"
                                                     className="btn btn-primary"
-                                                    disabled={!!selectedProfile.viewAsOthers || expressInterestLoading}
-                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    disabled={!!selectedProfile.viewAsOthers || expressInterestLoading || isProfileLockedByDailyLimit}
+                                                    style={
+                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
+                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                            : undefined
+                                                    }
                                                     onClick={() => {
                                                         void handleExpressInterest();
                                                     }}
@@ -3182,10 +3990,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 <button
                                                     type="button"
                                                     className="btn btn-outline"
-                                                    disabled={!!selectedProfile.viewAsOthers}
-                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    disabled={!!selectedProfile.viewAsOthers || isProfileLockedByDailyLimit}
+                                                    style={
+                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
+                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                            : undefined
+                                                    }
                                                     onClick={() => {
-                                                        if (selectedProfile.viewAsOthers) return;
+                                                        if (selectedProfile.viewAsOthers || isProfileLockedByDailyLimit) return;
                                                         if (!user) {
                                                             onSwitch('login');
                                                         } else {
@@ -3204,10 +4016,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 <button
                                                     type="button"
                                                     className="btn btn-outline"
-                                                    disabled={!!selectedProfile.viewAsOthers}
-                                                    style={selectedProfile.viewAsOthers ? { opacity: 0.65, cursor: 'not-allowed' } : undefined}
+                                                    disabled={!!selectedProfile.viewAsOthers || isProfileLockedByDailyLimit}
+                                                    style={
+                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
+                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                            : undefined
+                                                    }
                                                     onClick={() => {
-                                                        if (selectedProfile.viewAsOthers) return;
+                                                        if (selectedProfile.viewAsOthers || isProfileLockedByDailyLimit) return;
                                                         onSwitch('login');
                                                     }}
                                                 >
@@ -3216,7 +4032,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             </>
                                         )}
                                     </div>
-                                    {profileAccessMessage && (
+                                    {profileAccessMessage && !isProfileLockedByDailyLimit && (
                                         <div style={{ marginTop: '0.75rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.6rem 0.8rem', fontSize: '0.9rem', fontWeight: 500 }}>
                                             {profileAccessMessage}
                                         </div>
@@ -3373,9 +4189,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <h3>Basic Preferences</h3>
                                         <div className="info-grid">
                                             <div className="info-item"><label>Age Range</label><span>{selectedProfile.partnerMinAge && selectedProfile.partnerMaxAge ? `${selectedProfile.partnerMinAge} - ${selectedProfile.partnerMaxAge} years` : 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Eating Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerEatingHabits ?? selectedProfile.PartnerEatingHabits)}</span></div>
+                                            <div className="info-item"><label>Drinking Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerDrinkingHabits ?? selectedProfile.PartnerDrinkingHabits)}</span></div>
+                                            <div className="info-item"><label>Smoking Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerSmokingHabits ?? selectedProfile.PartnerSmokingHabits)}</span></div>
                                             <div className="info-item"><label>Religion</label><span>{selectedProfile.partnerReligion || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Education</label><span>{selectedProfile.partnerQualificationLevel || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Country</label><span>{selectedProfile.partnerCountryOfResidence || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Country of Origin</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfOrigin ?? selectedProfile.PartnerCountryOfOrigin} /></span></div>
+                                            <div className="info-item"><label>Country of Residence</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfResidence ?? selectedProfile.PartnerCountryOfResidence} /></span></div>
                                         </div>
                                     </div>
                                     <div className="profile-section">

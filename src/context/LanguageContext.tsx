@@ -20,6 +20,8 @@ const translations: Record<Language, Record<string, string>> = {
     'browseProfiles': 'Browse Profiles',
     'aboutUs': 'About Us',
     'successStories': 'Success Stories',
+    'successStoriesPaginationPrev': 'Previous',
+    'successStoriesPaginationNext': 'Next',
     'contactUs': 'Contact Us',
     'login': 'Login',
     'registerFree': 'Register Free',
@@ -113,6 +115,7 @@ const translations: Record<Language, Record<string, string>> = {
     'blogAdvice': 'Blog & Advice',
     'blogAdviceDesc': 'Expert tips for a successful marriage and wedding planning.',
     'readMore': 'Read More →',
+    'readLess': 'Show less',
     // FAQ Section
     'faq': 'Frequently Asked Questions',
     'faqDesc': "Have questions? We're here to help.",
@@ -159,19 +162,26 @@ const translations: Record<Language, Record<string, string>> = {
     'legal': 'Legal',
     'privacyPolicy': 'Privacy Policy',
     'termsOfService': 'Terms of Service',
+    'legalCrossLinkLead': 'See also',
     'cookiePolicy': 'Cookie Policy',
     'refundPolicy': 'Refund Policy',
     'allRightsReserved': '© 2026 MyMatch.lk. All rights reserved.',
     'madeWithLove': 'Made with ❤️ in Sri Lanka',
     // About page
-    'aboutHeroDesc': 'We are committed to helping you find meaningful connections with trust and care at the heart of everything we do.',
+    'aboutHeroDesc':
+      'At MyMatch.lk, we believe marriage unites families, values, and lifelong companionship—rooted in Sri Lankan traditions—so you can find a partner who truly understands you.',
     'backToHome': 'Back to Home',
-    'whoAreWe': 'Who are we',
-    'whoAreWePara1': 'We are a team of passionate individuals who believe that everyone deserves to find a meaningful connection. Our platform is built on values of trust, authenticity, and care—helping people meet like-minded partners in a safe and welcoming space.',
-    'whoAreWePara2': 'From our founders to our support team, we are committed to creating an experience that puts your happiness and safety first. We continuously improve our matching technology and community guidelines so you can focus on what matters: building real relationships.',
-    'whoAreWeBullet1': 'Trust and safety at the core of everything we do',
-    'whoAreWeBullet2': 'A diverse team that understands your journey',
-    'whoAreWeBullet3': 'Dedicated to helping you find your perfect match',
+    'whoAreWe': 'About Us',
+    'whoAreWePara1':
+      'At MyMatch.lk, we believe that marriage is more than just a connection between two individuals. It is the union of families, values, and lifelong companionship. Rooted in Sri Lankan traditions, our platform is designed to help you find a partner who truly understands and complements you.',
+    'whoAreWePara2':
+      'We bring together the beauty of tradition and the ease of modern technology to create a trusted and secure space for your search. Whether you’re looking for someone who shares your cultural background, beliefs, or future goals, MyMatch.lk is here to guide you every step of the way.',
+    'whoAreWePara3':
+      'Our commitment is to authenticity, privacy, and meaningful connections. With carefully managed profiles and a user-friendly experience, we ensure that your journey is both safe and genuine.',
+    'whoAreWePara4':
+      'At MyMatch.lk, we don’t just match profiles, we help build lasting relationships and meaningful futures.',
+    'whoAreWePara5':
+      'Start your journey today with MyMatch.lk, where the right match begins.',
     'pureLoveQuote': '"Pure love is not about grand promises or perfect moments. It is about two hearts choosing each other every day, even when life is imperfect. It is the quiet understanding in silence, the gentle patience during storms, and the unshakable trust that stays when everything else fades. True love remains pure because it asks for nothing, yet gives everything."',
     'ourSpecialtySubtitle': 'Premium Matrimonial Services for Sri Lankan Youth',
     'ourSpecialty': 'Our Specialty',
@@ -211,6 +221,8 @@ const translations: Record<Language, Record<string, string>> = {
     'browseProfiles': 'පැතිකඩ පිරික්සන්න',
     'aboutUs': 'අප ගැන',
     'successStories': 'සාර්ථක කතා',
+    'successStoriesPaginationPrev': 'පෙර',
+    'successStoriesPaginationNext': 'ඊළඟ',
     'contactUs': 'අප හා සම්බන්ධ වන්න',
     'login': 'ඇතුළු වන්න',
     'registerFree': 'නොමිලේ ලියාපදිංචි වන්න',
@@ -304,6 +316,7 @@ const translations: Record<Language, Record<string, string>> = {
     'blogAdvice': 'බ්ලොග් සහ උපදෙස්',
     'blogAdviceDesc': 'සාර්ථක විවාහයක් සහ විවාහ සැලසුම් සඳහා වෘත්තීය උපදෙස්.',
     'readMore': 'තවත් කියවන්න →',
+    'readLess': 'අඩුවෙන් පෙන්වන්න',
     // FAQ Section
     'faq': 'නිතර අසන ප්‍රශ්න',
     'faqDesc': 'ප්‍රශ්න තිබේද? අපි උදව් කිරීමට සූදානම්.',
@@ -350,19 +363,26 @@ const translations: Record<Language, Record<string, string>> = {
     'legal': 'නීතිමය',
     'privacyPolicy': 'රහස්‍යතා ප්‍රතිපත්තිය',
     'termsOfService': 'සේවා කොන්දේසි',
+    'legalCrossLinkLead': 'සබැඳි ලියාපත්ද:',
     'cookiePolicy': 'කුකී ප්‍රතිපත්තිය',
     'refundPolicy': 'ආපසු ගෙවීමේ ප්‍රතිපත්තිය',
     'allRightsReserved': '© 2026 MyMatch.lk. සියලුම හිමිකම් ඇවිරිණි.',
     'madeWithLove': 'ශ්‍රී ලංකාවේ ❤️ සමඟ සාදන ලදී',
     // About page
-    'aboutHeroDesc': 'අප කටයුතු සියල්ලේ හදවතේ විශ්වාසය සහ රැකවරණය තබාගෙන අර්ථවත් සම්බන්ධතා සොයා ගැනීමට ඔබට උදව් කිරීමට අපි කැපවී සිටිමු.',
+    'aboutHeroDesc':
+      'MyMatch.lk හි අප විශ්වාස කරන්නේ විවාහය පවුල්, අගයන් සහ දිගුකාලීන හවුල්කම එක් කරන බැඳීමක් බවයි—ශ්‍රී ලාංකික සම්ප්‍රදායන්වල මුල් වී—සැබවින්ම ඔබව අවබෝධ කර ගන්නා හවුල්කරුවෙකු සොයා ගැනීමට.',
     'backToHome': 'මුල් පිටුවට ආපසු',
-    'whoAreWe': 'අපි කවුද',
-    'whoAreWePara1': 'සැමටම අර්ථවත් සම්බන්ධතාවක් සොයා ගැනීමට අයිතිය ඇතැයි විශ්වාස කරන උද්යෝගී පුද්ගලයන්ගේ කණ්ඩායමක් අපි. විශ්වාසය, සැබෑබව සහ රැකවරණය යන අගයන් මත අපගේ වේදිකාව ගොඩනගා ඇති අතර, ආරක්ෂිත හා සාදරයෙන් පිළිගන්නා අවකාශයක එකම සිතැති හවුල්කරුවන් හමුවීමට අයට උදව් කරයි.',
-    'whoAreWePara2': 'අපගේ සම්භාවකයන්ගේ සිට සහාය කණ්ඩායම දක්වා, ඔබේ සතුට සහ ආරක්ෂාව පළමු තැන තබා ගන්නා අත්දැකීමක් නිර්මාණය කිරීමට අපි කැපවී සිටිමු. ඔබ සැබෑ සම්බන්ධතා ගොඩනැගීම වැනි වැදගත් දේවල් වෙත අවධානය යොමු කළ හැකි පරිදි අපගේ ගැලපීම් තාක්ෂණය සහ සමාජ මාර්ගෝපදේශ අඛණ්ඩව වැඩිදියුණු කරන්නෙමු.',
-    'whoAreWeBullet1': 'අප කරන සෑම දෙයකම හරය ලෙස විශ්වාසය සහ ආරක්ෂාව',
-    'whoAreWeBullet2': 'ඔබේ ගමන අවබෝධ කර ගන්නා විවිධ කණ්ඩායමක්',
-    'whoAreWeBullet3': 'ඔබේ පරිපූර්ණ ගැලපීම සොයා ගැනීමට උදව් කිරීමට කැපවී සිටී',
+    'whoAreWe': 'අප ගැන',
+    'whoAreWePara1':
+      'MyMatch.lk හි අප විශ්වාස කරන්නේ විවාහය තනි දෙබඩුන් දෙදෙනෙකු අතර සම්බන්ධතාවක් පමණක් නොවන බවයි. එය පවුල්, අගයන් සහ ජීවිතාන්තය පුරාවට සහයෝගිතාව එකට ගෙන ඒමකි. ශ්‍රී ලාංකික සම්ප්‍රදායන්වලින් මුල් වූ අපගේ වේදිකාව, සැබවින්ම ඔබව අවබෝධ කර ගෙන සහ ඔබ සමග සර්වාංගීණ ගැලපෙන හවුල්කරුවෙක් සොයා ගැනීමට සැලසුම් කොට තිබේ.',
+    'whoAreWePara2':
+      'අප සම්ප්‍රදායේ සොඳුරු බව සහ නවීන තාක්ෂණයේ පහසුව එක්තු කර ඔබේ සෙවීමට විශ්වාසදායක සහ ආරක්ෂිත අවකාශයක් නිර්මාණය කරන්නෙමු. ඔබ ඔබේ සංස්කෘතික පසුබිම, විශ්වාස හෝ අනාගත ඉලක්ක බෙදා ගන්න අයෙක් සොයන ගමන් මාර්ගයේ සෑම පියවරකදීම MyMatch.lk ඔබට මග පෙන්වයි.',
+    'whoAreWePara3':
+      'අපගේ කැපවීම නම් සැබැදි බව, රහස්‍යතාව සහ අර්ථවත් සම්බන්ධතා වේ. ප්‍රවේශමෙන් කළමනාකරණය කෙරෙන පැතිකඩ සහ පරිශීලක හිතැති අත්දැකීමකින්, ඔබේ ගමන ආරක්ෂිත සහ අවංක බවට අපි සහතික කරමු.',
+    'whoAreWePara4':
+      'MyMatch.lk හි අප කරන්නේ පැතිකඩ පමණක් ගැලපීම නොවේ—ස්ථිර සබඳතා සහ අර්ථවත් අනාගතයන් ගොඩනැංවීමට ඔබට උදව් කරමු.',
+    'whoAreWePara5':
+      'සැබෑ ගැලපීම ආරම්භ වන MyMatch.lk සමඟ අදම ඔබේ ගමන ආරම්භ කරන්න.',
     'pureLoveQuote': '"පිරිසිදු ප්‍රේමය යනු මහා පොරොන්දු හෝ පරිපූර්ණ මොහොත් ගැන නොවේ. ජීවිතය අපූර්ණ වුවද සෑම දිනකම එකිනෙකා තෝරා ගන්නා හදවත් දෙක ගැනයි. නිශ්චලතාවයේ නිහඬ අවබෝධය, කුණාටු අතරතුර මෘදු ඉවසීම සහ අන් සියල්ල අඳුරු වූ විට පවතින නොසැලෙන විශ්වාසයයි. සැබෑ ප්‍රේමය කිසිදු දෙයක් ඉල්ලා නොසිට තවත් සියල්ල දෙන බැවින් පිරිසිදුව පවතී."',
     'ourSpecialtySubtitle': 'ශ්‍රී ලාංකික තරුණ ප්‍රජාව සඳහා වාරික විවාහ සේවා',
     'ourSpecialty': 'අපගේ විශේෂත්වය',

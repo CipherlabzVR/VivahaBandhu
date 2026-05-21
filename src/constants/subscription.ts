@@ -14,3 +14,7 @@ export function isMatchmakerPaidTier(tier: string | undefined | null): boolean {
     const u = (tier || '').toUpperCase();
     return u === 'GOLD' || u === 'DIAMOND';
 }
+
+/** Max profiles a Self parent may create under “Managed Accounts” (not matchmaker clients). */
+export const SELF_MANAGED_SUB_ACCOUNT_MAX_FREE = 1;
+export const SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM = 4;

@@ -89,6 +89,10 @@ export interface MatrimonialLoginResponse {
 
         HoroscopeDocument?: string;
         horoscopeDocument?: string;
+        HoroscopeDocument2?: string;
+        horoscopeDocument2?: string;
+        HoroscopeDocument3?: string;
+        horoscopeDocument3?: string;
 
         ParentUserId?: number | null;
         parentUserId?: number | null;
@@ -634,6 +638,35 @@ export const matrimonialService = {
     },
 
     /**
+     * Premium only: show or hide phone / WhatsApp / email from viewers who would normally see them.
+     */
+    async setMatrimonialShowContactInformation(userId: number, showContactInformation: boolean): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SetMatrimonialShowContactInformation`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify({
+                    UserId: userId,
+                    ShowContactInformation: showContactInformation,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(
+                    (data as { message?: string }).message || 'Failed to update contact visibility'
+                );
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
      * Send a matrimonial message
      */
     async sendMessage(senderId: number, receiverId: number, content: string): Promise<any> {
@@ -897,6 +930,28 @@ export const matrimonialService = {
         }
     },
 
+    async purchaseAdditionalFamilySubAccountSlot(userId: number, mockReference?: string): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const params = new URLSearchParams({ userId: String(userId) });
+            if (mockReference) params.append('mockReference', mockReference);
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/PurchaseAdditionalFamilySubAccountSlot?${params.toString()}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data?.message || 'Failed to purchase additional sub-account slot');
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async activateMockSubscription(userId: number, mockReference: string, subscriptionPlan?: string): Promise<any> {
         try {
             const token = getStoredToken();
@@ -1041,6 +1096,11 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     matchmakerCanAddClients?: boolean;
     matchmakerDailyFullProfileViewsRemaining?: number;
     subscriptionExpiresAt?: string;
+    isFamilyParentAccount?: boolean;
+    familySubAccountSlotsPurchased?: number;
+    familySubAccountSlotsConsumed?: number;
+    familySubAccountSlotsMaxTotal?: number;
+    familySubAccountAdditionalAmountLkr?: number;
 } {
     if (!r || typeof r !== 'object') {
         return {};
@@ -1073,6 +1133,14 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     const canAdd = mx.MatchmakerCanAddClients ?? mx.matchmakerCanAddClients;
     const remViews = mx.MatchmakerDailyFullProfileViewsRemaining ?? mx.matchmakerDailyFullProfileViewsRemaining;
 
+    const isFamilyParent =
+        (mx.IsFamilyParentAccount ?? mx.isFamilyParentAccount) === true ||
+        ['Father', 'Mother', 'Relation'].includes(accountType);
+    const famPurchased = mx.FamilySubAccountSlotsPurchased ?? mx.familySubAccountSlotsPurchased;
+    const famConsumed = mx.FamilySubAccountSlotsConsumed ?? mx.familySubAccountSlotsConsumed;
+    const famMaxTotal = mx.FamilySubAccountSlotsMaxTotal ?? mx.familySubAccountSlotsMaxTotal;
+    const famExtraCost = mx.FamilySubAccountAdditionalAmountLkr ?? mx.familySubAccountAdditionalAmountLkr;
+
     return {
         isPremiumSelfSubscribed: isPremiumSelf,
         matchmakerTier: tier,
@@ -1089,6 +1157,11 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
                 ? mmPaid
                 : isPremiumSelf,
         subscriptionExpiresAt,
+        isFamilyParentAccount: isFamilyParent,
+        familySubAccountSlotsPurchased: famPurchased != null && famPurchased !== '' ? Number(famPurchased) : undefined,
+        familySubAccountSlotsConsumed: famConsumed != null && famConsumed !== '' ? Number(famConsumed) : undefined,
+        familySubAccountSlotsMaxTotal: famMaxTotal != null && famMaxTotal !== '' ? Number(famMaxTotal) : undefined,
+        familySubAccountAdditionalAmountLkr: famExtraCost != null && famExtraCost !== '' ? Number(famExtraCost) : undefined,
     };
 }
 

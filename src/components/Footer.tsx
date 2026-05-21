@@ -147,16 +147,16 @@ export default function Footer() {
                 <div className={colClass(1)} style={colStyle(1)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('quickLinks')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="#profiles" className="text-gray-300 hover:text-primary transition-colors">{t('browseProfiles')}</Link></li>
-                        <li><Link href="#how-it-works" className="text-gray-300 hover:text-primary transition-colors">{t('howItWorks')}</Link></li>
-                        <li><Link href="#matchmaker" className="text-gray-300 hover:text-primary transition-colors">{t('forMatchmakers')}</Link></li>
-                        <li><Link href="#pricing" className="text-gray-300 hover:text-primary transition-colors">{t('pricingPlans')}</Link></li>
+                        <li><Link href="/profiles" className="text-gray-300 hover:text-primary transition-colors">{t('browseProfiles')}</Link></li>
+                        <li><Link href="/#how-it-works" className="text-gray-300 hover:text-primary transition-colors">{t('howItWorks')}</Link></li>
+                        <li><Link href="/#matchmaker" className="text-gray-300 hover:text-primary transition-colors">{t('forMatchmakers')}</Link></li>
+                        <li><Link href="/#pricing" className="text-gray-300 hover:text-primary transition-colors">{t('pricingPlans')}</Link></li>
                     </ul>
                 </div>
                 <div className={colClass(2)} style={colStyle(2)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('support')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('helpCenter')}</Link></li>
+                        <li><Link href="/#faq" className="text-gray-300 hover:text-primary transition-colors">{t('helpCenter')}</Link></li>
                         <li><Link href="/contact" className="text-gray-300 hover:text-primary transition-colors">{t('contactUs')}</Link></li>
                         <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('safetyTips')}</Link></li>
                         <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('reportMisuse')}</Link></li>
@@ -165,8 +165,8 @@ export default function Footer() {
                 <div className={colClass(3)} style={colStyle(3)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('legal')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
+                        <li><Link href="/privacy-policy" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
+                        <li><Link href="/terms-of-service" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
                         <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
                         <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
                     </ul>
