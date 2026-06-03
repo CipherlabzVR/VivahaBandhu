@@ -325,7 +325,7 @@ function MessagesContent() {
         (async () => {
             try {
                 if (!isManagedParent && horoscopeProfileUserId === Number(user.id)) {
-                    const fromUser = horoscopePagesFromProfile(user as Record<string, unknown>);
+                    const fromUser = horoscopePagesFromProfile(user);
                     if (fromUser.length > 0) {
                         if (!cancelled) setShareHoroscopePages(fromUser);
                         return;
@@ -1385,7 +1385,7 @@ function MessagesContent() {
                                                                     {horoscopeShare.pages.length} page{horoscopeShare.pages.length === 1 ? '' : 's'} attached
                                                                 </p>
                                                                 <div className="flex flex-wrap gap-2 pt-1">
-                                                                    {horoscopeShare.pages.map((pageSrc, pageIdx) => (
+                                                                    {horoscopeShare.pages.map((pageSrc: string, pageIdx: number) => (
                                                                         <button
                                                                             key={`${rowKey}-h-${pageIdx}`}
                                                                             type="button"

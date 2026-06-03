@@ -974,7 +974,7 @@ function ProfilePageContent() {
         e.preventDefault();
         setSubAccountError(null);
 
-        if (isFamilyParentAccountType(user?.accountType)) {
+        if (user && isFamilyParentAccountType(user.accountType)) {
             const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
             const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
             if (consumed >= purchased) {
