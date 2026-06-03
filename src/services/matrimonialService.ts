@@ -1131,7 +1131,7 @@ export const matrimonialService = {
     },
 
     /** Active membership packages for pricing page (no auth). */
-    async getPublicPackages(audience: 'user' | 'matchmaker' = 'user'): Promise<any> {
+    async getPublicPackages(audience: 'user' | 'matchmaker' | 'sub_account' = 'user'): Promise<any> {
         try {
             const response = await fetch(
                 `${API_BASE_URL}/Matrimonial/GetPublicPackages?audience=${encodeURIComponent(audience)}`,
@@ -1212,21 +1212,10 @@ export const matrimonialService = {
         }
     },
 
-    async getPublicPackages(audience?: 'user' | 'matchmaker' | 'sub_account'): Promise<any[]> {
-        try {
-            const q = audience ? `?audience=${encodeURIComponent(audience)}` : '';
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPublicPackages${q}`);
-            if (!response.ok) return [];
-            const data = await response.json();
-            return data?.result ?? data?.Result ?? [];
-        } catch {
-            return [];
-        }
-    },
-
     async getActiveSubAccountPackage(): Promise<{ price: number; validityMonths?: number } | null> {
-        const pkgs = await this.getPublicPackages('sub_account');
-        return parseActiveSubAccountPackage(pkgs);
+        const res = await this.getPublicPackages('sub_account');
+        const pkgs = res?.result ?? res?.Result ?? [];
+        return parseActiveSubAccountPackage(Array.isArray(pkgs) ? pkgs : []);
     },
 };
 

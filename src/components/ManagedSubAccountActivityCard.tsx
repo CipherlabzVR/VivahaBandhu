@@ -77,9 +77,11 @@ export default function ManagedSubAccountActivityCard({
     const unreadInterest = activity?.unreadInterestCount ?? 0;
     const unreadMessages = activity?.unreadMessageCount ?? 0;
     const interests = activity?.incomingInterests ?? activity?.IncomingInterests ?? [];
-    const recentInterestActivity = [...(Array.isArray(interests) ? interests : [])]
+    const recentInterestActivity = (
+        [...(Array.isArray(interests) ? interests : [])] as Record<string, unknown>[]
+    )
         .sort(
-            (a: Record<string, unknown>, b: Record<string, unknown>) =>
+            (a, b) =>
                 apiInstantToMs(b.createdOn ?? b.CreatedOn) - apiInstantToMs(a.createdOn ?? a.CreatedOn)
         )
         .slice(0, 4);
@@ -238,7 +240,7 @@ export default function ManagedSubAccountActivityCard({
                 <div style={{ marginTop: '1rem' }}>
                     <h6 style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: '#374151' }}>Recent activity</h6>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                        {recentInterestActivity.map((item: Record<string, unknown>) => {
+                        {recentInterestActivity.map((item) => {
                             const fromName = String(item.fromName ?? item.FromName ?? 'Someone');
                             const isUnread = !(item.isRead ?? item.IsRead);
                             const at = item.createdOn ?? item.CreatedOn;

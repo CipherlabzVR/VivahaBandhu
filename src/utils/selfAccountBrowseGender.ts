@@ -7,6 +7,7 @@ export type SelfBrowseUser = {
     gender?: string | null;
     accountType?: string | null;
     parentUserId?: number | null;
+    id?: string | number | null;
 } | null | undefined;
 
 /** Self member browsing profiles (not parent/matchmaker/managed sub-profile). */
@@ -144,9 +145,7 @@ export function filterProfilesForSelfBrowse<T extends Record<string, unknown>>(
 }
 
 /** Viewer id sent to API for server-side gender defaults (self or managed parent). */
-export function viewerUserIdForBrowseGenderFilter(
-    user: SelfBrowseUser & { id?: string | number | null }
-): number | undefined {
+export function viewerUserIdForBrowseGenderFilter(user: SelfBrowseUser): number | undefined {
     if (user?.id == null) return undefined;
     const id = Number(user.id);
     if (!Number.isFinite(id) || id <= 0) return undefined;
@@ -155,8 +154,6 @@ export function viewerUserIdForBrowseGenderFilter(
 }
 
 /** @deprecated Use viewerUserIdForBrowseGenderFilter */
-export function viewerUserIdForSelfBrowseGender(
-    user: SelfBrowseUser & { id?: string | number | null }
-): number | undefined {
+export function viewerUserIdForSelfBrowseGender(user: SelfBrowseUser): number | undefined {
     return viewerUserIdForBrowseGenderFilter(user);
 }

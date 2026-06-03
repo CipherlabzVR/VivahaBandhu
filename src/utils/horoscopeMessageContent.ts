@@ -1,4 +1,4 @@
-const HOROSCOPE_SHARE_PREFIX = /^\[HoroscopeShare:(.+)\]$/s;
+const HOROSCOPE_SHARE_PREFIX = /^\[HoroscopeShare:([\s\S]+)\]$/;
 
 export type HoroscopeSharePayload = {
     pages: string[];
@@ -37,7 +37,16 @@ export function horoscopeSharePreviewText(content: string): string | null {
     return 'Horoscope shared';
 }
 
-export function horoscopePagesFromProfile(row: Record<string, unknown> | null | undefined): string[] {
+export type HoroscopeProfileSource = {
+    horoscopeDocument?: unknown;
+    HoroscopeDocument?: unknown;
+    horoscopeDocument2?: unknown;
+    HoroscopeDocument2?: unknown;
+    horoscopeDocument3?: unknown;
+    HoroscopeDocument3?: unknown;
+};
+
+export function horoscopePagesFromProfile(row: HoroscopeProfileSource | null | undefined): string[] {
     if (!row) return [];
     const pages: string[] = [];
     const d1 = String(row.horoscopeDocument ?? row.HoroscopeDocument ?? '').trim();
