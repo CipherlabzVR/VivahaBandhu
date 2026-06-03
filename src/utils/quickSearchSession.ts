@@ -1,3 +1,10 @@
+import {
+    browseGenderToBrideGroom,
+    type SelfBrowseUser,
+    defaultBrowseGenderForUser,
+} from './selfAccountBrowseGender';
+import type { ManagedSubAccount } from './managedSubAccounts';
+
 /** Persist hero quick-search values so they survive navigation (e.g. back from /search). */
 export const QUICK_SEARCH_SESSION_KEY = 'cbass:hero-quick-search';
 
@@ -14,6 +21,18 @@ export const DEFAULT_QUICK_SEARCH: QuickSearchState = {
     ageTo: '30',
     religion: '',
 };
+
+/** Self, or managed parent with one-gender subs → Bride/Groom default; both-gender subs → Any. */
+export function defaultQuickSearchForUser(
+    user?: SelfBrowseUser,
+    subAccounts: readonly Pick<ManagedSubAccount, 'gender'>[] = []
+): QuickSearchState {
+    const opposite = defaultBrowseGenderForUser(user, subAccounts);
+    return {
+        ...DEFAULT_QUICK_SEARCH,
+        gender: browseGenderToBrideGroom(opposite),
+    };
+}
 
 export function readQuickSearchSession(): QuickSearchState | null {
     if (typeof window === 'undefined') return null;
@@ -51,11 +70,16 @@ export function writeQuickSearchSession(state: QuickSearchState): void {
 }
 
 /** Map URL params to quick-search fields (defaults when params omitted, e.g. text-only search). */
-export function quickSearchFromUrlParams(sp: { get: (key: string) => string | null }): QuickSearchState {
+export function quickSearchFromUrlParams(
+    sp: { get: (key: string) => string | null },
+    user?: SelfBrowseUser,
+    subAccounts: readonly Pick<ManagedSubAccount, 'gender'>[] = []
+): QuickSearchState {
+    const defaults = user ? defaultQuickSearchForUser(user, subAccounts) : DEFAULT_QUICK_SEARCH;
     return {
-        gender: sp.get('gender') || DEFAULT_QUICK_SEARCH.gender,
-        ageFrom: sp.get('ageFrom') || DEFAULT_QUICK_SEARCH.ageFrom,
-        ageTo: sp.get('ageTo') || DEFAULT_QUICK_SEARCH.ageTo,
+        gender: sp.get('gender') || defaults.gender,
+        ageFrom: sp.get('ageFrom') || defaults.ageFrom,
+        ageTo: sp.get('ageTo') || defaults.ageTo,
         religion: sp.get('religion') ?? '',
     };
 }

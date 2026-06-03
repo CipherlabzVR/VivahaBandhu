@@ -40,7 +40,7 @@ export default function Blog({ onOpenBlogDetail }: BlogProps) {
     ];
 
     return (
-        <section className="blog-section relative overflow-hidden !bg-transparent">
+        <section id="blog" className="blog-section relative overflow-hidden !bg-transparent">
             <video
                 autoPlay
                 muted

@@ -4,12 +4,23 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { matrimonialService } from '../services/matrimonialService';
 import { getStoredToken } from '../utils/authStorage';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
 import {
+    canManageSubAccounts,
+    normalizeSubAccount,
+    notificationMatchesManagedProfile,
+    shouldShowManagedProfileTabs,
+    subAccountDisplayName,
+    subAccountNotificationUnreadMap,
+    type ManagedSubAccount,
+} from '../utils/managedSubAccounts';
+import ClientProfileBadge from './ClientProfileBadge';
+import {
     isInterestBackNotification,
+    managedProfileUserIdFromNotification,
     notificationDescriptionFallback,
     notificationTitleFallback,
     referenceIdFromNotification,
@@ -62,6 +73,8 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
     const [notificationOpen, setNotificationOpen] = useState(false);
     const [interestBackLoadingKey, setInterestBackLoadingKey] = useState<string | null>(null);
     const [actionToast, setActionToast] = useState('');
+    const [subAccounts, setSubAccounts] = useState<ManagedSubAccount[]>([]);
+    const [activeNotificationSubAccountId, setActiveNotificationSubAccountId] = useState<number | null>(null);
 
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -90,7 +103,70 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         };
     }, [notificationOpen, profileMenuOpen]);
 
-    const getUnreadCount = () => interestNotifications.filter(n => !n.isRead).length;
+    const getUnreadCount = () => interestNotifications.length;
+
+    const showNotificationProfileTabs = useMemo(
+        () => canManageSubAccounts(user?.accountType) && shouldShowManagedProfileTabs(subAccounts),
+        [user?.accountType, subAccounts]
+    );
+
+    const notificationUnreadBySubAccount = useMemo(
+        () => subAccountNotificationUnreadMap(interestNotifications as Record<string, unknown>[]),
+        [interestNotifications]
+    );
+
+    const filteredInterestNotifications = useMemo(() => {
+        if (!showNotificationProfileTabs || activeNotificationSubAccountId == null) {
+            return interestNotifications;
+        }
+        return interestNotifications.filter((n) =>
+            notificationMatchesManagedProfile(n as Record<string, unknown>, activeNotificationSubAccountId)
+        );
+    }, [interestNotifications, showNotificationProfileTabs, activeNotificationSubAccountId]);
+
+    const activeNotificationSubAccount = useMemo(
+        () => subAccounts.find((s) => s.id === activeNotificationSubAccountId) ?? null,
+        [subAccounts, activeNotificationSubAccountId]
+    );
+
+    useEffect(() => {
+        if (!user?.id || !canManageSubAccounts(user.accountType)) {
+            setSubAccounts([]);
+            setActiveNotificationSubAccountId(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await matrimonialService.getSubAccounts(Number(user.id));
+                if (cancelled) return;
+                if (res.statusCode === 200 || res.statusCode === 1) {
+                    const rows = (Array.isArray(res.result) ? res.result : [])
+                        .map((row: Record<string, unknown>) => normalizeSubAccount(row))
+                        .filter(Boolean) as ManagedSubAccount[];
+                    setSubAccounts(rows);
+                } else {
+                    setSubAccounts([]);
+                }
+            } catch {
+                if (!cancelled) setSubAccounts([]);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id, user?.accountType]);
+
+    useEffect(() => {
+        if (!showNotificationProfileTabs || subAccounts.length === 0) {
+            setActiveNotificationSubAccountId(null);
+            return;
+        }
+        setActiveNotificationSubAccountId((prev) => {
+            if (prev != null && subAccounts.some((s) => s.id === prev)) return prev;
+            return subAccounts[0]?.id ?? null;
+        });
+    }, [showNotificationProfileTabs, subAccounts]);
 
     useEffect(() => {
         if (!user?.id || user.profilePhoto) return;
@@ -144,7 +220,10 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!otherUserId) return;
         await markInterestNotificationRead(notification);
         setNotificationOpen(false);
-        router.push(`/messages?userId=${otherUserId}`);
+        const managedId = managedProfileUserIdFromNotification(notification);
+        const managedQuery =
+            managedId != null ? `&managedProfileUserId=${managedId}` : '';
+        router.push(`/messages?userId=${otherUserId}${managedQuery}`);
     };
 
     const handleInterestBack = async (notification: any) => {
@@ -299,36 +378,98 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                 )}
                             </button>
                             {notificationOpen && (
-                                <div className="absolute top-full right-0 mt-2 bg-gradient-to-b from-amber-50/40 to-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-auto border border-amber-100/80 ring-1 ring-black/5">
-                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-100/80">
+                                <div className="absolute top-full right-0 mt-2 bg-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-auto border border-gray-200 ring-1 ring-black/5">
+                                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
                                         <span className="text-lg" aria-hidden>✨</span>
-                                        <div className="font-semibold text-sm text-gray-900">Notifications</div>
-                                        {getUnreadCount() > 0 && (
+                                        <div className="font-semibold text-sm text-gray-900">
+                                            Notifications
+                                            {showNotificationProfileTabs && activeNotificationSubAccount ? (
+                                                <span className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                                    <span className="block text-[11px] font-medium text-primary truncate max-w-[220px]">
+                                                        {subAccountDisplayName(activeNotificationSubAccount)}
+                                                    </span>
+                                                    {user?.accountType === 'Matchmaker' ? (
+                                                        <ClientProfileBadge variant="compact" />
+                                                    ) : null}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                        {filteredInterestNotifications.length > 0 && (
                                             <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-white bg-primary px-2 py-0.5 rounded-full">
-                                                {getUnreadCount()} new
+                                                {filteredInterestNotifications.length} new
                                             </span>
                                         )}
                                     </div>
+                                    {showNotificationProfileTabs && (
+                                        <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-3 mb-1 -mx-0.5 px-0.5">
+                                            {subAccounts.map((sub) => {
+                                                const isActive = activeNotificationSubAccountId === sub.id;
+                                                const unread = notificationUnreadBySubAccount[sub.id] ?? 0;
+                                                const name = subAccountDisplayName(sub);
+                                                return (
+                                                    <button
+                                                        key={sub.id}
+                                                        type="button"
+                                                        onClick={() => setActiveNotificationSubAccountId(sub.id)}
+                                                        title={name}
+                                                        className={`relative shrink-0 flex flex-col items-center gap-1 rounded-xl border px-2 py-2 min-w-[72px] transition-all ${
+                                                            isActive
+                                                                ? 'bg-gold/15 border-primary/40 ring-1 ring-primary/20'
+                                                                : 'bg-white border-gray-200 hover:border-gold/30'
+                                                        }`}
+                                                    >
+                                                        <div className="relative">
+                                                            <div
+                                                                className={`w-10 h-10 rounded-full overflow-hidden border-2 bg-cream ${
+                                                                    isActive ? 'border-primary' : 'border-white'
+                                                                }`}
+                                                            >
+                                                                <img
+                                                                    src={
+                                                                        sub.profilePhoto ||
+                                                                        'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'
+                                                                    }
+                                                                    alt={name}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            </div>
+                                                            {unread > 0 && (
+                                                                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                                                                    {unread > 99 ? '99+' : unread}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span
+                                                            className={`text-[0.62rem] leading-tight text-center line-clamp-2 max-w-[68px] ${
+                                                                isActive ? 'text-primary font-semibold' : 'text-gray-600'
+                                                            }`}
+                                                        >
+                                                            {sub.firstName || name}
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                     {loadingNotifications ? (
                                         <div className="text-xs text-gray-500 py-6 text-center">Loading...</div>
-                                    ) : interestNotifications.length === 0 ? (
-                                        <div className="text-xs text-gray-500 py-6 text-center">No new interests yet.</div>
+                                    ) : filteredInterestNotifications.length === 0 ? (
+                                        <div className="text-xs text-gray-500 py-6 text-center">
+                                            {showNotificationProfileTabs && activeNotificationSubAccount
+                                                ? `No new notifications for ${subAccountDisplayName(activeNotificationSubAccount)}.`
+                                                : 'No new notifications.'}
+                                        </div>
                                     ) : (
                                         <div className="flex flex-col gap-3">
-                                            {interestNotifications.map((n) => {
+                                            {filteredInterestNotifications.map((n) => {
                                                 const senderName = senderLabelFromDescription(n.description);
                                                 const initials = initialsFromName(senderName);
-                                                const unread = !n.isRead;
                                                 const rowKey = String(n.id);
 
                                                 return (
                                                     <div
                                                         key={rowKey}
-                                                        className={`relative overflow-hidden rounded-xl border transition-shadow ${
-                                                            unread
-                                                                ? 'border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15'
-                                                                : 'border-gray-200/90 bg-white/90'
-                                                        }`}
+                                                        className="relative overflow-hidden rounded-xl border border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15 transition-shadow"
                                                     >
                                                         <div
                                                             className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl"
@@ -343,12 +484,10 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                             </div>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-start gap-2">
-                                                                    {unread && (
-                                                                        <span
-                                                                            className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(255,162,13,0.25)]"
-                                                                            title="Unread"
-                                                                        />
-                                                                    )}
+                                                                    <span
+                                                                        className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(255,162,13,0.25)]"
+                                                                        title="New"
+                                                                    />
                                                                     <div>
                                                                         <div className="text-sm font-semibold text-gray-900 leading-tight">
                                                                             {n.title || notificationTitleFallback(n)}

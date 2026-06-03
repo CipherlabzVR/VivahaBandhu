@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import CustomDropdown from './CustomDropdown';
+import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
+import { managedParentShowsBothGenders } from '../utils/selfAccountBrowseGender';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
 import {
     formatHeroStatCount,
@@ -13,6 +15,7 @@ import {
 import { validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
 import {
     DEFAULT_QUICK_SEARCH,
+    defaultQuickSearchForUser,
     readQuickSearchSession,
     writeQuickSearchSession,
 } from '../utils/quickSearchSession';
@@ -47,6 +50,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
     const router = useRouter();
     const { language, t } = useLanguage();
     const { user } = useAuth();
+    const { subAccounts } = useOwnedSubAccountsForBrowse();
     const { stats: heroStats } = useHeroLiveStats({
         verifiedProfiles: DEFAULT_HERO_STATS.verifiedProfiles,
         successStories: DEFAULT_HERO_STATS.successStories,
@@ -59,8 +63,14 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
 
     useEffect(() => {
         const saved = readQuickSearchSession();
-        if (saved) setSearch(saved);
-    }, []);
+        if (saved) {
+            setSearch(saved);
+            return;
+        }
+        if (user) {
+            setSearch(defaultQuickSearchForUser(user, subAccounts));
+        }
+    }, [user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts]);
 
     useEffect(() => {
         let retryTimer: ReturnType<typeof setInterval> | null = null;
@@ -456,6 +466,9 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                 value={search.gender}
                                 onChange={handleChange}
                                 options={[
+                                    ...(managedParentShowsBothGenders(subAccounts)
+                                        ? [{ value: 'Any', label: 'Any' }]
+                                        : []),
                                     { value: 'Bride', label: 'Bride' },
                                     { value: 'Groom', label: 'Groom' },
                                 ]}

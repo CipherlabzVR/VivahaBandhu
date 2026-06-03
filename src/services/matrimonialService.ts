@@ -1,4 +1,6 @@
 import { getStoredToken } from '../utils/authStorage';
+import { isFamilyParentAccountType } from '../utils/matrimonialAccountTypes';
+import { ensureCorsOriginRegistered } from '../utils/corsBootstrap';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
 export interface MatrimonialRegisterRequest {
@@ -459,9 +461,13 @@ export const matrimonialService = {
     /**
      * Get recent registered profiles
      */
-    async getRecentProfiles(count: number = 4): Promise<any> {
+    async getRecentProfiles(count: number = 4, viewerUserId?: number): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentProfiles?count=${count}`, {
+            const viewerQuery =
+                viewerUserId != null && Number.isFinite(viewerUserId) && viewerUserId > 0
+                    ? `&viewerUserId=${viewerUserId}`
+                    : '';
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentProfiles?count=${count}${viewerQuery}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -486,9 +492,13 @@ export const matrimonialService = {
     /**
      * Recent profiles that currently have an active subscription (premium).
      */
-    async getRecentPremiumProfiles(count: number = 4): Promise<any> {
+    async getRecentPremiumProfiles(count: number = 4, viewerUserId?: number): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentPremiumProfiles?count=${count}`, {
+            const viewerQuery =
+                viewerUserId != null && Number.isFinite(viewerUserId) && viewerUserId > 0
+                    ? `&viewerUserId=${viewerUserId}`
+                    : '';
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetRecentPremiumProfiles?count=${count}${viewerQuery}`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -666,30 +676,74 @@ export const matrimonialService = {
         }
     },
 
-    /**
-     * Send a matrimonial message
-     */
-    async sendMessage(senderId: number, receiverId: number, content: string): Promise<any> {
+    async sendMessage(
+        senderId: number,
+        receiverId: number,
+        content: string,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
         if (!senderId || !receiverId) {
             throw new Error('Invalid sender or receiver ID');
         }
         try {
             const token = getStoredToken();
+            const body: Record<string, unknown> = {
+                SenderId: senderId,
+                ReceiverId: receiverId,
+                Content: content,
+            };
+            const managedId = managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                body.ManagedProfileUserId = managedId;
+            }
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SendMessage`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': token ? `Bearer ${token}` : ''
                 },
-                body: JSON.stringify({
-                    SenderId: senderId,
-                    ReceiverId: receiverId,
-                    Content: content
-                })
+                body: JSON.stringify(body)
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || 'Failed to send message');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /** Send horoscope document(s) as a structured message in an existing conversation. */
+    async shareHoroscope(
+        senderId: number,
+        receiverId: number,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
+        if (!senderId || !receiverId) {
+            throw new Error('Invalid sender or receiver ID');
+        }
+        try {
+            const token = getStoredToken();
+            const body: Record<string, unknown> = {
+                SenderId: senderId,
+                ReceiverId: receiverId,
+            };
+            const managedId = managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                body.ManagedProfileUserId = managedId;
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ShareHoroscope`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to share horoscope');
             }
             return await response.json();
         } catch (error) {
@@ -716,9 +770,17 @@ export const matrimonialService = {
     /**
      * Get single conversation
      */
-    async getConversation(userId: number, otherUserId: number): Promise<any> {
+    async getConversation(userId: number, otherUserId: number, managedProfileUserId?: number | null): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetConversation?userId=${userId}&otherUserId=${otherUserId}`, {
+            const params = new URLSearchParams({
+                userId: String(userId),
+                otherUserId: String(otherUserId),
+            });
+            const managedId = managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                params.set('managedProfileUserId', String(managedId));
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetConversation?${params.toString()}`, {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -766,12 +828,16 @@ export const matrimonialService = {
         }
     },
 
-    async getInterestNotifications(userId: number): Promise<any> {
+    async getInterestNotifications(userId: number, options?: { unreadOnly?: boolean }): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${userId}`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' },
-            });
+            const unreadOnly = options?.unreadOnly === true;
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${userId}${unreadOnly ? '&unreadOnly=true' : ''}`,
+                {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                }
+            );
             return await response.json();
         } catch (error) {
             throw error;
@@ -810,9 +876,6 @@ export const matrimonialService = {
         }
     },
 
-    /**
-     * Get sub-accounts for a parent user
-     */
     async getSubAccounts(parentUserId: number): Promise<any> {
         try {
             const token = getStoredToken();
@@ -825,6 +888,44 @@ export const matrimonialService = {
             });
             if (!response.ok) throw new Error('Failed to fetch sub-accounts');
             return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async getManagedSubAccountsActivity(parentUserId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetManagedSubAccountsActivity?parentUserId=${parentUserId}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                },
+            });
+            if (!response.ok) throw new Error('Failed to fetch managed profile activity');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async createManagedSubProfile(payload: Record<string, unknown>): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/CreateManagedSubProfile`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data?.message || 'Failed to create managed profile');
+            }
+            return data;
         } catch (error) {
             throw error;
         }
@@ -1004,13 +1105,41 @@ export const matrimonialService = {
         }
     },
 
-    /** Active membership packages for pricing page (no auth). */
-    async getPublicPackages(): Promise<any> {
+    async submitContactForm(payload: {
+        firstName?: string;
+        lastName?: string;
+        email: string;
+        message: string;
+        sourcePath?: string;
+    }): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPublicPackages`, {
-                method: 'GET',
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SubmitContactForm`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    FirstName: payload.firstName ?? '',
+                    LastName: payload.lastName ?? '',
+                    Email: payload.email,
+                    Message: payload.message,
+                    SourcePath: payload.sourcePath ?? '/contact',
+                }),
             });
+            return await response.json();
+        } catch {
+            return { statusCode: 0, message: 'Network error' };
+        }
+    },
+
+    /** Active membership packages for pricing page (no auth). */
+    async getPublicPackages(audience: 'user' | 'matchmaker' = 'user'): Promise<any> {
+        try {
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/GetPublicPackages?audience=${encodeURIComponent(audience)}`,
+                {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                }
+            );
             if (!response.ok) {
                 return { statusCode: response.status, result: [] };
             }
@@ -1041,23 +1170,20 @@ export const matrimonialService = {
     },
 
     /**
-     * Register this site's origin with the backend CORS allowlist (called from the landing page).
+     * Register this site's origin with the backend CORS allowlist.
+     * Uses window.location.origin (actual host/port), not NEXT_PUBLIC_SITE_URL.
      */
-    async saveCorsLink(webLink: string, isActive: boolean = true): Promise<void> {
-        try {
-            await fetch(`${API_BASE_URL}/AppSetting/SaveCorsLink`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ webLink, isActive }),
-            });
-        } catch {
-            // Non-blocking: landing page must render even if registration fails (offline, CORS during dev, etc.)
-        }
+    async saveCorsLink(_webLink?: string, _isActive: boolean = true): Promise<void> {
+        await ensureCorsOriginRegistered();
     },
 
-    async submitBankTransfer(userId: number, amount: number, paySlipBase64: string, remarks?: string): Promise<any> {
+    async submitBankTransfer(
+        userId: number,
+        amount: number,
+        paySlipBase64: string,
+        remarks?: string,
+        paymentPurpose?: 'premium' | 'sub_account' | 'matchmaker',
+    ): Promise<any> {
         try {
             const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SubmitBankTransfer`, {
@@ -1070,7 +1196,8 @@ export const matrimonialService = {
                     userId,
                     amount,
                     paySlipBase64,
-                    remarks
+                    remarks,
+                    paymentPurpose,
                 })
             });
 
@@ -1083,8 +1210,49 @@ export const matrimonialService = {
         } catch (error) {
             throw error;
         }
-    }
+    },
+
+    async getPublicPackages(audience?: 'user' | 'matchmaker' | 'sub_account'): Promise<any[]> {
+        try {
+            const q = audience ? `?audience=${encodeURIComponent(audience)}` : '';
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetPublicPackages${q}`);
+            if (!response.ok) return [];
+            const data = await response.json();
+            return data?.result ?? data?.Result ?? [];
+        } catch {
+            return [];
+        }
+    },
+
+    async getActiveSubAccountPackage(): Promise<{ price: number; validityMonths?: number } | null> {
+        const pkgs = await this.getPublicPackages('sub_account');
+        return parseActiveSubAccountPackage(pkgs);
+    },
 };
+
+/** Picks the active sub-account package shown on the website (backoffice-configured). */
+export function parseActiveSubAccountPackage(pkgs: any[]): { price: number; validityMonths?: number } | null {
+    if (!Array.isArray(pkgs) || pkgs.length === 0) return null;
+    const sorted = [...pkgs]
+        .filter((p) => p?.isActive ?? p?.IsActive ?? true)
+        .sort((a, b) => {
+            const popA = (a?.isPopular ?? a?.IsPopular) ? 1 : 0;
+            const popB = (b?.isPopular ?? b?.IsPopular) ? 1 : 0;
+            if (popB !== popA) return popB - popA;
+            return (a?.sortOrder ?? a?.SortOrder ?? 0) - (b?.sortOrder ?? b?.SortOrder ?? 0);
+        });
+    const pkg = sorted[0];
+    if (!pkg) return null;
+    const price = Number(pkg.price ?? pkg.Price);
+    if (!Number.isFinite(price) || price < 0) return null;
+    const lifetime = !!(pkg.isLifetimeValidity ?? pkg.IsLifetimeValidity);
+    const monthsRaw = pkg.validityMonths ?? pkg.ValidityMonths;
+    const months = monthsRaw != null ? Number(monthsRaw) : undefined;
+    return {
+        price,
+        validityMonths: !lifetime && months != null && Number.isFinite(months) && months > 0 ? months : undefined,
+    };
+}
 
 /** Maps matrimonialExtras from `/User/SignIn` onto client `User` fields. */
 export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undefined): {
@@ -1096,11 +1264,13 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     matchmakerCanAddClients?: boolean;
     matchmakerDailyFullProfileViewsRemaining?: number;
     subscriptionExpiresAt?: string;
+    subscriptionIsLifetime?: boolean;
     isFamilyParentAccount?: boolean;
     familySubAccountSlotsPurchased?: number;
     familySubAccountSlotsConsumed?: number;
     familySubAccountSlotsMaxTotal?: number;
     familySubAccountAdditionalAmountLkr?: number;
+    familySubAccountPackageValidityMonths?: number;
 } {
     if (!r || typeof r !== 'object') {
         return {};
@@ -1123,8 +1293,14 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
         return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
     };
 
-    const subscriptionExpiresAt =
+    const subscriptionIsLifetime =
         accountType === 'Matchmaker'
+            ? (mx.MatchmakerSubscriptionIsLifetime ?? mx.matchmakerSubscriptionIsLifetime) === true
+            : (mx.SelfPremiumSubscriptionIsLifetime ?? mx.selfPremiumSubscriptionIsLifetime) === true;
+
+    const subscriptionExpiresAt = subscriptionIsLifetime
+        ? undefined
+        : accountType === 'Matchmaker'
             ? toIsoExpiry(mx.MatchmakerSubscriptionUntilUtc ?? mx.matchmakerSubscriptionUntilUtc)
             : toIsoExpiry(mx.SelfPremiumSubscriptionUntilUtc ?? mx.selfPremiumSubscriptionUntilUtc);
 
@@ -1135,11 +1311,12 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
 
     const isFamilyParent =
         (mx.IsFamilyParentAccount ?? mx.isFamilyParentAccount) === true ||
-        ['Father', 'Mother', 'Relation'].includes(accountType);
+        isFamilyParentAccountType(accountType);
     const famPurchased = mx.FamilySubAccountSlotsPurchased ?? mx.familySubAccountSlotsPurchased;
     const famConsumed = mx.FamilySubAccountSlotsConsumed ?? mx.familySubAccountSlotsConsumed;
     const famMaxTotal = mx.FamilySubAccountSlotsMaxTotal ?? mx.familySubAccountSlotsMaxTotal;
     const famExtraCost = mx.FamilySubAccountAdditionalAmountLkr ?? mx.familySubAccountAdditionalAmountLkr;
+    const famValidity = mx.FamilySubAccountPackageValidityMonths ?? mx.familySubAccountPackageValidityMonths;
 
     return {
         isPremiumSelfSubscribed: isPremiumSelf,
@@ -1157,11 +1334,13 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
                 ? mmPaid
                 : isPremiumSelf,
         subscriptionExpiresAt,
+        subscriptionIsLifetime,
         isFamilyParentAccount: isFamilyParent,
         familySubAccountSlotsPurchased: famPurchased != null && famPurchased !== '' ? Number(famPurchased) : undefined,
         familySubAccountSlotsConsumed: famConsumed != null && famConsumed !== '' ? Number(famConsumed) : undefined,
         familySubAccountSlotsMaxTotal: famMaxTotal != null && famMaxTotal !== '' ? Number(famMaxTotal) : undefined,
         familySubAccountAdditionalAmountLkr: famExtraCost != null && famExtraCost !== '' ? Number(famExtraCost) : undefined,
+        familySubAccountPackageValidityMonths: famValidity != null && famValidity !== '' ? Number(famValidity) : undefined,
     };
 }
 

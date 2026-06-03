@@ -5,6 +5,7 @@ import { LanguageProvider } from '../context/LanguageContext';
 import { MatrimonialNotificationsProvider } from '../context/MatrimonialNotificationsContext';
 import { ChatUnreadProvider } from '../context/ChatUnreadContext';
 import LoadingScreenWrapper from '../components/LoadingScreenWrapper';
+import CorsBootstrap from '../components/CorsBootstrap';
 import MessageFloatingButton from '../components/MessageFloatingButton';
 import GlobalToast from '../components/GlobalToast';
 import PremiumActivationListener from '../components/PremiumActivationListener';
@@ -53,6 +54,7 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;500;600;700&family=Great+Vibes&family=Noto+Sans+Sinhala:wght@400;500;600;700&family=Pacifico&family=Playwrite+AT:ital,wght@0,100..400;1,100..400&family=Playwrite+CU:wght@100..400&family=Playwrite+Guides:wght@100..400&family=Saira:ital,wght@0,100..900;1,100..900&family=Syncopate:wght@400;700&display=swap" rel="stylesheet" />
       </head>
       <body className={`${playfair.variable} ${sourceSans.variable} ${pacifico.variable}`} suppressHydrationWarning>
+        <CorsBootstrap />
         <AuthProvider>
           <MatrimonialNotificationsProvider>
             <LanguageProvider>

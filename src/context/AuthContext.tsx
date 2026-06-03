@@ -31,6 +31,8 @@ interface User {
     isPremiumSelfSubscribed?: boolean;
     /** ISO UTC end date of current paid period (Self or Matchmaker), when the API provides it. */
     subscriptionExpiresAt?: string;
+    /** Paid membership with no expiry (from package validity = Lifetime). */
+    subscriptionIsLifetime?: boolean;
     /** Whether the user wants an email when someone shows interest. Server-authoritative. */
     emailOnInterest?: boolean;
     /**
@@ -43,9 +45,9 @@ interface User {
     horoscopeDocument2?: string;
     /** Additional horoscope page / image URL (third slot). */
     horoscopeDocument3?: string;
-    /** True if accountType is Father / Mother / Relation. */
+    /** True if accountType is Parents / Relation (includes legacy Father / Mother). */
     isFamilyParentAccount?: boolean;
-    /** Sub-account slot entitlements for family parents (1 from premium subscription + paid top-ups). */
+    /** Sub-account slot entitlements for Self / family parents (2 from premium + paid top-ups). */
     familySubAccountSlotsPurchased?: number;
     /** Sub-account slots already used (incremented on creation, never decremented on delete). */
     familySubAccountSlotsConsumed?: number;
@@ -53,6 +55,8 @@ interface User {
     familySubAccountSlotsMaxTotal?: number;
     /** LKR cost to buy one additional family sub-account slot. */
     familySubAccountAdditionalAmountLkr?: number;
+    /** Validity in months for the active sub-account package. */
+    familySubAccountPackageValidityMonths?: number;
 }
 
 interface AuthContextType {

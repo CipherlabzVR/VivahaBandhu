@@ -4,132 +4,74 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
-import {
-    PREMIUM_SUBSCRIPTION_LKR,
-    MATCHMAKER_GOLD_LKR,
-    MATCHMAKER_DIAMOND_LKR,
-    CHECKOUT_PLAN_PREMIUM_SELF,
-    CHECKOUT_PLAN_MATCHMAKER_GOLD,
-    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
-} from '../constants/subscription';
 import { matrimonialService } from '../services/matrimonialService';
 import { useAuth } from '../context/AuthContext';
+import {
+    type PublicMatrimonialPackage,
+    isFreePackage,
+    normalizePublicPackages,
+    packageFeatureLabels,
+    packageId,
+    packageName,
+    packagePeriodLabel,
+    packagePrice,
+    packageValidityLabel,
+    publicPackagesAudienceParam,
+    resolveCheckoutPlan,
+} from '../utils/matrimonialPackages';
 
 interface PricingProps {
     onOpenSubscription: () => void;
-}
-
-type PublicPkg = {
-    id?: number;
-    Id?: number;
-    name?: string;
-    Name?: string;
-    description?: string | null;
-    Description?: string | null;
-    price?: number;
-    Price?: number;
-    pricePeriodLabel?: string;
-    PricePeriodLabel?: string;
-    isPopular?: boolean;
-    IsPopular?: boolean;
-    features?: Array<{ key?: string; Key?: string; label?: string; Label?: string }>;
-    Features?: Array<{ key?: string; Key?: string; label?: string; Label?: string }>;
-};
-
-function normalizePackages(raw: unknown): PublicPkg[] {
-    if (!Array.isArray(raw)) return [];
-    return raw as PublicPkg[];
 }
 
 export default function Pricing({ onOpenSubscription }: PricingProps) {
     const { t } = useLanguage();
     const router = useRouter();
     const { user } = useAuth();
-    const [paidPackages, setPaidPackages] = useState<PublicPkg[]>([]);
-    const isLoggedInMatchmaker = user?.accountType === 'Matchmaker';
+    const [packages, setPackages] = useState<PublicMatrimonialPackage[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const audience = publicPackagesAudienceParam(user?.accountType);
 
     useEffect(() => {
         let cancelled = false;
+        setLoading(true);
         (async () => {
             try {
-                const res = await matrimonialService.getPublicPackages();
-                const list = normalizePackages(res?.result ?? res?.Result);
-                if (!cancelled) setPaidPackages(list);
+                const res = await matrimonialService.getPublicPackages(audience);
+                const list = normalizePublicPackages(res?.result ?? res?.Result);
+                if (!cancelled) setPackages(list);
             } catch {
-                if (!cancelled) setPaidPackages([]);
+                if (!cancelled) setPackages([]);
+            } finally {
+                if (!cancelled) setLoading(false);
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [audience]);
 
-    const goCheckout = (plan: string, amount: number) => {
+    const goCheckout = (pkg: PublicMatrimonialPackage) => {
+        const plan = resolveCheckoutPlan(pkg);
+        const amount = packagePrice(pkg);
         router.push(`/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amount}`);
     };
 
-    const renderFeatureList = (items: { label: string; muted?: boolean }[]) => (
+    const renderFeatureList = (labels: string[]) => (
         <ul className="space-y-3 mb-8">
-            {items.map((it, i) => (
-                <li
-                    key={i}
-                    className={`flex items-center gap-2 ${it.muted ? 'text-text-light' : 'text-text-dark'}`}
-                >
-                    <span className={it.muted ? 'text-text-light' : 'text-primary'}>{it.muted ? '✕' : '✓'}</span>
-                    {it.label}
-                </li>
-            ))}
+            {labels.length > 0 ? (
+                labels.map((label, i) => (
+                    <li key={i} className="flex items-center gap-2 text-text-dark">
+                        <span className="text-primary">✓</span>
+                        {label}
+                    </li>
+                ))
+            ) : (
+                <li className="text-text-light text-sm">No features listed for this package.</li>
+            )}
         </ul>
     );
-
-    const freeFeatures = [
-        { label: 'Create Profile' },
-        { label: 'Add Photos' },
-        { label: 'Search Profiles' },
-        { label: 'Send Interest' },
-        { label: 'View 10 Profiles / Day' },
-        { label: 'View Contact Info', muted: true },
-        { label: 'Direct Chat', muted: true },
-        { label: 'Unlimited Profile Views', muted: true },
-    ];
-
-    const fallbackPremiumFeatures = [
-        { label: 'Create Profile' },
-        { label: 'Add Photos' },
-        { label: 'Search Profiles' },
-        { label: 'Send Interest' },
-        { label: 'Unlimited Profile Views' },
-        { label: 'View Contact Info' },
-        { label: 'Direct Chat' },
-        { label: 'Priority Support' },
-    ];
-
-    const matchmakerFreeFeatures = [
-        { label: 'Search & browse listings' },
-        { label: 'See basic profile fields only' },
-        { label: 'View Contact Info', muted: true },
-        { label: 'Messaging', muted: true },
-        { label: 'Full family / partner sections', muted: true },
-        { label: 'Add client profiles', muted: true },
-    ];
-
-    const matchmakerGoldFeatures = [
-        { label: '50 full-detail profile views per day' },
-        { label: 'View contacts & messaging' },
-        { label: 'Up to 5 client profiles' },
-        { label: 'Search & favourites' },
-    ];
-
-    const matchmakerDiamondFeatures = [
-        { label: 'Unlimited full-detail views' },
-        { label: 'View contacts & messaging' },
-        { label: 'Up to 10 client profiles' },
-        { label: 'Search & favourites' },
-    ];
-
-    const gridClass = isLoggedInMatchmaker
-        ? 'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-3 gap-8'
-        : 'max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8';
 
     return (
         <section className="relative py-24 px-4 overflow-hidden" id="pricing">
@@ -137,9 +79,18 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
 
             <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-primary-light/50 animate-price-pulse" />
-                <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-primary-dark/40 animate-price-pulse" style={{ animationDelay: '1.5s' }} />
-                <div className="absolute top-1/2 left-1/2 w-64 h-64 rounded-full bg-white/20 animate-price-float" style={{ animationDelay: '0.5s' }} />
-                <div className="absolute top-1/3 right-1/3 w-40 h-40 rounded-full bg-primary-light/30 animate-price-float" style={{ animationDelay: '2s' }} />
+                <div
+                    className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-primary-dark/40 animate-price-pulse"
+                    style={{ animationDelay: '1.5s' }}
+                />
+                <div
+                    className="absolute top-1/2 left-1/2 w-64 h-64 rounded-full bg-white/20 animate-price-float"
+                    style={{ animationDelay: '0.5s' }}
+                />
+                <div
+                    className="absolute top-1/3 right-1/3 w-40 h-40 rounded-full bg-primary-light/30 animate-price-float"
+                    style={{ animationDelay: '2s' }}
+                />
             </div>
 
             <div className="pricing-tree pricing-tree-left hidden md:block" aria-hidden>
@@ -157,168 +108,79 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                     <p className="text-white/90 text-lg md:text-xl">{t('pricingPlansDesc')}</p>
                 </div>
 
-                <div className={gridClass}>
-                    {/* Logged-in Matchmaker: tier cards only (Gold / Diamond + Free). */}
-                    {isLoggedInMatchmaker ? (
-                        <>
-                            <div className="rounded-3xl p-8 bg-white/70 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/80 transition-all duration-300">
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker · Free</h3>
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">LKR 0</span>
-                                </div>
-                                {renderFeatureList(matchmakerFreeFeatures)}
-                                <button
-                                    type="button"
-                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                                    onClick={onOpenSubscription}
-                                >
-                                    View upgrade options
-                                </button>
-                            </div>
+                {loading ? (
+                    <p className="text-center text-white/90 text-sm py-8">Loading plans…</p>
+                ) : packages.length === 0 ? (
+                    <p className="text-center text-white/90 text-sm py-8 max-w-md mx-auto">
+                        No plans are available right now. Please check back later or contact support.
+                    </p>
+                ) : (
+                    <div className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto">
+                        {packages.map((pkg) => {
+                            const id = packageId(pkg);
+                            const name = packageName(pkg);
+                            const desc = pkg.description ?? pkg.Description;
+                            const price = packagePrice(pkg);
+                            const period = packagePeriodLabel(pkg);
+                            const popular = !!(pkg.isPopular ?? pkg.IsPopular);
+                            const free = isFreePackage(pkg);
+                            const featureLabels = packageFeatureLabels(pkg);
+                            const validityLabel = packageValidityLabel(pkg);
 
-                            <div className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 border-white/40 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative">
-                                <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
-                                    {t('mostPopular')}
-                                </span>
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker Gold</h3>
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">
-                                        LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')}
-                                    </span>
-                                    <span className="text-text-light"> /yr</span>
-                                </div>
-                                {renderFeatureList(matchmakerGoldFeatures)}
-                                <button
-                                    type="button"
-                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                    onClick={() => goCheckout(CHECKOUT_PLAN_MATCHMAKER_GOLD, MATCHMAKER_GOLD_LKR)}
+                            return (
+                                <div
+                                    key={id || name}
+                                    className={`w-full max-w-[360px] rounded-3xl p-8 backdrop-blur-xl shadow-xl animate-glass-shine transition-all duration-300 relative ${
+                                        popular
+                                            ? 'bg-white/75 border-2 border-primary border-white/50 hover:bg-white/85'
+                                            : 'bg-white/70 border border-white/40 hover:bg-white/80'
+                                    }`}
                                 >
-                                    {t('upgradeNow')}
-                                </button>
-                            </div>
-
-                            <div className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300">
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Matchmaker Diamond</h3>
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">
-                                        LKR {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}
-                                    </span>
-                                    <span className="text-text-light"> /yr</span>
+                                    {popular && (
+                                        <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
+                                            {t('mostPopular')}
+                                        </span>
+                                    )}
+                                    <h3 className="text-2xl font-playfair font-bold text-text-dark mb-2">{name}</h3>
+                                    {desc ? (
+                                        <p className="text-text-light text-sm mb-4">{desc}</p>
+                                    ) : null}
+                                    <div className="mb-6">
+                                        <span className="text-4xl font-bold text-text-dark">
+                                            LKR {price.toLocaleString('en-LK')}
+                                        </span>
+                                        {period ? (
+                                            <span className="text-text-light">{period}</span>
+                                        ) : null}
+                                        {validityLabel && !free ? (
+                                            <p className="text-text-light text-sm mt-2">
+                                                Valid for: <span className="font-medium text-text-dark">{validityLabel}</span>
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    {renderFeatureList(featureLabels)}
+                                    {free ? (
+                                        <button
+                                            type="button"
+                                            className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                            onClick={onOpenSubscription}
+                                        >
+                                            {t('getStarted')}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
+                                            onClick={() => goCheckout(pkg)}
+                                        >
+                                            {t('upgradeNow')}
+                                        </button>
+                                    )}
                                 </div>
-                                {renderFeatureList(matchmakerDiamondFeatures)}
-                                <button
-                                    type="button"
-                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                    onClick={() => goCheckout(CHECKOUT_PLAN_MATCHMAKER_DIAMOND, MATCHMAKER_DIAMOND_LKR)}
-                                >
-                                    {t('upgradeNow')}
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            {/* Free — Self / visitors */}
-                            <div className="rounded-3xl p-8 bg-white/70 backdrop-blur-xl border border-white/40 shadow-xl animate-glass-shine hover:bg-white/80 transition-all duration-300">
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">{t('free')}</h3>
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">LKR 0</span>
-                                    <span className="text-text-light">/mo</span>
-                                </div>
-                                {renderFeatureList(freeFeatures)}
-                                <button
-                                    type="button"
-                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                                    onClick={onOpenSubscription}
-                                >
-                                    {t('getStarted')}
-                                </button>
-                            </div>
-
-                            {/* Standard Premium — Self seekers */}
-                            <div
-                                key="premium-standard"
-                                className="rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 border-primary border-white/50 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative"
-                            >
-                                <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
-                                    {t('mostPopular')}
-                                </span>
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-4">Premium</h3>
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">
-                                        LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}
-                                    </span>
-                                    <span className="text-text-light">/mo</span>
-                                </div>
-                                {renderFeatureList(fallbackPremiumFeatures)}
-                                <button
-                                    type="button"
-                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                    onClick={() => goCheckout(CHECKOUT_PLAN_PREMIUM_SELF, PREMIUM_SUBSCRIPTION_LKR)}
-                                >
-                                    {t('upgradeNow')}
-                                </button>
-                            </div>
-
-                            {/* Extra paid tiers from admin */}
-                            {paidPackages.map((pkg) => {
-                        const id = pkg.id ?? pkg.Id ?? 0;
-                        const name = pkg.name ?? pkg.Name ?? 'Package';
-                        const desc = pkg.description ?? pkg.Description;
-                        const price = Number(pkg.price ?? pkg.Price ?? 0);
-                        const period = pkg.pricePeriodLabel ?? pkg.PricePeriodLabel ?? '/mo';
-                        const popular = pkg.isPopular ?? pkg.IsPopular ?? false;
-                        const feats = pkg.features ?? pkg.Features ?? [];
-                        const featureItems = feats.map((f) => ({
-                            label: f.label ?? f.Label ?? f.key ?? f.Key ?? '',
-                            muted: false,
-                        }));
-
-                        return (
-                            <div
-                                key={id}
-                                className={`rounded-3xl p-8 bg-white/75 backdrop-blur-xl border-2 shadow-xl animate-glass-shine hover:bg-white/85 transition-all duration-300 relative ${
-                                    popular ? 'border-primary border-white/50' : 'border-white/40'
-                                }`}
-                            >
-                                {popular && (
-                                    <span className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">
-                                        {t('mostPopular')}
-                                    </span>
-                                )}
-                                <h3 className="text-2xl font-playfair font-bold text-text-dark mb-2">{name}</h3>
-                                {desc ? (
-                                    <p className="text-text-light text-sm mb-4">{desc}</p>
-                                ) : null}
-                                <div className="mb-6">
-                                    <span className="text-4xl font-bold text-text-dark">
-                                        LKR {price.toLocaleString('en-LK')}
-                                    </span>
-                                    <span className="text-text-light">{period}</span>
-                                </div>
-                                {featureItems.length > 0 ? (
-                                    <ul className="space-y-3 mb-8">
-                                        {featureItems.map((it, i) => (
-                                            <li key={i} className="flex items-center gap-2 text-text-dark">
-                                                <span className="text-primary">✓</span>
-                                                {it.label}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="text-text-light text-sm mb-8">No features selected for this package.</p>
-                                )}
-                                <button
-                                    className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                    onClick={() => goCheckout(CHECKOUT_PLAN_PREMIUM_SELF, price)}
-                                >
-                                    {t('upgradeNow')}
-                                </button>
-                            </div>
-                        );
-                    })}
-                        </>
-                    )}
-                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         </section>
     );

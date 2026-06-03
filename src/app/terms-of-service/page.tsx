@@ -11,8 +11,8 @@ export default function TermsOfServicePage() {
         <LegalPageShell
             title={t('termsOfService')}
             effectiveDateLabel="Effective date: April 7, 2026. Prior versions are superseded and may be obtained from legal@mymatch.lk."
-            siblingHref="/privacy-policy"
-            siblingTitleKey="privacyPolicy"
+            siblingHref="/cookie-policy"
+            siblingTitleKey="cookiePolicy"
         >
             <TermsOfServiceBody />
         </LegalPageShell>

@@ -14,7 +14,6 @@ import Pricing from '../components/Pricing';
 import Footer from '../components/Footer';
 import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
-import { matrimonialService } from '../services/matrimonialService';
 import { useAuth } from '../context/AuthContext';
 
 export default function Home() {
@@ -53,14 +52,6 @@ export default function Home() {
     const handleOpenVerify = () => openModal('verify');
     window.addEventListener('open-verify-modal', handleOpenVerify);
     return () => window.removeEventListener('open-verify-modal', handleOpenVerify);
-  }, []);
-
-  useEffect(() => {
-    const webLink =
-      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ||
-      (typeof window !== 'undefined' ? window.location.origin : '');
-    if (!webLink) return;
-    matrimonialService.saveCorsLink(webLink, true);
   }, []);
 
   const showHomePricing = !user || user.isSubscribed !== true;

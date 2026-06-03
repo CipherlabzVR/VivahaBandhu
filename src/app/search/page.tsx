@@ -19,23 +19,29 @@ import {
     quickSearchFromUrlParams,
     writeQuickSearchSession,
 } from '../../utils/quickSearchSession';
+import { brideGroomToBrowseGender, managedParentShowsBothGenders, profileBrowseGender, viewerUserIdForBrowseGenderFilter } from '../../utils/selfAccountBrowseGender';
 import { showToast } from '../../utils/toast';
+import { profileBrowseUserId } from '../../utils/browseProfileFilters';
+import { useOwnedSubAccountsForBrowse } from '../../hooks/useOwnedSubAccountsForBrowse';
 
 function SearchContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const { language, t } = useLanguage();
     const { user, loading } = useAuth();
+    const { ownedIds, subAccounts } = useOwnedSubAccountsForBrowse();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
     const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [results, setResults] = useState<any[]>([]);
 
-    const [quickFilters, setQuickFilters] = useState<QuickSearchState>(() => quickSearchFromUrlParams(searchParams));
+    const [quickFilters, setQuickFilters] = useState<QuickSearchState>(() =>
+        quickSearchFromUrlParams(searchParams, user, subAccounts)
+    );
     const paramsKey = searchParams.toString();
     useEffect(() => {
-        setQuickFilters(quickSearchFromUrlParams(searchParams));
-    }, [paramsKey, searchParams]);
+        setQuickFilters(quickSearchFromUrlParams(searchParams, user, subAccounts));
+    }, [paramsKey, searchParams, user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts]);
 
     const handleQuickFilterChange = useCallback((name: string, value: string) => {
         setQuickFilters((prev) => ({ ...prev, [name]: value }));
@@ -71,11 +77,15 @@ function SearchContent() {
         const fetchAndFilterProfiles = async () => {
             try {
                 // Fetch up to 100 recent profiles and filter them on the client side since we don't have a search endpoint yet
-                const res = await matrimonialService.getRecentProfiles(100);
+                const res = await matrimonialService.getRecentProfiles(100, viewerUserIdForBrowseGenderFilter(user));
                 if (res.statusCode === 200 && res.result) {
                     const allProfiles = res.result;
 
-                    const gender = searchParams.get('gender');
+                    const genderParam = searchParams.get('gender');
+                    const resolvedGender =
+                        genderParam && genderParam !== 'Any'
+                            ? genderParam
+                            : quickSearchFromUrlParams(searchParams, user, subAccounts).gender;
                     const ageFrom = searchParams.get('ageFrom');
                     const ageTo = searchParams.get('ageTo');
                     const religion = searchParams.get('religion');
@@ -84,6 +94,7 @@ function SearchContent() {
                     const q = (qRaw ?? '').trim().toLowerCase();
 
                     const filtered = allProfiles.filter((profile: any) => {
+                        if (ownedIds.size > 0 && ownedIds.has(profileBrowseUserId(profile))) return false;
                         if (user?.id != null) {
                             const pid = Number(profile.userId ?? profile.UserId ?? 0);
                             if (pid === Number(user.id)) return false;
@@ -113,9 +124,9 @@ function SearchContent() {
                                 if (!parts.length || !parts.every((w: string) => blob.includes(w))) return false;
                             }
                         }
-                        if (gender && gender !== 'Any') {
-                            const targetGender = gender === 'Bride' ? 'Female' : 'Male';
-                            if (profile.gender !== targetGender) return false;
+                        if (resolvedGender && resolvedGender !== 'Any') {
+                            const targetGender = brideGroomToBrowseGender(resolvedGender);
+                            if (targetGender && profileBrowseGender(profile) !== targetGender) return false;
                         }
                         if (ageFrom && profile.age < parseInt(ageFrom)) return false;
                         if (ageTo && profile.age > parseInt(ageTo)) return false;
@@ -132,7 +143,7 @@ function SearchContent() {
             }
         };
         fetchAndFilterProfiles();
-    }, [searchParams, user?.id]);
+    }, [searchParams, user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts, ownedIds]);
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
@@ -169,6 +180,9 @@ function SearchContent() {
                                 value={quickFilters.gender}
                                 onChange={handleQuickFilterChange}
                                 options={[
+                                    ...(managedParentShowsBothGenders(subAccounts)
+                                        ? [{ value: 'Any', label: 'Any' }]
+                                        : []),
                                     { value: 'Bride', label: 'Bride' },
                                     { value: 'Groom', label: 'Groom' },
                                 ]}

@@ -3,6 +3,8 @@
 import { useRef, useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { sanitizeNameInput } from '../utils/nameInput';
+import { matrimonialService } from '../services/matrimonialService';
+import { showToast } from '../utils/toast';
 
 const HEART_PATH =
     'M 5 25 ' +
@@ -18,6 +20,7 @@ export default function ContactUs() {
     const pathRef = useRef<SVGPathElement>(null);
     const [pathLength, setPathLength] = useState<number | null>(null);
     const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', message: '' });
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         const path = pathRef.current;
@@ -34,9 +37,36 @@ export default function ContactUs() {
         animationFillMode: 'both',
     } as React.CSSProperties);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // Placeholder: could send to API or mailto
+        const email = formData.email.trim();
+        const message = formData.message.trim();
+        if (!email || !message) {
+            showToast(t('contactFormValidation'), 'error');
+            return;
+        }
+
+        setSubmitting(true);
+        try {
+            const res = await matrimonialService.submitContactForm({
+                firstName: formData.firstName.trim(),
+                lastName: formData.lastName.trim(),
+                email,
+                message,
+                sourcePath: typeof window !== 'undefined' ? window.location.pathname : '/contact',
+            });
+            const ok = res?.statusCode === 200 || res?.statusCode === 1 || res?.StatusCode === 200 || res?.StatusCode === 1;
+            if (ok) {
+                showToast(t('contactFormSuccess'), 'success');
+                setFormData({ firstName: '', lastName: '', email: '', message: '' });
+            } else {
+                showToast(res?.message || res?.Message || t('contactFormError'), 'error');
+            }
+        } catch {
+            showToast(t('contactFormError'), 'error');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -228,9 +258,10 @@ export default function ContactUs() {
                             </div>
                             <button
                                 type="submit"
-                                className="w-full py-4 bg-primary hover:bg-primary-dark text-white font-medium rounded transition-colors"
+                                disabled={submitting}
+                                className="w-full py-4 bg-primary hover:bg-primary-dark text-white font-medium rounded transition-colors disabled:opacity-60"
                             >
-                                {t('sendButton')}
+                                {submitting ? t('contactFormSending') : t('sendButton')}
                             </button>
                         </form>
                     </div>

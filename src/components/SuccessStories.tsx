@@ -92,9 +92,34 @@ interface StoryItem {
     coupleNameSi: string;
     quote: string;
     quoteSi: string;
-    imageUrl?: string;
-    /** Some API payloads use PascalCase */
-    ImageUrl?: string;
+    imageUrl: string;
+}
+
+/** API may return camelCase or PascalCase property names. */
+function normalizeSuccessStory(raw: Record<string, unknown>): StoryItem {
+    const str = (v: unknown) => (v != null ? String(v).trim() : '');
+    return {
+        id: Number(raw.id ?? raw.Id ?? 0),
+        coupleName: str(raw.coupleName ?? raw.CoupleName),
+        coupleNameSi: str(raw.coupleNameSi ?? raw.CoupleNameSi),
+        quote: str(raw.quote ?? raw.Quote),
+        quoteSi: str(raw.quoteSi ?? raw.QuoteSi),
+        imageUrl: str(raw.imageUrl ?? raw.ImageUrl),
+    };
+}
+
+function resolveStoryQuote(story: StoryItem, language: 'en' | 'si'): string {
+    if (language === 'si') {
+        return story.quoteSi || story.quote;
+    }
+    return story.quote || story.quoteSi;
+}
+
+function resolveStoryCoupleName(story: StoryItem, language: 'en' | 'si'): string {
+    if (language === 'si') {
+        return story.coupleNameSi || story.coupleName;
+    }
+    return story.coupleName || story.coupleNameSi;
 }
 
 export default function SuccessStories() {
@@ -135,8 +160,11 @@ export default function SuccessStories() {
             try {
                 const res = await fetch(`${API_BASE_URL}/Matrimonial/GetSuccessStoriesForWebsite`);
                 const data = await res.json();
-                if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
-                    setStories(data.result);
+                const rawList = data?.result ?? data?.Result;
+                if (Array.isArray(rawList) && rawList.length > 0) {
+                    setStories(
+                        rawList.map((row: Record<string, unknown>) => normalizeSuccessStory(row))
+                    );
                     setUseFallback(false);
                 } else {
                     setUseFallback(true);
@@ -248,9 +276,9 @@ export default function SuccessStories() {
                             );
                         })
                         : storiesSlice.map((story) => {
-                            const name = language === 'si' && story.coupleNameSi ? story.coupleNameSi : story.coupleName;
-                            const quoteText = language === 'si' && story.quoteSi ? story.quoteSi : story.quote;
-                            const imgSrc = resolveStoryImageSrc(story.imageUrl ?? story.ImageUrl);
+                            const name = resolveStoryCoupleName(story, language);
+                            const quoteText = resolveStoryQuote(story, language);
+                            const imgSrc = resolveStoryImageSrc(story.imageUrl);
                             return (
                                 <article
                                     key={story.id}

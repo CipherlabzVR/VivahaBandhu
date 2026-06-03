@@ -1,33 +1,52 @@
 'use client';
 
-import { useEffect, useState, Suspense, useRef } from 'react';
+import { useEffect, useState, Suspense, useRef, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import ManagedSubAccountActivityCard from '../../components/ManagedSubAccountActivityCard';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
-import { sanitizeNicInput, nicOrPassportFormatError, NIC_PASSPORT_HINT } from '../../utils/nicInput';
+import { sanitizeNicInput, nicOrPassportFormatError, NIC_PASSPORT_HINT, parseNicToDobAndGender } from '../../utils/nicInput';
 import { sanitizeNameInput } from '../../utils/nameInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, canonicalSriLankanPhoneDigits } from '../../utils/sriLankanPhone';
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
 import {
     isMatchmakerPaidTier,
-    SELF_MANAGED_SUB_ACCOUNT_MAX_FREE,
-    SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM,
+    PREMIUM_SUBSCRIPTION_LKR,
+    CHECKOUT_PLAN_SUB_ACCOUNT,
 } from '../../constants/subscription';
+import { PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE } from '../../constants/premiumActivation';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../constants/inputLimits';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
+import { markManagedProfileDraftCompleted } from '../../utils/managedProfileDraft';
+import {
+    isBasicProfileOnlyAccountType,
+    isFamilyParentAccountType,
+    isRelationAccountType,
+    displayMatrimonialAccountType,
+} from '../../utils/matrimonialAccountTypes';
+import ClientProfileBadge from '../../components/ClientProfileBadge';
 import {
     isInterestBackNotification,
+    managedProfileUserIdFromNotification,
     referenceIdFromNotification,
 } from '../../utils/matrimonialInterestNotifications';
+import {
+    canManageSubAccounts,
+    normalizeSubAccount,
+    shouldShowManagedProfileTabs,
+    subAccountDisplayName,
+    type ManagedSubAccount,
+} from '../../utils/managedSubAccounts';
 import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
+import { formatSubscriptionTimeRemaining, parseSubscriptionRemaining } from '../../utils/subscriptionExpiry';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
@@ -47,19 +66,42 @@ function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | unde
     return code === 200 || code === 1;
 }
 
-/** Display subscription end date from stored ISO string (UTC instant from API). */
-function formatSubscriptionExpiresDisplay(iso: string | undefined): string {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
 function ProfilePageContent() {
     const { user, loading, updateUser, logout } = useAuth();
+    const managedCreateConfig = useMemo(
+        () => (user?.id ? { parentUserId: Number(user.id) } : undefined),
+        [user?.id],
+    );
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const { liveInterestRevision } = useMatrimonialNotifications();
-    const { language, setLanguage } = useLanguage();
+    const { language, setLanguage, t } = useLanguage();
+
+    const subscriptionRemainingInfo = user?.subscriptionExpiresAt
+        ? parseSubscriptionRemaining(user.subscriptionExpiresAt)
+        : null;
+
+    const subscriptionRemainingDisplay =
+        user?.isSubscribed && user.subscriptionIsLifetime
+            ? { primary: t('subscriptionLifetime'), secondary: '' }
+            : user?.isSubscribed && user.subscriptionExpiresAt
+              ? formatSubscriptionTimeRemaining(
+                    user.subscriptionExpiresAt,
+                    {
+                        expired: t('subscriptionTimeExpired'),
+                        oneDay: t('subscriptionOneDayRemaining'),
+                        days: (n) => t('subscriptionDaysRemaining').replace('{n}', String(n)),
+                        hours: (n) => t('subscriptionHoursRemaining').replace('{n}', String(n)),
+                        today: t('subscriptionExpiresToday'),
+                        endsOn: (date) => t('subscriptionEndsOn').replace('{date}', date),
+                    },
+                    language === 'si' ? 'si-LK' : undefined
+                )
+              : null;
+
+    const subscriptionPeriodLabel =
+        user?.accountType === 'Matchmaker'
+            ? t('subscriptionBillingPeriodMatchmaker')
+            : t('subscriptionBillingPeriodSelf');
     const router = useRouter();
     const searchParams = useSearchParams();
     const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
@@ -231,14 +273,26 @@ function ProfilePageContent() {
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
                     profileUpdates.isSubscribed = subscribed;
 
-                    const subUntil = r.subscriptionUntilUtc ?? r.SubscriptionUntilUtc;
-                    if (subUntil != null && String(subUntil).trim() !== '') {
+                    const subUntil =
+                        r.subscriptionUntilUtc ??
+                        r.SubscriptionUntilUtc ??
+                        r.selfPremiumSubscriptionUntilUtc ??
+                        r.SelfPremiumSubscriptionUntilUtc ??
+                        r.matchmakerSubscriptionUntilUtc ??
+                        r.MatchmakerSubscriptionUntilUtc;
+                    const subLifetime =
+                        r.subscriptionIsLifetime ?? r.SubscriptionIsLifetime ?? false;
+                    profileUpdates.subscriptionIsLifetime = !!subLifetime;
+                    if (subLifetime) {
+                        profileUpdates.subscriptionExpiresAt = undefined;
+                    } else if (subUntil != null && String(subUntil).trim() !== '') {
                         const exp = new Date(String(subUntil));
                         if (!Number.isNaN(exp.getTime())) {
                             profileUpdates.subscriptionExpiresAt = exp.toISOString();
                         }
                     } else if (!subscribed) {
                         profileUpdates.subscriptionExpiresAt = undefined;
+                        profileUpdates.subscriptionIsLifetime = false;
                     }
 
                     const vwTier = r.viewerMatchmakerTier ?? r.ViewerMatchmakerTier;
@@ -276,6 +330,23 @@ function ProfilePageContent() {
                     if (showContact !== undefined && showContact !== null) {
                         profileUpdates.showContactInformation = !!showContact;
                     }
+
+                    const famPurchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
+                    const famConsumed = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
+                    const famPrice = r.familySubAccountAdditionalAmountLkr ?? r.FamilySubAccountAdditionalAmountLkr;
+                    const famValidity = r.familySubAccountPackageValidityMonths ?? r.FamilySubAccountPackageValidityMonths;
+                    if (famPurchased != null && famPurchased !== '') {
+                        profileUpdates.familySubAccountSlotsPurchased = Number(famPurchased);
+                    }
+                    if (famConsumed != null && famConsumed !== '') {
+                        profileUpdates.familySubAccountSlotsConsumed = Number(famConsumed);
+                    }
+                    if (famPrice != null && famPrice !== '') {
+                        profileUpdates.familySubAccountAdditionalAmountLkr = Number(famPrice);
+                    }
+                    if (famValidity != null && famValidity !== '') {
+                        profileUpdates.familySubAccountPackageValidityMonths = Number(famValidity);
+                    }
                     
                     // Update user context with all available data
                     if (Object.keys(profileUpdates).length > 0) {
@@ -288,11 +359,12 @@ function ProfilePageContent() {
 
                     const effectiveAccountType = profileUpdates.accountType || user?.accountType || '';
                     const isMatchmakerAccount = effectiveAccountType === 'Matchmaker';
+                    const basicProfileOnly = isBasicProfileOnlyAccountType(effectiveAccountType);
                     const mergedParentUserId = profileUpdates.parentUserId ?? user?.parentUserId;
                     const managedChildProfile = isManagedSubAccount({ parentUserId: mergedParentUserId });
 
-                    if (isMatchmakerAccount) {
-                        // Matchmakers manage sub-accounts, they don't need their own detailed profile.
+                    if (isMatchmakerAccount || basicProfileOnly) {
+                        // Matchmakers and Parents manage sub-accounts; they don't need a detailed profile.
                         setProfileCompleted(true);
                     } else if (managedChildProfile) {
                         // Sub-account under a Self parent: basic signup only — no detailed wizard.
@@ -321,11 +393,11 @@ function ProfilePageContent() {
                 }
                 const effectiveAccountType2 = profileUpdates.accountType || user?.accountType || '';
                 const isMatchmakerAccount = effectiveAccountType2 === 'Matchmaker';
+                const basicProfileOnly = isBasicProfileOnlyAccountType(effectiveAccountType2);
                 const managedOnlyUser = isManagedSubAccount({
                     parentUserId: profileUpdates.parentUserId ?? user?.parentUserId,
                 });
-                if (isMatchmakerAccount) {
-                    // Matchmakers don't need their own detailed matrimonial profile.
+                if (isMatchmakerAccount || basicProfileOnly) {
                     setProfileCompleted(true);
                 } else if (managedOnlyUser) {
                     setProfileCompleted(true);
@@ -363,15 +435,20 @@ function ProfilePageContent() {
     /** URL for HoroscopeLightbox — primary or secondary document. */
     const [horoscopeViewSrc, setHoroscopeViewSrc] = useState<string | null>(null);
     const profileCompletionModalScrollRef = useRef<HTMLDivElement>(null);
+    const managedProfileModalScrollRef = useRef<HTMLDivElement>(null);
+    const interestedInYouSectionRef = useRef<HTMLDivElement>(null);
 
     const [subAccounts, setSubAccounts] = useState<any[]>([]);
+    const [managedSubActivity, setManagedSubActivity] = useState<any[]>([]);
     const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
     const [interestProfiles, setInterestProfiles] = useState<any[]>([]);
     /** Members who expressed interest in the current user (from interest notifications). */
     const [incomingInterestProfiles, setIncomingInterestProfiles] = useState<any[]>([]);
+    const [activeInterestSubAccountId, setActiveInterestSubAccountId] = useState<number | null>(null);
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
     const [loadingSavedProfiles, setLoadingSavedProfiles] = useState(false);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
+    const [managedProfileFormSession, setManagedProfileFormSession] = useState(0);
     const [subAccountForm, setSubAccountForm] = useState({
         firstName: '',
         lastName: '',
@@ -394,6 +471,7 @@ function ProfilePageContent() {
     const [subAccountPhotoBase64, setSubAccountPhotoBase64] = useState<string>('');
     const [subAccountPhotoPreview, setSubAccountPhotoPreview] = useState<string>('');
     const [subAccountTermsAccepted, setSubAccountTermsAccepted] = useState(false);
+    const [liveSubAccountPackage, setLiveSubAccountPackage] = useState<{ price: number; validityMonths?: number } | null>(null);
 
     /** After Register API returns registrationSessionId, collect OTP — account is created only after VerifyCode. */
     const [subAccountVerifyStep, setSubAccountVerifyStep] = useState(false);
@@ -404,10 +482,134 @@ function ProfilePageContent() {
     const [subAccountVerificationHint, setSubAccountVerificationHint] = useState<string | null>(null);
 
     useEffect(() => {
-        if ((user?.accountType === 'Self' || user?.accountType === 'Matchmaker') && user.id) {
-            fetchSubAccounts();
+        if (isFamilyParentAccountType(user?.accountType) || user?.accountType === 'Matchmaker') {
+            if (user?.id) {
+                fetchSubAccounts();
+                fetchManagedSubActivity();
+            }
         }
     }, [user]);
+
+    const managedSubAccountTabs = useMemo(
+        () =>
+            subAccounts
+                .map((row) => normalizeSubAccount(row as Record<string, unknown>))
+                .filter(Boolean) as ManagedSubAccount[],
+        [subAccounts]
+    );
+
+    const showInterestProfileTabs = useMemo(
+        () => canManageSubAccounts(user?.accountType) && shouldShowManagedProfileTabs(managedSubAccountTabs),
+        [user?.accountType, managedSubAccountTabs]
+    );
+
+    const activeInterestSubAccount = useMemo(
+        () => managedSubAccountTabs.find((s) => s.id === activeInterestSubAccountId) ?? null,
+        [managedSubAccountTabs, activeInterestSubAccountId]
+    );
+
+    const interestUnreadBySubAccount = useMemo(() => {
+        const map: Record<number, number> = {};
+        for (const p of incomingInterestProfiles) {
+            const subId = p.managedProfileUserId;
+            if (subId == null || !Number.isFinite(Number(subId))) continue;
+            const id = Number(subId);
+            map[id] = (map[id] ?? 0) + 1;
+        }
+        return map;
+    }, [incomingInterestProfiles]);
+
+    const filteredIncomingInterestProfiles = useMemo(() => {
+        if (!showInterestProfileTabs || activeInterestSubAccountId == null) {
+            return incomingInterestProfiles;
+        }
+        return incomingInterestProfiles.filter(
+            (p) => Number(p.managedProfileUserId) === activeInterestSubAccountId
+        );
+    }, [incomingInterestProfiles, showInterestProfileTabs, activeInterestSubAccountId]);
+
+    useEffect(() => {
+        if (!showInterestProfileTabs || managedSubAccountTabs.length === 0) {
+            setActiveInterestSubAccountId(null);
+            return;
+        }
+        setActiveInterestSubAccountId((prev) => {
+            if (prev != null && managedSubAccountTabs.some((s) => s.id === prev)) return prev;
+            return managedSubAccountTabs[0]?.id ?? null;
+        });
+    }, [showInterestProfileTabs, managedSubAccountTabs]);
+
+    const formatSubActivityTime = useCallback(
+        (v: unknown) => formatDeviceDateTime(v, { dateStyle: 'short', timeStyle: 'short' }),
+        []
+    );
+
+    const goToSubAccountMessages = useCallback(
+        (subUserId: number) => {
+            router.push(`/messages?managedProfileUserId=${subUserId}`);
+        },
+        [router]
+    );
+
+    const goToSubAccountInterest = useCallback(
+        (subUserId: number) => {
+            setActiveInterestSubAccountId(subUserId);
+            window.setTimeout(() => {
+                interestedInYouSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 50);
+        },
+        []
+    );
+
+    const managedSubActivityFor = useCallback(
+        (subUserId: number) =>
+            managedSubActivity.find(
+                (row: { subUserId?: number; SubUserId?: number }) =>
+                    (row.subUserId ?? row.SubUserId) === subUserId
+            ),
+        [managedSubActivity]
+    );
+
+    const openManagedSubProfile = useCallback(
+        (subAccount: { id: number; firstName?: string; lastName?: string; profilePhoto?: string | null }) => {
+            const managerName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
+            const profilePayload: Record<string, unknown> = {
+                userId: subAccount.id,
+                firstName: subAccount.firstName,
+                lastName: subAccount.lastName,
+                profilePhoto: subAccount.profilePhoto,
+            };
+            if (user?.accountType === 'Matchmaker') {
+                profilePayload.isMatchmakerManaged = true;
+                profilePayload.matchmakerName = managerName;
+            } else if (canManageSubAccounts(user?.accountType)) {
+                profilePayload.isFamilyManaged = true;
+                profilePayload.managedByLabel = isRelationAccountType(user?.accountType)
+                    ? 'Managed by relation'
+                    : 'Managed by parent';
+                profilePayload.managerName = managerName;
+            }
+            openModal('profile', undefined, profilePayload);
+        },
+        [openModal, user?.accountType, user?.firstName, user?.lastName]
+    );
+
+    const familyManagedByLabel = isRelationAccountType(user?.accountType)
+        ? 'Managed by relation'
+        : 'Managed by parent';
+    const managerDisplayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
+
+    useEffect(() => {
+        const raw = searchParams?.get('interestSub');
+        const subId = raw ? Number(raw) : NaN;
+        if (!Number.isFinite(subId) || subId <= 0) return;
+        if (!managedSubAccountTabs.some((s) => s.id === subId)) return;
+        setActiveInterestSubAccountId(subId);
+        const t = window.setTimeout(() => {
+            interestedInYouSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
+        return () => window.clearTimeout(t);
+    }, [searchParams, managedSubAccountTabs]);
 
     useEffect(() => {
         const fetchSavedAndActivity = async () => {
@@ -529,15 +731,28 @@ function ProfilePageContent() {
 
                 const rawNotifsEarly = notifRes?.result ?? notifRes?.Result ?? [];
                 const notifListEarly = Array.isArray(rawNotifsEarly) ? rawNotifsEarly : [];
-                const incomingRowsMeta: { refId: number; atLabel: string; isInterestBack: boolean }[] = [];
-                const incomingSeenIds = new Set<number>();
-                for (const n of notifListEarly) {
+                const isNotificationUnread = (n: Record<string, unknown>) =>
+                    !(n.isRead ?? n.IsRead);
+                const pendingNotifs = notifListEarly.filter((n) =>
+                    isNotificationUnread(n as Record<string, unknown>)
+                );
+                const incomingRowsMeta: {
+                    refId: number;
+                    managedProfileUserId: number | null;
+                    atLabel: string;
+                    isInterestBack: boolean;
+                }[] = [];
+                const incomingSeenKeys = new Set<string>();
+                for (const n of pendingNotifs) {
                     const refId = referenceIdFromNotification(n as Record<string, unknown>);
-                    if (!refId || incomingSeenIds.has(refId)) continue;
-                    incomingSeenIds.add(refId);
+                    const managedProfileUserId = managedProfileUserIdFromNotification(n as Record<string, unknown>);
+                    const dedupeKey = `${managedProfileUserId ?? 'none'}-${refId}`;
+                    if (!refId || incomingSeenKeys.has(dedupeKey)) continue;
+                    incomingSeenKeys.add(dedupeKey);
                     const at = (n as any).createdOn ?? (n as any).CreatedOn;
                     incomingRowsMeta.push({
                         refId,
+                        managedProfileUserId,
                         atLabel: formatListTime(at),
                         isInterestBack: isInterestBackNotification(n as Record<string, unknown>),
                     });
@@ -588,6 +803,7 @@ function ProfilePageContent() {
                     if (!pr) continue;
                     incomingInterestList.push({
                         ...pr,
+                        managedProfileUserId: row.managedProfileUserId,
                         interestedAtLabel: row.atLabel,
                         isInterestBack: row.isInterestBack,
                     });
@@ -668,6 +884,23 @@ function ProfilePageContent() {
         fetchSavedAndActivity();
     }, [user?.id, liveInterestRevision]);
 
+    const fetchManagedSubActivity = async () => {
+        if (!user?.id) return;
+        try {
+            const data = await matrimonialService.getManagedSubAccountsActivity(Number(user.id));
+            if (data?.result) {
+                setManagedSubActivity(Array.isArray(data.result) ? data.result : []);
+            }
+        } catch (error) {
+            console.error('Failed to fetch managed profile activity', error);
+        }
+    };
+
+    useEffect(() => {
+        if (!user?.id || !canManageSubAccounts(user.accountType)) return;
+        void fetchManagedSubActivity();
+    }, [user?.id, user?.accountType, liveInterestRevision]);
+
     const fetchSubAccounts = async () => {
         try {
             const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/GetSubAccounts?parentUserId=${user?.id}`, {
@@ -741,35 +974,15 @@ function ProfilePageContent() {
         e.preventDefault();
         setSubAccountError(null);
 
-        if (user?.accountType === 'Self') {
-            const cap =
-                user.isSubscribed === true
-                    ? SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM
-                    : SELF_MANAGED_SUB_ACCOUNT_MAX_FREE;
-            if (subAccounts.length >= cap) {
-                setSubAccountError(
-                    user.isSubscribed === true
-                        ? `You already have the maximum of ${cap} sub-accounts.`
-                        : `Free accounts can create only ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account. Upgrade to Premium for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`,
-                );
-                return;
-            }
-        }
-
-        if (user?.accountType === 'Father' || user?.accountType === 'Mother' || user?.accountType === 'Relation') {
-            if (user.isSubscribed !== true) {
-                setSubAccountError('Subscribe to Premium to add a sub-account for your family member.');
-                return;
-            }
-            const purchased = Math.max(1, user.familySubAccountSlotsPurchased ?? 1);
+        if (isFamilyParentAccountType(user?.accountType)) {
+            const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
             const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
             if (consumed >= purchased) {
-                const max = user.familySubAccountSlotsMaxTotal ?? 3;
-                const price = user.familySubAccountAdditionalAmountLkr ?? 1990;
+                const price = liveSubAccountPackage?.price ?? user.familySubAccountAdditionalAmountLkr ?? PREMIUM_SUBSCRIPTION_LKR;
                 setSubAccountError(
-                    purchased >= max
-                        ? `You have used all ${max} sub-account slots available on this account.`
-                        : `Your sub-account slot is already used. Pay LKR ${price.toLocaleString()} to add another (up to ${max} total).`,
+                    purchased <= 0
+                        ? `Pay LKR ${price.toLocaleString()} for a sub-account package before creating a managed profile.`
+                        : `You have used all ${purchased} sub-account slot(s). Pay LKR ${price.toLocaleString()} for each additional slot.`,
                 );
                 return;
             }
@@ -944,7 +1157,70 @@ function ProfilePageContent() {
 
     const [isSavingEmailPref, setIsSavingEmailPref] = useState(false);
     const [isSavingContactVisibilityPref, setIsSavingContactVisibilityPref] = useState(false);
-    const [isPurchasingFamilySlot, setIsPurchasingFamilySlot] = useState(false);
+    const [bankSubAccountAwaitingApproval, setBankSubAccountAwaitingApproval] = useState(false);
+
+    const refreshFamilySubAccountSlots = useCallback(async () => {
+        if (!user?.id || !isFamilyParentAccountType(user.accountType)) return;
+        const token = getStoredToken();
+        if (!token) return;
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+        try {
+            const res = await fetch(
+                `${apiBase}/Matrimonial/GetProfile?userId=${user.id}&requesterUserId=${user.id}&cb=${Date.now()}`,
+                { headers: { Authorization: `Bearer ${token}` } },
+            );
+            if (!res.ok) return;
+            const data = await res.json();
+            const r = data?.result ?? data?.Result;
+            if (!r || typeof r !== 'object') return;
+
+            const purchasedRaw = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
+            const consumedRaw = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
+            const priceRaw = r.familySubAccountAdditionalAmountLkr ?? r.FamilySubAccountAdditionalAmountLkr;
+            const validityRaw = r.familySubAccountPackageValidityMonths ?? r.FamilySubAccountPackageValidityMonths;
+            const subscribedRaw = r.isSubscribed ?? r.IsSubscribed;
+            const untilRaw = r.subscriptionUntilUtc ?? r.SubscriptionUntilUtc;
+            const lifetimeRaw = r.subscriptionIsLifetime ?? r.SubscriptionIsLifetime;
+
+            const updates: Record<string, unknown> = {};
+            if (purchasedRaw != null && purchasedRaw !== '') updates.familySubAccountSlotsPurchased = Number(purchasedRaw);
+            if (consumedRaw != null && consumedRaw !== '') updates.familySubAccountSlotsConsumed = Number(consumedRaw);
+            if (priceRaw != null && priceRaw !== '') updates.familySubAccountAdditionalAmountLkr = Number(priceRaw);
+            if (validityRaw != null && validityRaw !== '') updates.familySubAccountPackageValidityMonths = Number(validityRaw);
+            if (subscribedRaw != null && subscribedRaw !== '') updates.isSubscribed = Boolean(subscribedRaw);
+            if (lifetimeRaw === true || lifetimeRaw === 'true') {
+                updates.subscriptionIsLifetime = true;
+                updates.subscriptionExpiresAt = undefined;
+            } else if (untilRaw != null && String(untilRaw).trim() !== '') {
+                const d = new Date(String(untilRaw));
+                if (!Number.isNaN(d.getTime())) {
+                    updates.subscriptionExpiresAt = d.toISOString();
+                    updates.subscriptionIsLifetime = false;
+                }
+            }
+
+            if (Object.keys(updates).length > 0) {
+                updateUser(updates);
+            }
+
+            const purchased = Number(updates.familySubAccountSlotsPurchased ?? user.familySubAccountSlotsPurchased ?? 0);
+            const consumed = Number(updates.familySubAccountSlotsConsumed ?? user.familySubAccountSlotsConsumed ?? 0);
+            const remaining = Math.max(0, purchased - consumed);
+            const hadPending = typeof window !== 'undefined'
+                && localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+
+            if (remaining > 0 && hadPending) {
+                localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+                setBankSubAccountAwaitingApproval(false);
+                showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
+            } else if (typeof window !== 'undefined') {
+                const stillPending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+                setBankSubAccountAwaitingApproval(stillPending && remaining <= 0);
+            }
+        } catch {
+            /* ignore refresh errors */
+        }
+    }, [user?.id, user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed, updateUser]);
     /**
      * Persist the email-on-interest toggle to the server so notifications are actually
      * sent (or not). We optimistically update the UI and roll it back on error.
@@ -1020,6 +1296,7 @@ function ProfilePageContent() {
     const [deleteAccountConfirm, setDeleteAccountConfirm] = useState('');
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+    const [showSubAccountPaymentModal, setShowSubAccountPaymentModal] = useState(false);
     const handleDeleteOwnAccount = async () => {
         if (!user?.id) return;
         if (deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') {
@@ -1061,6 +1338,7 @@ function ProfilePageContent() {
             const res = await matrimonialService.deleteSubAccount(Number(user.id), subAccount.id);
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 setSubAccounts(prev => prev.filter(sa => sa.id !== subAccount.id));
+                setManagedSubActivity(prev => prev.filter((a: any) => (a.subUserId ?? a.SubUserId) !== subAccount.id));
                 showToast(`${fullName} has been removed.`, 'success');
             } else {
                 showToast(res?.message || 'Failed to delete profile.', 'error');
@@ -1070,43 +1348,6 @@ function ProfilePageContent() {
         } finally {
             setDeletingSubAccountId(null);
         }
-    };
-
-    /**
-     * Parse a Sri Lankan NIC (old or new format) and extract DOB + gender, mirroring
-     * the logic used in the main register form so matchmakers see the same auto-fill UX.
-     */
-    const parseSubAccountNIC = (nicNumber: string): { dob: string; gender: string } | null => {
-        const normalized = nicNumber.trim().toUpperCase();
-        const currentYear = new Date().getFullYear();
-        let year = '';
-        let dayText = '';
-        let gender = '';
-        if (/^\d{9}[VX]$/.test(normalized)) {
-            year = `19${normalized.substring(0, 2)}`;
-            dayText = normalized.substring(2, 5);
-        } else if (/^\d{12}$/.test(normalized)) {
-            const parsedYear = Number(normalized.substring(0, 4));
-            if (parsedYear < 1900 || parsedYear > currentYear) return null;
-            year = normalized.substring(0, 4);
-            dayText = normalized.substring(4, 7);
-        } else {
-            return null;
-        }
-        let dayOfYear = parseInt(dayText, 10);
-        if (Number.isNaN(dayOfYear)) return null;
-        if (dayOfYear > 500) {
-            gender = 'Female';
-            dayOfYear -= 500;
-        } else {
-            gender = 'Male';
-        }
-        if (dayOfYear < 1 || dayOfYear > 366) return null;
-        const refDate = new Date(Date.UTC(2000, 0, 1));
-        refDate.setUTCDate(dayOfYear);
-        const month = String(refDate.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(refDate.getUTCDate()).padStart(2, '0');
-        return { dob: `${year}-${month}-${day}`, gender };
     };
 
     const handleSubAccountChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -1119,7 +1360,7 @@ function ProfilePageContent() {
         setSubAccountForm(prev => {
             const updated = { ...prev, [name]: nextValue };
             if (name === 'nic') {
-                const parsed = parseSubAccountNIC(nextValue);
+                const parsed = parseNicToDobAndGender(nextValue);
                 if (parsed) {
                     updated.dob = parsed.dob;
                     updated.gender = parsed.gender;
@@ -1253,6 +1494,13 @@ function ProfilePageContent() {
     }, [isEditModalOpen, user?.phone]);
 
     useEffect(() => {
+        if (!isCreateSubAccountModalOpen) return;
+        requestAnimationFrame(() => {
+            managedProfileModalScrollRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        });
+    }, [isCreateSubAccountModalOpen, managedProfileFormSession]);
+
+    useEffect(() => {
         if (!isCompletionModalOpen) return;
         const el = profileCompletionModalScrollRef.current;
         if (el) {
@@ -1260,6 +1508,70 @@ function ProfilePageContent() {
         }
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
     }, [isCompletionModalOpen]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !user?.id || !isFamilyParentAccountType(user.accountType)) return;
+
+        const syncPendingFromSlots = () => {
+            const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
+            const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
+            const remaining = Math.max(0, purchased - consumed);
+            const pending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+            if (pending && remaining > 0) {
+                localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+                setBankSubAccountAwaitingApproval(false);
+                return;
+            }
+            setBankSubAccountAwaitingApproval(pending && remaining <= 0);
+        };
+
+        syncPendingFromSlots();
+        refreshFamilySubAccountSlots();
+
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') {
+                refreshFamilySubAccountSlots();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onVisible);
+
+        const pending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+        const interval = pending
+            ? window.setInterval(() => refreshFamilySubAccountSlots(), 15000)
+            : undefined;
+
+        return () => {
+            document.removeEventListener('visibilitychange', onVisible);
+            window.removeEventListener('focus', onVisible);
+            if (interval) window.clearInterval(interval);
+        };
+    }, [
+        user?.id,
+        user?.accountType,
+        user?.familySubAccountSlotsPurchased,
+        user?.familySubAccountSlotsConsumed,
+        refreshFamilySubAccountSlots,
+    ]);
+
+    useEffect(() => {
+        if (!user?.id || !isFamilyParentAccountType(user.accountType)) {
+            setLiveSubAccountPackage(null);
+            return;
+        }
+        let cancelled = false;
+        matrimonialService.getActiveSubAccountPackage().then((pkg) => {
+            if (cancelled || !pkg) return;
+            setLiveSubAccountPackage(pkg);
+            updateUser({
+                familySubAccountAdditionalAmountLkr: pkg.price,
+                familySubAccountPackageValidityMonths: pkg.validityMonths,
+            });
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id, user?.accountType, updateUser]);
 
     // In a real app, you would have a save function here that calls an API and updates the User Context
 
@@ -1278,45 +1590,24 @@ function ProfilePageContent() {
                   ? user.matchmakerClientProfileCount
                   : subAccounts.length) < (user.matchmakerMaxClientProfiles ?? 0);
 
-    const selfManagedSubAccountCap =
-        user.isSubscribed === true ? SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM : SELF_MANAGED_SUB_ACCOUNT_MAX_FREE;
-    const canSelfParentCreateSubAccount =
-        user.accountType === 'Self' && subAccounts.length < selfManagedSubAccountCap;
+    const isFamilyParentAccount = isFamilyParentAccountType(user.accountType);
+    const usesSubAccountSlots = isFamilyParentAccount;
+    const subSlotPriceLkr =
+        liveSubAccountPackage?.price ?? user.familySubAccountAdditionalAmountLkr ?? PREMIUM_SUBSCRIPTION_LKR;
+    const subSlotValidityMonths =
+        liveSubAccountPackage?.validityMonths ?? user.familySubAccountPackageValidityMonths;
+    const subSlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
+    const subSlotsConsumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
+    const subSlotsRemaining = Math.max(0, subSlotsPurchased - subSlotsConsumed);
+    const canCreateManagedSubAccount = usesSubAccountSlots && subSlotsRemaining > 0;
+    const needsSubAccountPayment = usesSubAccountSlots && subSlotsRemaining <= 0;
 
-    // Father / Mother / Relation parents: subscription required to add the first sub-account; each
-    // additional sub-account costs LKR 1,990. Slots are entitlements (delete does NOT free a slot).
-    const isFamilyParentAccount =
-        user.accountType === 'Father' || user.accountType === 'Mother' || user.accountType === 'Relation'
-        || user.accountType === 'Sister' || user.accountType === 'Brother';
-    const familyExtraSlotPriceLkr = user.familySubAccountAdditionalAmountLkr ?? 1990;
-    const familySlotsMaxTotal = user.familySubAccountSlotsMaxTotal ?? 3;
-    const familySlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
-    const familySlotsConsumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
-    const familySlotsRemaining = Math.max(0, familySlotsPurchased - familySlotsConsumed);
-    const familyCanCreateSubAccount =
-        isFamilyParentAccount && user.isSubscribed === true && familySlotsRemaining > 0;
-    const familyCanBuyExtraSlot =
-        isFamilyParentAccount &&
-        user.isSubscribed === true &&
-        familySlotsPurchased >= 1 &&
-        familySlotsPurchased < familySlotsMaxTotal;
-    const handlePurchaseExtraFamilySlot = async () => {
-        if (!user?.id) return;
-        if (!familyCanBuyExtraSlot) return;
-        if (!window.confirm(`Pay LKR ${familyExtraSlotPriceLkr.toLocaleString()} to add one more sub-account slot?`)) return;
-        setIsPurchasingFamilySlot(true);
-        try {
-            const ref = `FAMILY_SLOT_${Date.now()}`;
-            const data = await matrimonialService.purchaseAdditionalFamilySubAccountSlot(Number(user.id), ref);
-            const r = (data?.result ?? data?.Result) as Record<string, unknown> | undefined;
-            const newPurchased = r ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? familySlotsPurchased + 1) : familySlotsPurchased + 1;
-            updateUser({ familySubAccountSlotsPurchased: newPurchased });
-            showToast(data?.message || 'Additional sub-account slot purchased.', 'success');
-        } catch (err) {
-            showToast(err instanceof Error ? err.message : 'Failed to purchase slot.', 'error');
-        } finally {
-            setIsPurchasingFamilySlot(false);
-        }
+    const goToSubAccountCheckout = () => {
+        const params = new URLSearchParams({
+            plan: CHECKOUT_PLAN_SUB_ACCOUNT,
+            amount: String(subSlotPriceLkr),
+        });
+        router.push(`/subscription/checkout?${params.toString()}`);
     };
 
     return (
@@ -1330,7 +1621,7 @@ function ProfilePageContent() {
             <div className="profile-page-container" style={{ paddingTop: '100px', minHeight: '80vh', maxWidth: '1200px', margin: '0 auto', padding: '120px 20px 40px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h1>My Profile</h1>
-                    {!profileCompleted && user?.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
+                    {!profileCompleted && !isBasicProfileOnlyAccountType(user?.accountType) && !isManagedSubAccount(user) && (
                         <div style={{ background: '#fff3cd', color: '#856404', padding: '0.5rem 1rem', borderRadius: '4px', border: '1px solid #ffeeba' }}>
                             ⚠️ Your profile is incomplete. Please complete it to view matches.
                             <button onClick={() => {
@@ -1345,7 +1636,7 @@ function ProfilePageContent() {
                 </div>
 
                 {/* Detailed Profile Completion Modal — not shown for Matchmaker accounts */}
-                {isCompletionModalOpen && user?.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
+                {isCompletionModalOpen && !isBasicProfileOnlyAccountType(user?.accountType) && !isManagedSubAccount(user) && (
                     <div
                         className="modal-overlay active profile-completion-overlay"
                         style={{ zIndex: 1000, alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
@@ -1684,7 +1975,7 @@ function ProfilePageContent() {
                             <p style={{ color: '#666', marginBottom: '0.5rem' }}>{user.email}</p>
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                 <span className="badge" style={{ background: '#eef2ff', color: 'var(--primary)', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
-                                    {user.accountType || 'Free Member'}
+                                    {displayMatrimonialAccountType(user.accountType) || 'Free Member'}
                                 </span>
                                 {user.isSubscribed ? (
                                     <span className="badge" style={{ background: '#047857', color: '#fff', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>
@@ -1710,7 +2001,28 @@ function ProfilePageContent() {
                                         Free Plan
                                     </span>
                                 )}
-                                {user.accountType === 'Matchmaker' ? null : profileCompleted ? (
+                                {user.isSubscribed && subscriptionRemainingDisplay ? (
+                                    <span
+                                        className="badge"
+                                        style={{
+                                            background: subscriptionRemainingInfo?.expired ? '#fef2f2' : '#fff7ed',
+                                            color: subscriptionRemainingInfo?.expired ? '#b91c1c' : '#c2410c',
+                                            padding: '0.4rem 1rem',
+                                            borderRadius: '20px',
+                                            fontSize: '0.85rem',
+                                            fontWeight: 600,
+                                            border: '1px solid #fed7aa',
+                                        }}
+                                        title={
+                                            subscriptionRemainingDisplay.secondary
+                                                ? `${subscriptionRemainingDisplay.primary} · ${subscriptionRemainingDisplay.secondary}`
+                                                : subscriptionRemainingDisplay.primary
+                                        }
+                                    >
+                                        {subscriptionRemainingDisplay.primary}
+                                    </span>
+                                ) : null}
+                                {isBasicProfileOnlyAccountType(user.accountType) ? null : profileCompleted ? (
                                     <span className="badge" style={{ background: '#e6fffa', color: '#047857', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                         Profile Verified
                                     </span>
@@ -1845,7 +2157,7 @@ function ProfilePageContent() {
 
                     <div className="profile-actions" style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid #eee', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                         <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
-                        {user.accountType !== 'Matchmaker' && !isManagedSubAccount(user) && (
+                        {!isBasicProfileOnlyAccountType(user.accountType) && !isManagedSubAccount(user) && (
                             <button className="btn btn-outline" onClick={() => {
                                 if (user?.isVerified === false) {
                                     window.dispatchEvent(new CustomEvent('open-verify-modal'));
@@ -2045,11 +2357,24 @@ function ProfilePageContent() {
                                                     ? 'Your bank transfer slip is being reviewed. We will activate Gold or Diamond as soon as the payment is verified.'
                                                     : 'Browse basic listings only — no contacts, messaging, or client profiles until you upgrade.'}
                                         </div>
-                                        {user.isSubscribed && user.subscriptionExpiresAt ? (
+                                        {user.isSubscribed && subscriptionRemainingDisplay ? (
+                                            <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8, lineHeight: 1.45 }}>
+                                                <strong style={{ fontSize: '0.95rem' }}>
+                                                    {subscriptionRemainingDisplay.primary}
+                                                </strong>
+                                                {subscriptionRemainingDisplay.secondary ? (
+                                                    <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
+                                                        {subscriptionRemainingDisplay.secondary}
+                                                        {' · '}
+                                                        {subscriptionPeriodLabel}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ marginLeft: 6 }}>({subscriptionPeriodLabel})</span>
+                                                )}
+                                            </div>
+                                        ) : user.isSubscribed ? (
                                             <div style={{ color: '#92400e', fontSize: '0.82rem', marginTop: 8 }}>
-                                                Subscription valid until{' '}
-                                                <strong>{formatSubscriptionExpiresDisplay(user.subscriptionExpiresAt)}</strong>
-                                                {' '}(6-month billing period).
+                                                Premium active ({subscriptionPeriodLabel})
                                             </div>
                                         ) : null}
                                     </div>
@@ -2089,11 +2414,24 @@ function ProfilePageContent() {
                                                 ? 'Your bank transfer slip is being reviewed. Premium benefits turn on once our team approves the payment.'
                                                 : 'Upgrade to unlock unlimited messaging and the premium gold badge.'}
                                     </div>
-                                    {user?.isSubscribed && user.subscriptionExpiresAt ? (
+                                    {user?.isSubscribed && subscriptionRemainingDisplay ? (
+                                        <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8, lineHeight: 1.45 }}>
+                                            <strong style={{ fontSize: '0.95rem' }}>
+                                                {subscriptionRemainingDisplay.primary}
+                                            </strong>
+                                            {subscriptionRemainingDisplay.secondary ? (
+                                                <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
+                                                    {subscriptionRemainingDisplay.secondary}
+                                                    {' · '}
+                                                    {subscriptionPeriodLabel}
+                                                </span>
+                                            ) : (
+                                                <span style={{ marginLeft: 6 }}>({subscriptionPeriodLabel})</span>
+                                            )}
+                                        </div>
+                                    ) : user?.isSubscribed ? (
                                         <div style={{ color: '#92400e', fontSize: '0.82rem', marginTop: 8 }}>
-                                            Subscription valid until{' '}
-                                            <strong>{formatSubscriptionExpiresDisplay(user.subscriptionExpiresAt)}</strong>
-                                            {' '}(6-month billing period).
+                                            Premium active ({subscriptionPeriodLabel})
                                         </div>
                                     ) : null}
                                 </div>
@@ -2260,58 +2598,81 @@ function ProfilePageContent() {
                     </div>
                 )}
 
-                {(user?.accountType === 'Self' || isFamilyParentAccount) && (
+                {showSubAccountPaymentModal && (
+                    <div
+                        className="modal-overlay active"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="sub-account-payment-title"
+                        style={{ zIndex: 1100 }}
+                    >
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                            <button
+                                className="modal-close"
+                                onClick={() => setShowSubAccountPaymentModal(false)}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                            <div className="modal-header">
+                                <h2 id="sub-account-payment-title" style={{ color: '#92400e' }}>
+                                    Payment required
+                                </h2>
+                            </div>
+                            <div className="modal-body">
+                                {bankSubAccountAwaitingApproval ? (
+                                    <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
+                                        Your bank transfer for a sub-account slot is <strong>pending admin approval</strong>.
+                                        You can create a managed profile once the payment is verified.
+                                    </p>
+                                ) : (
+                                    <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
+                                        {needsSubAccountPayment
+                                            ? `You need to pay for a sub-account package before creating a managed profile. Each sub-account costs LKR ${subSlotPriceLkr.toLocaleString()}${subSlotValidityMonths ? ` (valid ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'})` : ''}.`
+                                            : `You have used all ${subSlotsPurchased} sub-account slot(s). Pay LKR ${subSlotPriceLkr.toLocaleString()} for each additional sub-account.`}
+                                    </p>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        onClick={() => setShowSubAccountPaymentModal(false)}
+                                    >
+                                        {bankSubAccountAwaitingApproval ? 'Close' : 'Cancel'}
+                                    </button>
+                                    {!bankSubAccountAwaitingApproval && (
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            onClick={() => {
+                                                setShowSubAccountPaymentModal(false);
+                                                goToSubAccountCheckout();
+                                            }}
+                                        >
+                                            Pay now (LKR {subSlotPriceLkr.toLocaleString()})
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {isFamilyParentAccount && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                             <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>Managed Accounts</h3>
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                {isFamilyParentAccount && familyCanBuyExtraSlot && (
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline"
-                                        disabled={isPurchasingFamilySlot}
-                                        onClick={handlePurchaseExtraFamilySlot}
-                                        title={`Buy one more sub-account slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()}`}
-                                    >
-                                        {isPurchasingFamilySlot
-                                            ? 'Processing…'
-                                            : `Buy extra slot (LKR ${familyExtraSlotPriceLkr.toLocaleString()})`}
-                                    </button>
-                                )}
                                 <button
                                     type="button"
                                     className="btn btn-primary"
-                                    disabled={
-                                        isFamilyParentAccount
-                                            ? !familyCanCreateSubAccount
-                                            : !canSelfParentCreateSubAccount
-                                    }
                                     onClick={() => {
                                         if (user?.isVerified === false) {
                                             window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                             return;
                                         }
-                                        if (isFamilyParentAccount) {
-                                            if (user.isSubscribed !== true) {
-                                                showToast('Subscribe to Premium to add a sub-account.', 'error');
-                                                return;
-                                            }
-                                            if (!familyCanCreateSubAccount) {
-                                                showToast(
-                                                    familyCanBuyExtraSlot
-                                                        ? `Your sub-account slot is already used. Buy an extra slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()} to add another.`
-                                                        : `You have used all ${familySlotsMaxTotal} sub-account slots available on this account.`,
-                                                    'error',
-                                                );
-                                                return;
-                                            }
-                                        } else if (!canSelfParentCreateSubAccount) {
-                                            showToast(
-                                                user.isSubscribed === true
-                                                    ? `You already have the maximum of ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts.`
-                                                    : `Free accounts can create only ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account. Upgrade to Premium for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`,
-                                                'error',
-                                            );
+                                        if (!canCreateManagedSubAccount) {
+                                            setShowSubAccountPaymentModal(true);
                                             return;
                                         }
                                         setIsCreateSubAccountModalOpen(true);
@@ -2322,47 +2683,38 @@ function ProfilePageContent() {
                             </div>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem' }}>
-                            {isFamilyParentAccount
-                                ? user.isSubscribed === true
-                                    ? `Slots used: ${familySlotsConsumed}/${familySlotsPurchased} (max ${familySlotsMaxTotal} total). Each additional slot costs LKR ${familyExtraSlotPriceLkr.toLocaleString()}. Slots are not refunded if a sub-account is deleted.`
-                                    : `Subscribe to Premium to unlock your first sub-account slot. Up to ${familySlotsMaxTotal} slots total — each additional slot costs LKR ${familyExtraSlotPriceLkr.toLocaleString()}.`
-                                : user.isSubscribed === true
-                                    ? `Premium: up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts (${subAccounts.length}/${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}).`
-                                    : `Free: ${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE} sub-account (${subAccounts.length}/${SELF_MANAGED_SUB_ACCOUNT_MAX_FREE}). Upgrade for up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM}.`}
+                            {usesSubAccountSlots
+                                ? `Each sub-account costs LKR ${subSlotPriceLkr.toLocaleString()}${subSlotValidityMonths ? ` (valid ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'})` : ''}. Pay first, then create — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. Complete basic and detailed details when creating; no separate login needed.`
+                                : null}
                         </p>
-                        {isFamilyParentAccount && !familyCanCreateSubAccount && (
+                        {usesSubAccountSlots && !canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                {user.isSubscribed !== true
-                                    ? 'A Premium subscription is required to add a sub-account.'
-                                    : familyCanBuyExtraSlot
-                                        ? `Your sub-account slot is already used. Buy another slot for LKR ${familyExtraSlotPriceLkr.toLocaleString()} (up to ${familySlotsMaxTotal} total).`
-                                        : `You have used all ${familySlotsMaxTotal} sub-account slots available on this account.`}
-                            </p>
-                        )}
-                        {!isFamilyParentAccount && !canSelfParentCreateSubAccount && (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                {user.isSubscribed === true
-                                    ? 'You have reached the sub-account limit for your plan.'
-                                    : `Upgrade to Premium to add up to ${SELF_MANAGED_SUB_ACCOUNT_MAX_PREMIUM} sub-accounts.`}
+                                {bankSubAccountAwaitingApproval
+                                    ? 'Your bank transfer for a sub-account slot is pending admin approval.'
+                                    : needsSubAccountPayment
+                                        ? `Pay LKR ${subSlotPriceLkr.toLocaleString()} (card or bank transfer) to unlock creating a sub-account.`
+                                        : `You have used all ${subSlotsPurchased} sub-account slot(s). Pay for another slot to add more.`}
                             </p>
                         )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
                             {subAccounts.length > 0 ? (
                                 subAccounts.map((subAccount: any) => (
-                                    <div key={subAccount.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px' }}>
-                                        <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', overflow: 'hidden' }}>
-                                            {subAccount.profilePhoto ? (
-                                                <img src={subAccount.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                            ) : (
-                                                <span>{subAccount.firstName[0]}{subAccount.lastName[0]}</span>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <h5 style={{ fontWeight: '600', marginBottom: '0.25rem', fontSize: '1rem' }}>{subAccount.firstName} {subAccount.lastName}</h5>
-                                            <p style={{ color: '#6B6560', fontSize: '0.875rem' }}>{subAccount.email} • {subAccount.phoneNumber}</p>
-                                            <p style={{ color: 'var(--primary)', fontSize: '0.75rem', marginTop: '0.25rem', fontWeight: 500 }}>Log out and log in with this email to manage this profile.</p>
-                                        </div>
-                                    </div>
+                                    <ManagedSubAccountActivityCard
+                                        key={subAccount.id}
+                                        subAccount={subAccount}
+                                        activity={managedSubActivityFor(subAccount.id)}
+                                        formatSubActivityTime={formatSubActivityTime}
+                                        onInterestClick={goToSubAccountInterest}
+                                        onMessagesClick={goToSubAccountMessages}
+                                        onViewProfile={openManagedSubProfile}
+                                        onDelete={handleDeleteSubAccount}
+                                        deletingSubAccountId={deletingSubAccountId}
+                                        badgeKind="family-managed"
+                                        managedByLabel={familyManagedByLabel}
+                                        managerName={managerDisplayName}
+                                        detailLine={`${subAccount.age ? `${subAccount.age} yrs` : '—'} • ${subAccount.cityOfResidence || subAccount.gender || 'Profile'} • ${subAccount.phoneNumber || '—'}`}
+                                        footerLine="Listed in browse · Managed by you · No separate login"
+                                    />
                                 ))
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
@@ -2379,276 +2731,39 @@ function ProfilePageContent() {
                     </div>
                 )}
 
-                {/* Create Sub-Account / Add Client Profile Modal */}
-                {isCreateSubAccountModalOpen && (() => {
-                    const isMatchmaker = user?.accountType === 'Matchmaker';
-                    const nicParsed = !!parseSubAccountNIC(subAccountForm.nic);
-                    const subAccountNicFormatErrorMsg = subAccountForm.nic.trim()
-                        ? nicOrPassportFormatError(subAccountForm.nic)
-                        : null;
-                    return (
-                        <div className="modal-overlay active" style={{ zIndex: 1000 }}>
-                            <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '640px', width: '95%', maxHeight: '92vh', overflowY: 'auto' }}>
-                                <button className="modal-close" onClick={() => { setIsCreateSubAccountModalOpen(false); resetSubAccountForm(); }}>✕</button>
-                                <div className="modal-header">
-                                    <h2>{isMatchmaker ? 'Add Client Profile' : 'Create Sub-Account'}</h2>
-                                    <p style={{ color: '#666', fontSize: '0.9rem' }}>
-                                        {isMatchmaker
-                                            ? "Enter your client's details. The profile will appear in browse with a matchmaker badge, and any messages or interest sent to it will come straight to you."
-                                            : 'Fill in the details to create a new profile under your account.'}
-                                    </p>
-                                </div>
-                                <div className="modal-body">
-                                    {subAccountVerifyStep && subAccountRegistrationSessionId ? (
-                                        <form onSubmit={handleSubAccountVerifyComplete}>
-                                            <p style={{ marginBottom: '1rem', color: '#374151', fontSize: '0.95rem' }}>
-                                                We sent no account to the database yet. Verify the client&apos;s email or WhatsApp to create the profile.
-                                            </p>
-                                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline"
-                                                    disabled={subAccountSendCodeBusy}
-                                                    onClick={() => handleSubAccountSendCode('Email')}
-                                                >
-                                                    Send code via Email
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline"
-                                                    disabled={subAccountSendCodeBusy}
-                                                    onClick={() => handleSubAccountSendCode('WhatsApp')}
-                                                >
-                                                    Send code via WhatsApp
-                                                </button>
-                                            </div>
-                                            {subAccountVerificationHint && (
-                                                <p style={{ fontSize: '0.85rem', color: '#047857', marginBottom: '0.75rem' }}>{subAccountVerificationHint}</p>
-                                            )}
-                                            <div className="form-group">
-                                                <label htmlFor="subAccountOtp">6-digit verification code *</label>
-                                                <input
-                                                    id="subAccountOtp"
-                                                    type="text"
-                                                    inputMode="numeric"
-                                                    autoComplete="one-time-code"
-                                                    maxLength={6}
-                                                    value={subAccountOtp}
-                                                    onChange={(ev) => setSubAccountOtp(ev.target.value.replace(/\D/g, '').slice(0, 6))}
-                                                    placeholder="000000"
-                                                    style={{ letterSpacing: '0.25em', fontSize: '1.1rem', maxWidth: '12rem' }}
-                                                />
-                                            </div>
-                                            {subAccountError && (
-                                                <p style={{ color: '#b91c1c', fontSize: '0.9rem', marginBottom: '0.75rem' }}>{subAccountError}</p>
-                                            )}
-                                            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '1rem' }}>
-                                                <button type="submit" className="btn btn-primary" disabled={subAccountVerifyBusy}>
-                                                    {subAccountVerifyBusy ? 'Verifying…' : 'Verify and create profile'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline"
-                                                    onClick={() => {
-                                                        setSubAccountVerifyStep(false);
-                                                        setSubAccountRegistrationSessionId(null);
-                                                        setSubAccountOtp('');
-                                                        setSubAccountVerificationHint(null);
-                                                        setSubAccountError(null);
-                                                    }}
-                                                >
-                                                    Back to form
-                                                </button>
-                                            </div>
-                                        </form>
-                                    ) : (
-                                    <form onSubmit={handleCreateSubAccount}>
-                                        {/* Profile photo */}
-                                        <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div style={{ width: '88px', height: '88px', borderRadius: '50%', overflow: 'hidden', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1px solid #e5e7eb' }}>
-                                                {subAccountPhotoPreview ? (
-                                                    <img src={subAccountPhotoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#9ca3af" />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                                <label style={{ fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>Profile Photo (optional)</label>
-                                                <p style={{ color: '#6b7280', fontSize: '0.8rem', marginBottom: '0.5rem' }}>JPG or PNG, square works best.</p>
-                                                <input type="file" accept="image/*" id="subAccountPhoto" style={{ display: 'none' }} onChange={handleSubAccountPhotoChange} />
-                                                <label htmlFor="subAccountPhoto" className="btn btn-outline" style={{ cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '0.85rem', display: 'inline-block' }}>
-                                                    {subAccountPhotoPreview ? 'Change Photo' : 'Upload Photo'}
-                                                </label>
-                                                {subAccountPhotoPreview && (
-                                                    <button type="button" onClick={() => { setSubAccountPhotoBase64(''); setSubAccountPhotoPreview(''); }} style={{ marginLeft: '0.5rem', background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                                        Remove
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>First Name *</label>
-                                                <input type="text" name="firstName" required maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.firstName} onChange={handleSubAccountChange} />
-                                            </div>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>Last Name *</label>
-                                                <input type="text" name="lastName" required maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.lastName} onChange={handleSubAccountChange} />
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>National ID / Passport No *</label>
-                                            <input
-                                                type="text"
-                                                name="nic"
-                                                required
-                                                maxLength={12}
-                                                placeholder="e.g. 200012345678, 901234567V, or N1234567"
-                                                value={subAccountForm.nic}
-                                                onChange={handleSubAccountChange}
-                                                style={subAccountNicFormatErrorMsg ? { borderColor: '#b91c1c' } : undefined}
-                                                aria-invalid={!!subAccountNicFormatErrorMsg}
-                                            />
-                                            <p style={{ color: '#6B6560', fontSize: '0.75rem', margin: '0.25rem 0 0', lineHeight: 1.35 }}>{NIC_PASSPORT_HINT}</p>
-                                            {subAccountNicFormatErrorMsg && (
-                                                <span style={{ color: '#b91c1c', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>{subAccountNicFormatErrorMsg}</span>
-                                            )}
-                                            {nicParsed && (
-                                                <span style={{ color: '#059669', fontSize: '0.8rem', display: 'block', marginTop: '0.25rem' }}>Date of birth and gender auto-filled from NIC.</span>
-                                            )}
-                                        </div>
-
-                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>Date of Birth *</label>
-                                                <input type="date" name="dob" required value={subAccountForm.dob} onChange={handleSubAccountChange} disabled={nicParsed} />
-                                            </div>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>Gender *</label>
-                                                <select name="gender" required value={subAccountForm.gender} onChange={handleSubAccountChange} disabled={nicParsed}>
-                                                    <option value="">Select Gender</option>
-                                                    <option value="Male">Male</option>
-                                                    <option value="Female">Female</option>
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>Phone Number *</label>
-                                            <input type="tel" name="phone" required placeholder="0771234567 or +94771234567" value={subAccountForm.phone} onChange={handleSubAccountChange} />
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>WhatsApp Number *</label>
-                                            <input
-                                                type="tel"
-                                                name="whatsapp"
-                                                required
-                                                placeholder="0771234567 or +94771234567"
-                                                disabled={subAccountWhatsAppSame}
-                                                value={subAccountWhatsAppSame ? subAccountForm.phone : subAccountForm.whatsapp}
-                                                onChange={handleSubAccountChange}
-                                            />
-                                            <div className="checkbox-group" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
-                                                <input
-                                                    type="checkbox"
-                                                    id="subAccountSameAsPhone"
-                                                    checked={subAccountWhatsAppSame}
-                                                    onChange={(e) => handleSubAccountWhatsAppSameToggle(e.target.checked)}
-                                                />
-                                                <label htmlFor="subAccountSameAsPhone" style={{ fontSize: '0.9rem' }}>Same as Phone Number</label>
-                                            </div>
-                                        </div>
-
-                                        <div className="form-group">
-                                            <label>Email Address *</label>
-                                            <input type="email" name="email" required placeholder="client@email.com" maxLength={AUTH_FIELD_MAX_LENGTH} value={subAccountForm.email} onChange={handleSubAccountChange} />
-                                        </div>
-
-                                        <div className="form-row" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>Password *</label>
-                                                <div style={{ position: 'relative' }}>
-                                                    <input
-                                                        type={subAccountShowPassword ? 'text' : 'password'}
-                                                        name="password"
-                                                        required
-                                                        minLength={6}
-                                                        maxLength={PASSWORD_MAX_LENGTH}
-                                                        value={subAccountForm.password}
-                                                        onChange={handleSubAccountChange}
-                                                        style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
-                                                    />
-                                                    <PasswordVisibilityToggle
-                                                        passwordVisible={subAccountShowPassword}
-                                                        onToggle={() => setSubAccountShowPassword((v) => !v)}
-                                                        style={modalPasswordToggleStyle}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="form-group" style={{ flex: 1, minWidth: '200px' }}>
-                                                <label>Confirm Password *</label>
-                                                <div style={{ position: 'relative' }}>
-                                                    <input
-                                                        type={subAccountShowConfirmPassword ? 'text' : 'password'}
-                                                        name="confirmPassword"
-                                                        required
-                                                        minLength={6}
-                                                        maxLength={PASSWORD_MAX_LENGTH}
-                                                        value={subAccountForm.confirmPassword}
-                                                        onChange={handleSubAccountChange}
-                                                        style={{ width: '100%', paddingRight: '2.75rem', boxSizing: 'border-box' }}
-                                                    />
-                                                    <PasswordVisibilityToggle
-                                                        passwordVisible={subAccountShowConfirmPassword}
-                                                        onToggle={() => setSubAccountShowConfirmPassword((v) => !v)}
-                                                        ariaLabelWhenHidden="Show confirm password"
-                                                        ariaLabelWhenVisible="Hide confirm password"
-                                                        style={modalPasswordToggleStyle}
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="checkbox-group" style={{ marginTop: '0.5rem' }}>
-                                            <input
-                                                type="checkbox"
-                                                id="subAccountTerms"
-                                                checked={subAccountTermsAccepted}
-                                                onChange={(e) => setSubAccountTermsAccepted(e.target.checked)}
-                                            />
-                                            <label htmlFor="subAccountTerms" style={{ fontSize: '0.9rem' }}>
-                                                {isMatchmaker
-                                                    ? 'I confirm my client has authorised me to create this profile on their behalf.'
-                                                    : 'I confirm the details above are accurate.'}
-                                            </label>
-                                        </div>
-
-                                        {subAccountError && (
-                                            <div style={{ color: 'red', marginTop: '1rem', marginBottom: '0.5rem', fontSize: '0.9rem', padding: '0.6rem 0.75rem', backgroundColor: '#ffe6e6', borderRadius: '6px' }}>
-                                                {subAccountError}
-                                            </div>
-                                        )}
-
-                                        <button
-                                            type="submit"
-                                            className="btn btn-primary"
-                                            disabled={isCreatingSubAccount}
-                                            style={{ width: '100%', justifyContent: 'center', marginTop: '1rem', opacity: isCreatingSubAccount ? 0.6 : 1, cursor: isCreatingSubAccount ? 'not-allowed' : 'pointer' }}
-                                        >
-                                            {isCreatingSubAccount ? 'Sending details…' : (isMatchmaker ? 'Continue to verification →' : 'Continue to verification →')}
-                                        </button>
-                                    </form>
-                                    )}
-                                </div>
+                {/* Create managed profile — full basic + detailed form, no separate login */}
+                {isCreateSubAccountModalOpen && user?.id && (
+                    <div className="modal-overlay active managed-profile-modal-overlay">
+                        <div className="modal managed-profile-modal">
+                            <button className="modal-close" onClick={() => setIsCreateSubAccountModalOpen(false)} aria-label="Close">✕</button>
+                            <div className="modal-header">
+                                <h2>{user.accountType === 'Matchmaker' ? 'Add Client Profile' : 'Create Managed Profile'}</h2>
+                                <p>
+                                    Enter basic and detailed profile information in one step. The profile appears in browse with a managed-by label; messages and interest are delivered to your account.
+                                </p>
+                            </div>
+                            <div ref={managedProfileModalScrollRef} className="modal-body">
+                                <ProfileCompletionForm
+                                    key={`managed-create-${user.id}-${managedProfileFormSession}`}
+                                    managedCreate={managedCreateConfig}
+                                    scrollContainerRef={managedProfileModalScrollRef}
+                                    onClose={() => setIsCreateSubAccountModalOpen(false)}
+                                    onComplete={() => {
+                                        if (user?.id) {
+                                            markManagedProfileDraftCompleted(Number(user.id));
+                                        }
+                                        setManagedProfileFormSession((s) => s + 1);
+                                        setIsCreateSubAccountModalOpen(false);
+                                        fetchSubAccounts();
+                                        fetchManagedSubActivity();
+                                        refreshFamilySubAccountSlots();
+                                        showToast('Managed profile created successfully.', 'success');
+                                    }}
+                                />
                             </div>
                         </div>
-                    );
-                })()}
+                    </div>
+                )}
 
                 {user?.accountType === 'Matchmaker' && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
@@ -2672,61 +2787,26 @@ function ProfilePageContent() {
                             </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
-                            Profiles you have created on behalf of clients. You can remove a profile at any time and all of its data will be permanently deleted.
+                            Client profiles you create appear in browse with a matchmaker badge. Complete basic and detailed details in one step — no separate client login. Messages and interest for each profile are grouped below.
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                             {subAccounts.length > 0 ? (
-                                subAccounts.map((subAccount: any) => {
-                                    const fullName = `${subAccount.firstName || ''} ${subAccount.lastName || ''}`.trim() || 'Unnamed Profile';
-                                    const initials = `${(subAccount.firstName || '?')[0] || '?'}${(subAccount.lastName || '')[0] || ''}`.toUpperCase();
-                                    const isDeleting = deletingSubAccountId === subAccount.id;
-                                    return (
-                                        <div key={subAccount.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px', flexWrap: 'wrap' }}>
-                                            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0 }}>
-                                                {subAccount.profilePhoto ? (
-                                                    <img src={subAccount.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <span>{initials}</span>
-                                                )}
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                <h5 style={{ fontWeight: 600, marginBottom: '0.25rem', fontSize: '1rem' }}>{fullName}</h5>
-                                                <p style={{ color: '#6B6560', fontSize: '0.875rem', wordBreak: 'break-word' }}>
-                                                    {subAccount.email || '—'}{subAccount.phoneNumber ? ` • ${subAccount.phoneNumber}` : ''}
-                                                </p>
-                                                {subAccount.age ? (
-                                                    <p style={{ color: '#6B6560', fontSize: '0.8rem', marginTop: '0.15rem' }}>{subAccount.age} years</p>
-                                                ) : null}
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleDeleteSubAccount(subAccount)}
-                                                disabled={isDeleting}
-                                                aria-label={`Delete ${fullName}`}
-                                                title={`Delete ${fullName}`}
-                                                style={{
-                                                    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-                                                    padding: '0.5rem 0.85rem', borderRadius: '8px',
-                                                    border: '1px solid #fecaca', background: isDeleting ? '#fee2e2' : 'white',
-                                                    color: '#b91c1c', cursor: isDeleting ? 'not-allowed' : 'pointer',
-                                                    fontSize: '0.85rem', fontWeight: 600,
-                                                    opacity: isDeleting ? 0.7 : 1, transition: 'background-color 0.15s'
-                                                }}
-                                                onMouseEnter={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = '#fff1f2'; }}
-                                                onMouseLeave={(e) => { if (!isDeleting) (e.currentTarget as HTMLButtonElement).style.background = 'white'; }}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                                    <polyline points="3 6 5 6 21 6" />
-                                                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                                    <path d="M10 11v6" />
-                                                    <path d="M14 11v6" />
-                                                    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
-                                                </svg>
-                                                {isDeleting ? 'Deleting...' : 'Delete'}
-                                            </button>
-                                        </div>
-                                    );
-                                })
+                                subAccounts.map((subAccount: any) => (
+                                    <ManagedSubAccountActivityCard
+                                        key={subAccount.id}
+                                        subAccount={subAccount}
+                                        activity={managedSubActivityFor(subAccount.id)}
+                                        formatSubActivityTime={formatSubActivityTime}
+                                        onInterestClick={goToSubAccountInterest}
+                                        onMessagesClick={goToSubAccountMessages}
+                                        onViewProfile={openManagedSubProfile}
+                                        onDelete={handleDeleteSubAccount}
+                                        deletingSubAccountId={deletingSubAccountId}
+                                        badgeKind="matchmaker-client"
+                                        detailLine={`${subAccount.email || '—'}${subAccount.phoneNumber ? ` • ${subAccount.phoneNumber}` : ''}${subAccount.age ? ` • ${subAccount.age} years` : ''}`}
+                                        footerLine="Listed in browse with matchmaker badge · Messages and interest grouped by client"
+                                    />
+                                ))
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.25rem', background: '#FDF8F3', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
                                     <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '1.5rem' }}>+</div>
@@ -2790,19 +2870,183 @@ function ProfilePageContent() {
                             </ul>
                         )}
                     </div>
-                    <div className="dashboard-card" style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}>
+                    <div
+                        ref={interestedInYouSectionRef}
+                        className="dashboard-card"
+                        style={{ background: 'white', padding: '1.5rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column' }}
+                    >
                         <h3 style={{ marginBottom: '0.25rem' }}>Interested in you</h3>
                         <p style={{ color: '#666', fontSize: '0.875rem', margin: 0 }}>
-                            People who appear in your interest notifications. <strong>Interest back</strong> is labeled when the latest notification for that person is a reciprocal interest.
+                            New interest notifications you have not acted on yet. After you respond, they move to Recent Activity.
                         </p>
+                        {showInterestProfileTabs && (
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    gap: '0.5rem',
+                                    overflowX: 'auto',
+                                    marginTop: '1rem',
+                                    paddingBottom: '0.25rem',
+                                }}
+                            >
+                                {managedSubAccountTabs.map((sub) => {
+                                    const isActive = activeInterestSubAccountId === sub.id;
+                                    const unread = interestUnreadBySubAccount[sub.id] ?? 0;
+                                    const name = subAccountDisplayName(sub);
+                                    return (
+                                        <button
+                                            key={sub.id}
+                                            type="button"
+                                            onClick={() => setActiveInterestSubAccountId(sub.id)}
+                                            title={name}
+                                            style={{
+                                                position: 'relative',
+                                                flexShrink: 0,
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                gap: '0.35rem',
+                                                minWidth: '76px',
+                                                padding: '0.5rem',
+                                                borderRadius: '12px',
+                                                border: isActive ? '1px solid rgba(255,162,13,0.45)' : '1px solid #eee',
+                                                background: isActive ? '#fff8ed' : '#fff',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <div style={{ position: 'relative' }}>
+                                                <div
+                                                    style={{
+                                                        width: '44px',
+                                                        height: '44px',
+                                                        borderRadius: '50%',
+                                                        overflow: 'hidden',
+                                                        border: isActive ? '2px solid var(--primary, #ffa20d)' : '2px solid #fff',
+                                                        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+                                                    }}
+                                                >
+                                                    {sub.profilePhoto ? (
+                                                        <img src={sub.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    ) : (
+                                                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#999', fontWeight: 700, fontSize: '0.85rem' }}>
+                                                            {(sub.firstName?.[0] || '?')}{(sub.lastName?.[0] || '')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {unread > 0 && (
+                                                    <span
+                                                        style={{
+                                                            position: 'absolute',
+                                                            top: '-4px',
+                                                            right: '-4px',
+                                                            minWidth: '18px',
+                                                            height: '18px',
+                                                            padding: '0 4px',
+                                                            borderRadius: '999px',
+                                                            background: '#ef4444',
+                                                            color: '#fff',
+                                                            fontSize: '10px',
+                                                            fontWeight: 700,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                        }}
+                                                    >
+                                                        {unread > 99 ? '99+' : unread}
+                                                    </span>
+                                                )}
+                                                {user?.accountType === 'Matchmaker' && unread <= 0 && (
+                                                    <span
+                                                        style={{
+                                                            position: 'absolute',
+                                                            bottom: '-2px',
+                                                            right: '-2px',
+                                                            width: '16px',
+                                                            height: '16px',
+                                                            borderRadius: '50%',
+                                                            background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
+                                                            border: '2px solid #fff',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                        }}
+                                                        title="Client profile"
+                                                        aria-hidden
+                                                    >
+                                                        <svg
+                                                            xmlns="http://www.w3.org/2000/svg"
+                                                            width={8}
+                                                            height={8}
+                                                            viewBox="0 0 24 24"
+                                                            fill="none"
+                                                            stroke="#92400e"
+                                                            strokeWidth={2.5}
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                        >
+                                                            <path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z" />
+                                                        </svg>
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span
+                                                style={{
+                                                    fontSize: '0.68rem',
+                                                    lineHeight: 1.2,
+                                                    textAlign: 'center',
+                                                    color: isActive ? 'var(--primary, #ffa20d)' : '#666',
+                                                    fontWeight: isActive ? 600 : 500,
+                                                    maxWidth: '72px',
+                                                    overflow: 'hidden',
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: 'vertical',
+                                                }}
+                                            >
+                                                {sub.firstName || name}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        {showInterestProfileTabs && activeInterestSubAccount ? (
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    flexWrap: 'wrap',
+                                    margin: '0.75rem 0 0',
+                                }}
+                            >
+                                <p
+                                    style={{
+                                        color: 'var(--primary, #ffa20d)',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        margin: 0,
+                                    }}
+                                >
+                                    {subAccountDisplayName(activeInterestSubAccount)}
+                                </p>
+                                {user?.accountType === 'Matchmaker' ? (
+                                    <ClientProfileBadge variant="compact" />
+                                ) : null}
+                            </div>
+                        ) : null}
                         {loadingSavedProfiles ? (
                             <p style={{ color: '#666', marginTop: '1rem' }}>Loading list…</p>
-                        ) : incomingInterestProfiles.length === 0 ? (
-                            <p style={{ color: '#666', marginTop: '1rem' }}>No one has expressed interest yet. Complete your profile and browse members to get noticed.</p>
+                        ) : filteredIncomingInterestProfiles.length === 0 ? (
+                            <p style={{ color: '#666', marginTop: '1rem' }}>
+                                {showInterestProfileTabs && activeInterestSubAccount
+                                    ? `No one has expressed interest in ${subAccountDisplayName(activeInterestSubAccount)} yet.`
+                                    : 'No one has expressed interest yet. Complete your profile and browse members to get noticed.'}
+                            </p>
                         ) : (
                             <>
                                 <p style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', margin: '1rem 0 0.75rem 0' }}>
-                                    {incomingInterestProfiles.length} {incomingInterestProfiles.length === 1 ? 'person' : 'people'}
+                                    {filteredIncomingInterestProfiles.length} {filteredIncomingInterestProfiles.length === 1 ? 'person' : 'people'}
                                 </p>
                                 <div
                                     style={{
@@ -2814,7 +3058,7 @@ function ProfilePageContent() {
                                         paddingRight: '0.25rem',
                                     }}
                                 >
-                                    {incomingInterestProfiles.map((p) => (
+                                    {filteredIncomingInterestProfiles.map((p) => (
                                         <div
                                             key={`incoming-interest-${p.userId ?? p.id}`}
                                             role="button"
