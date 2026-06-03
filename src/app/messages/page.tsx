@@ -9,10 +9,122 @@ import Header from '@/components/Header';
 import * as signalR from '@microsoft/signalr';
 import { connectMatrimonialHub } from '@/utils/signalrHub';
 import { formatDeviceDate, formatDeviceTime, parseApiDateForDisplay } from '@/utils/deviceDateTime';
+import {
+    inboxThreadKey,
+    messageMatchesManagedThread,
+    parseManagedProfileFromContent,
+    readManagedProfileUserId,
+    stripManagedMessagePrefix,
+} from '@/utils/managedMessageContent';
+import {
+    canManageSubAccounts,
+    normalizeSubAccount,
+    subAccountDisplayName,
+    type ManagedSubAccount,
+} from '@/utils/managedSubAccounts';
+import ClientProfileBadge from '@/components/ClientProfileBadge';
+import HoroscopeLightbox from '@/components/HoroscopeLightbox';
+import {
+    horoscopePagesFromProfile,
+    horoscopeSharePreviewText,
+    parseHoroscopeShareFromContent,
+} from '@/utils/horoscopeMessageContent';
 
 const isNegotiationStoppedError = (error: unknown) =>
     error instanceof Error &&
     error.message.toLowerCase().includes('stopped during negotiation');
+
+function normalizeInboxContact(row: Record<string, unknown>) {
+    const contactId = Number((row as any).contactId ?? (row as any).ContactId ?? 0);
+    const managedProfileUserId = readManagedProfileUserId(
+        (row as any).managedProfileUserId ?? (row as any).ManagedProfileUserId
+    );
+    const firstName = String((row as any).firstName ?? (row as any).FirstName ?? '');
+    const lastName = String((row as any).lastName ?? (row as any).LastName ?? '');
+    const profilePhoto = (row as any).profilePhoto ?? (row as any).ProfilePhoto ?? null;
+    const peerFirstName = String(
+        (row as any).peerFirstName ?? (row as any).PeerFirstName ?? firstName
+    );
+    const peerLastName = String(
+        (row as any).peerLastName ?? (row as any).PeerLastName ?? lastName
+    );
+    const peerProfilePhoto =
+        (row as any).peerProfilePhoto ?? (row as any).PeerProfilePhoto ?? profilePhoto ?? null;
+    return {
+        contactId,
+        managedProfileUserId,
+        managedProfileName: String(
+            (row as any).managedProfileName ?? (row as any).ManagedProfileName ?? ''
+        ).trim() || null,
+        managedProfilePhoto:
+            (row as any).managedProfilePhoto ?? (row as any).ManagedProfilePhoto ?? null,
+        firstName,
+        lastName,
+        profilePhoto,
+        peerFirstName,
+        peerLastName,
+        peerProfilePhoto,
+        latestMessage: String((row as any).latestMessage ?? (row as any).LatestMessage ?? ''),
+        sentAt: (row as any).sentAt ?? (row as any).SentAt,
+        unreadCount: Number((row as any).unreadCount ?? (row as any).UnreadCount ?? 0),
+        isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(row),
+    };
+}
+
+type InboxContact = ReturnType<typeof normalizeInboxContact>;
+
+function peerNameFromContact(contact: {
+    peerFirstName?: string;
+    peerLastName?: string;
+    firstName?: string;
+    lastName?: string;
+}): string {
+    const a = String(contact.peerFirstName ?? contact.firstName ?? '').trim();
+    const b = String(contact.peerLastName ?? contact.lastName ?? '').trim();
+    const name = [a, b].filter(Boolean).join(' ').trim();
+    return name || 'This member';
+}
+
+/** Hub / API payloads may use camelCase or PascalCase. */
+function resolveManagedInboxPresentation(
+    contact: InboxContact,
+    subAccounts: ManagedSubAccount[],
+    isManagedParent: boolean
+) {
+    if (!isManagedParent || contact.managedProfileUserId == null) {
+        return {
+            listName: peerNameFromContact(contact),
+            listPhoto: contact.peerProfilePhoto ?? contact.profilePhoto,
+            listSubtitle: contact.managedProfileName ? `Re: ${contact.managedProfileName}` : null,
+        };
+    }
+
+    const sub = subAccounts.find((s) => s.id === contact.managedProfileUserId);
+    const subName =
+        (sub ? subAccountDisplayName(sub) : null) ||
+        contact.managedProfileName ||
+        `${contact.firstName} ${contact.lastName}`.trim() ||
+        'Profile';
+    const subPhoto =
+        sub?.profilePhoto ??
+        contact.managedProfilePhoto ??
+        contact.profilePhoto;
+    const peerName = peerNameFromContact(contact);
+
+    return {
+        listName: subName,
+        listPhoto: subPhoto,
+        listSubtitle: peerName !== 'This member' ? `With ${peerName}` : null,
+    };
+}
+
+function contactsMatch(a: InboxContact | null | undefined, b: InboxContact | null | undefined) {
+    if (!a || !b) return false;
+    return (
+        Number(a.contactId) === Number(b.contactId) &&
+        readManagedProfileUserId(a.managedProfileUserId) === readManagedProfileUserId(b.managedProfileUserId)
+    );
+}
 
 /** Hub / API payloads may use camelCase or PascalCase. */
 function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
@@ -20,7 +132,11 @@ function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
     const id = Number((raw as any).id ?? (raw as any).Id ?? 0);
     const senderId = Number((raw as any).senderId ?? (raw as any).SenderId ?? 0);
     const receiverId = Number((raw as any).receiverId ?? (raw as any).ReceiverId ?? 0);
-    const content = String((raw as any).content ?? (raw as any).Content ?? '');
+    const rawContent = String((raw as any).content ?? (raw as any).Content ?? '');
+    const parsedManaged = parseManagedProfileFromContent(rawContent);
+    const bodyAfterManaged = parsedManaged?.body ?? rawContent;
+    const horoscopeShare = parseHoroscopeShareFromContent(bodyAfterManaged);
+    const content = bodyAfterManaged;
     const sentAtRaw = (raw as any).sentAt ?? (raw as any).SentAt;
     const parsed = parseApiDateForDisplay(
         typeof sentAtRaw === 'string'
@@ -32,7 +148,18 @@ function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
     const sentAt = parsed ? parsed.toISOString() : new Date().toISOString();
     const isRead = !!((raw as any).isRead ?? (raw as any).IsRead);
     if (!Number.isFinite(senderId) || !Number.isFinite(receiverId)) return null;
-    return { id, senderId, receiverId, content, sentAt, isRead };
+    return {
+        id,
+        senderId,
+        receiverId,
+        content,
+        sentAt,
+        isRead,
+        managedProfileUserId:
+            parsedManaged?.managedProfileUserId ??
+            readManagedProfileUserId((raw as any).managedProfileUserId ?? (raw as any).ManagedProfileUserId),
+        horoscopeShare,
+    };
 }
 
 function normalizeMessageContent(s: string) {
@@ -89,12 +216,9 @@ function readMatrimonialChatEnabledFromRow(row: unknown): boolean {
     return true;
 }
 
-function peerDisplayName(contact: { firstName?: string; lastName?: string } | null): string {
+function peerDisplayName(contact: { firstName?: string; lastName?: string; peerFirstName?: string; peerLastName?: string } | null): string {
     if (!contact) return 'This member';
-    const a = String(contact.firstName ?? '').trim();
-    const b = String(contact.lastName ?? '').trim();
-    const name = [a, b].filter(Boolean).join(' ').trim();
-    return name || 'This member';
+    return peerNameFromContact(contact);
 }
 
 function MessagesContent() {
@@ -103,9 +227,13 @@ function MessagesContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const urlUserId = searchParams.get('userId');
+    const urlManagedProfileUserId = readManagedProfileUserId(searchParams.get('managedProfileUserId'));
 
-    const [inbox, setInbox] = useState<any[]>([]);
-    const [selectedContact, setSelectedContact] = useState<any | null>(null);
+    const [inbox, setInbox] = useState<InboxContact[]>([]);
+    const [selectedContact, setSelectedContact] = useState<InboxContact | null>(null);
+    const [subAccounts, setSubAccounts] = useState<ManagedSubAccount[]>([]);
+    const [activeSubAccountId, setActiveSubAccountId] = useState<number | null>(null);
+    const [subAccountsLoaded, setSubAccountsLoaded] = useState(false);
     const [messages, setMessages] = useState<any[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [isLoading, setIsLoading] = useState(true);
@@ -120,13 +248,16 @@ function MessagesContent() {
 
     // SignalR Connection
     const [connection, setConnection] = useState<signalR.HubConnection | null>(null);
-    const selectedContactRef = useRef<any | null>(null);
+    const selectedContactRef = useRef<InboxContact | null>(null);
 
     // Delete message state
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
     const [chatEnabled, setChatEnabled] = useState(true);
     const [chatStatusToast, setChatStatusToast] = useState('');
+    const [shareHoroscopePages, setShareHoroscopePages] = useState<string[]>([]);
+    const [sharingHoroscope, setSharingHoroscope] = useState(false);
+    const [horoscopeLightboxSrc, setHoroscopeLightboxSrc] = useState<string | null>(null);
     /** Per contact (App user id string) — from GetPresence batch + ReceivePresenceUpdate. */
     const [presenceMap, setPresenceMap] = useState<Record<string, PresenceInfo>>({});
     /** Bumps once per minute so "Last seen Xm ago" refreshes without leaving the page. */
@@ -136,6 +267,198 @@ function MessagesContent() {
     useEffect(() => {
         selectedContactRef.current = selectedContact;
     }, [selectedContact]);
+
+    const showSubAccountTabs = subAccounts.length >= 2;
+    const activeSubAccount = useMemo(
+        () => subAccounts.find((s) => s.id === activeSubAccountId) ?? null,
+        [subAccounts, activeSubAccountId]
+    );
+
+    const isManagedParent = canManageSubAccounts(user?.accountType);
+
+    const actingSubAccount = useMemo(() => {
+        const managedId = readManagedProfileUserId(
+            selectedContact?.managedProfileUserId ?? activeSubAccountId
+        );
+        if (managedId == null) return null;
+        return subAccounts.find((s) => s.id === managedId) ?? null;
+    }, [selectedContact?.managedProfileUserId, activeSubAccountId, subAccounts]);
+
+    const horoscopeProfileUserId = useMemo(() => {
+        if (!user?.id) return null;
+        if (isManagedParent) {
+            const fromContact = readManagedProfileUserId(selectedContact?.managedProfileUserId);
+            if (fromContact != null) return fromContact;
+            if (subAccounts.length === 1) return subAccounts[0]!.id;
+            if (activeSubAccountId != null) return activeSubAccountId;
+            return null;
+        }
+        return Number(user.id);
+    }, [
+        user?.id,
+        isManagedParent,
+        selectedContact?.managedProfileUserId,
+        subAccounts,
+        activeSubAccountId,
+    ]);
+
+    const managedProfileUserIdForShare = useMemo(() => {
+        if (!isManagedParent) return null;
+        return readManagedProfileUserId(
+            selectedContact?.managedProfileUserId ??
+                activeSubAccountId ??
+                (subAccounts.length === 1 ? subAccounts[0]?.id : null)
+        );
+    }, [
+        isManagedParent,
+        selectedContact?.managedProfileUserId,
+        activeSubAccountId,
+        subAccounts,
+    ]);
+
+    useEffect(() => {
+        if (!user?.id || horoscopeProfileUserId == null) {
+            setShareHoroscopePages([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                if (!isManagedParent && horoscopeProfileUserId === Number(user.id)) {
+                    const fromUser = horoscopePagesFromProfile(user as Record<string, unknown>);
+                    if (fromUser.length > 0) {
+                        if (!cancelled) setShareHoroscopePages(fromUser);
+                        return;
+                    }
+                }
+                const res = await matrimonialService.getProfile(
+                    horoscopeProfileUserId,
+                    Number(user.id)
+                );
+                if (cancelled) return;
+                if (res.statusCode === 200 || res.statusCode === 1) {
+                    setShareHoroscopePages(horoscopePagesFromProfile(res.result));
+                } else {
+                    setShareHoroscopePages([]);
+                }
+            } catch {
+                if (!cancelled) setShareHoroscopePages([]);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [user, horoscopeProfileUserId, isManagedParent]);
+
+    const filteredInbox = useMemo(() => {
+        if (!showSubAccountTabs || activeSubAccountId == null) return inbox;
+        return inbox.filter(
+            (c) => readManagedProfileUserId(c.managedProfileUserId) === activeSubAccountId
+        );
+    }, [inbox, showSubAccountTabs, activeSubAccountId]);
+
+    const subAccountUnreadMap = useMemo(() => {
+        const map: Record<number, number> = {};
+        for (const contact of inbox) {
+            const subId = readManagedProfileUserId(contact.managedProfileUserId);
+            if (subId == null) continue;
+            map[subId] = (map[subId] ?? 0) + (contact.unreadCount ?? 0);
+        }
+        return map;
+    }, [inbox]);
+
+    useEffect(() => {
+        if (!user?.id || !canManageSubAccounts(user.accountType)) {
+            setSubAccounts([]);
+            setSubAccountsLoaded(true);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await matrimonialService.getSubAccounts(Number(user.id));
+                if (cancelled) return;
+                if (res.statusCode === 200 || res.statusCode === 1) {
+                    const rows = (Array.isArray(res.result) ? res.result : [])
+                        .map((row: Record<string, unknown>) => normalizeSubAccount(row))
+                        .filter(Boolean) as ManagedSubAccount[];
+                    setSubAccounts(rows);
+                } else {
+                    setSubAccounts([]);
+                }
+            } catch {
+                if (!cancelled) setSubAccounts([]);
+            } finally {
+                if (!cancelled) setSubAccountsLoaded(true);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [user?.id, user?.accountType]);
+
+    useEffect(() => {
+        if (!showSubAccountTabs || subAccounts.length === 0) return;
+        if (urlManagedProfileUserId != null && subAccounts.some((s) => s.id === urlManagedProfileUserId)) {
+            setActiveSubAccountId(urlManagedProfileUserId);
+            return;
+        }
+        setActiveSubAccountId((prev) => {
+            if (prev != null && subAccounts.some((s) => s.id === prev)) return prev;
+            return subAccounts[0]?.id ?? null;
+        });
+    }, [showSubAccountTabs, subAccounts, urlManagedProfileUserId]);
+
+    useEffect(() => {
+        if (!showSubAccountTabs || !selectedContact) return;
+        const contactSubId = readManagedProfileUserId(selectedContact.managedProfileUserId);
+        if (contactSubId != null && contactSubId !== activeSubAccountId) {
+            setSelectedContact(null);
+            setMessages([]);
+        }
+    }, [showSubAccountTabs, activeSubAccountId, selectedContact?.contactId, selectedContact?.managedProfileUserId]);
+
+    const handleSelectSubAccount = (subId: number) => {
+        if (activeSubAccountId === subId) return;
+        setActiveSubAccountId(subId);
+        setSelectedContact(null);
+        setMessages([]);
+    };
+
+    const openContactFromUrl = (rows: InboxContact[]) => {
+        if (!urlUserId || selectedContactRef.current) return;
+        const contactId = Number(urlUserId);
+        if (!Number.isFinite(contactId) || contactId <= 0) return;
+
+        const targetManagedId =
+            urlManagedProfileUserId ??
+            (showSubAccountTabs ? activeSubAccountId : null);
+
+        const scopedRows =
+            showSubAccountTabs && targetManagedId != null
+                ? rows.filter(
+                      (c) => readManagedProfileUserId(c.managedProfileUserId) === targetManagedId
+                  )
+                : rows;
+
+        const exactMatch = scopedRows.find(
+            (c) =>
+                Number(c.contactId) === contactId &&
+                readManagedProfileUserId(c.managedProfileUserId) === targetManagedId
+        );
+        if (exactMatch) {
+            void handleSelectContact(exactMatch);
+            return;
+        }
+
+        const sameContactRows = scopedRows.filter((c) => Number(c.contactId) === contactId);
+        if (targetManagedId == null && sameContactRows.length === 1) {
+            void handleSelectContact(sameContactRows[0]);
+            return;
+        }
+
+        void handleSelectContact(contactId, targetManagedId);
+    };
 
     useEffect(() => {
         const handler = () => setContextMenu(null);
@@ -200,10 +523,9 @@ function MessagesContent() {
 
     useEffect(() => {
         if (!selectedContact?.contactId) return;
-        const id = Number(selectedContact.contactId);
-        const row = inbox.find((c: { contactId?: number }) => Number(c.contactId) === id);
+        const row = filteredInbox.find((c) => contactsMatch(c, selectedContact));
         if (row) setSelectedContact(row);
-    }, [inbox, selectedContact?.contactId]);
+    }, [filteredInbox, selectedContact?.contactId, selectedContact?.managedProfileUserId]);
 
     useEffect(() => {
         if (!user) {
@@ -268,6 +590,7 @@ function MessagesContent() {
         connection.on("ReceiveNewMessage", (payload) => {
             const message = normalizeChatMessage(payload as Record<string, unknown>);
             const activeContactId = selectedContactRef.current?.contactId;
+            const activeManagedProfileUserId = selectedContactRef.current?.managedProfileUserId ?? null;
             const myId = Number(user?.id);
 
             if (!message || !myId || !activeContactId) {
@@ -276,8 +599,15 @@ function MessagesContent() {
             }
 
             const inActiveThread =
-                (message.senderId === activeContactId && message.receiverId === myId) ||
-                (message.receiverId === activeContactId && message.senderId === myId);
+                ((message.senderId === activeContactId && message.receiverId === myId) ||
+                    (message.receiverId === activeContactId && message.senderId === myId)) &&
+                (message.managedProfileUserId != null
+                    ? readManagedProfileUserId(message.managedProfileUserId) ===
+                      readManagedProfileUserId(activeManagedProfileUserId)
+                    : messageMatchesManagedThread(
+                          String((payload as any)?.content ?? (payload as any)?.Content ?? message.content),
+                          activeManagedProfileUserId
+                      ));
 
             if (!inActiveThread) {
                 refreshInbox();
@@ -293,6 +623,11 @@ function MessagesContent() {
                     next = prev.filter((m) => {
                         if (!(m as { __localPending?: boolean }).__localPending) return true;
                         if (Number(m.senderId) !== myId || Number(m.receiverId) !== message.receiverId) return true;
+                        const pendingManaged = readManagedProfileUserId(
+                            (m as { managedProfileUserId?: number | null }).managedProfileUserId
+                        );
+                        const incomingManaged = readManagedProfileUserId(message.managedProfileUserId);
+                        if (pendingManaged !== incomingManaged) return true;
                         return normalizeMessageContent(String(m.content ?? '')) !== body;
                     });
                 }
@@ -417,47 +752,91 @@ function MessagesContent() {
         try {
             const res = await matrimonialService.getInbox(Number(user.id));
             if (res.statusCode === 200 || res.statusCode === 1) {
-                const rows = res.result || [];
+                const rows = (res.result || []).map((row: Record<string, unknown>) => normalizeInboxContact(row));
                 setInbox(rows);
                 syncUnreadFromInbox(rows);
-                if (urlUserId && !selectedContactRef.current) {
-                    handleSelectContact(Number(urlUserId));
-                }
             }
         } catch { } finally {
             setIsLoading(false);
         }
     };
 
-    const handleSelectContact = async (contactId: number) => {
+    useEffect(() => {
+        if (!urlUserId || selectedContactRef.current || inbox.length === 0) return;
+        if (canManageSubAccounts(user?.accountType) && !subAccountsLoaded) return;
+        if (showSubAccountTabs && activeSubAccountId == null) return;
+        openContactFromUrl(inbox);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when inbox + sub tab are ready
+    }, [inbox, showSubAccountTabs, activeSubAccountId, subAccountsLoaded, urlUserId, user?.accountType]);
+
+    const handleSelectContact = async (
+        contactOrId: InboxContact | number,
+        managedProfileUserId?: number | null
+    ) => {
         if (!user) return;
 
-        const existingContact = inbox.find(c => c.contactId === contactId);
-        if (existingContact) {
-            setSelectedContact(existingContact);
+        let contact: InboxContact;
+        if (typeof contactOrId === 'number') {
+            const contactId = contactOrId;
+            const managedId = readManagedProfileUserId(
+                managedProfileUserId ?? (showSubAccountTabs ? activeSubAccountId : null)
+            );
+            const existingContact = inbox.find(
+                (c) =>
+                    Number(c.contactId) === contactId &&
+                    readManagedProfileUserId(c.managedProfileUserId) === managedId
+            );
+            const activeSub = managedId != null ? subAccounts.find((s) => s.id === managedId) : null;
+            if (existingContact) {
+                contact = existingContact;
+            } else {
+                contact = {
+                    contactId,
+                    managedProfileUserId: managedId,
+                    managedProfileName: activeSub ? subAccountDisplayName(activeSub) : null,
+                    managedProfilePhoto: activeSub?.profilePhoto ?? null,
+                    firstName: 'User',
+                    lastName: '',
+                    profilePhoto: null,
+                    peerFirstName: 'User',
+                    peerLastName: '',
+                    peerProfilePhoto: null,
+                    latestMessage: '',
+                    sentAt: null,
+                    unreadCount: 0,
+                    isMatrimonialChatEnabled: true,
+                };
+                matrimonialService.getProfile(contactId, Number(user.id)).then((p) => {
+                    if (p.statusCode === 200 && p.result) {
+                        const r = p.result;
+                        setSelectedContact((prev) => {
+                            if (!prev || !contactsMatch(prev, contact)) return prev;
+                            return {
+                                ...prev,
+                                firstName: r.firstName || 'User',
+                                lastName: r.lastName || '',
+                                profilePhoto: r.profilePhoto,
+                                peerFirstName: r.firstName || 'User',
+                                peerLastName: r.lastName || '',
+                                peerProfilePhoto: r.profilePhoto,
+                                isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(r),
+                            };
+                        });
+                    }
+                }).catch(console.error);
+            }
         } else {
-            setSelectedContact({
-                contactId: contactId,
-                firstName: "User",
-                lastName: "",
-                profilePhoto: null
-            });
-            matrimonialService.getProfile(contactId, Number(user.id)).then((p) => {
-                if (p.statusCode === 200 && p.result) {
-                    const r = p.result;
-                    setSelectedContact({
-                        contactId: contactId,
-                        firstName: r.firstName || 'User',
-                        lastName: r.lastName || '',
-                        profilePhoto: r.profilePhoto,
-                        isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(r),
-                    });
-                }
-            }).catch(console.error);
+            contact = contactOrId;
         }
 
+        setSelectedContact(contact);
+
         try {
-            const res = await matrimonialService.getConversation(Number(user.id), contactId);
+            const res = await matrimonialService.getConversation(
+                Number(user.id),
+                contact.contactId,
+                contact.managedProfileUserId
+            );
             if (res.statusCode === 200 || res.statusCode === 1) {
                 const rawList = Array.isArray(res.result) ? res.result : [];
                 const cleaned = rawList
@@ -508,12 +887,19 @@ function MessagesContent() {
             if (connection && connection.state === signalR.HubConnectionState.Connected) return;
 
             try {
-                const res = await matrimonialService.getConversation(Number(user.id), selectedContactRef.current.contactId);
+                const res = await matrimonialService.getConversation(
+                    Number(user.id),
+                    selectedContactRef.current.contactId,
+                    selectedContactRef.current.managedProfileUserId
+                );
                 if (res.statusCode === 200 || res.statusCode === 1) {
+                    const rawList = Array.isArray(res.result) ? res.result : [];
+                    const cleaned = rawList
+                        .map((row: Record<string, unknown>) => normalizeChatMessage(row))
+                        .filter(Boolean) as ReturnType<typeof normalizeChatMessage>[];
                     setMessages(prev => {
-                        const newMsgs = res.result || [];
-                        if (newMsgs.length !== prev.length || JSON.stringify(newMsgs.map((m: any) => m.id)) !== JSON.stringify(prev.map(m => m.id))) {
-                            return newMsgs;
+                        if (cleaned.length !== prev.length || JSON.stringify(cleaned.map((m) => m?.id)) !== JSON.stringify(prev.map(m => m.id))) {
+                            return cleaned;
                         }
                         return prev;
                     });
@@ -562,6 +948,44 @@ function MessagesContent() {
         }, 2000);
     };
 
+    const handleShareHoroscope = async () => {
+        if (!canSendInThread || !user || !selectedContact || shareHoroscopePages.length === 0) return;
+        if (isManagedParent && managedProfileUserIdForShare == null) {
+            setChatStatusToast('Select a profile before sharing horoscope.');
+            setTimeout(() => setChatStatusToast(''), 2200);
+            return;
+        }
+
+        setSharingHoroscope(true);
+        try {
+            const res = await matrimonialService.shareHoroscope(
+                Number(user.id),
+                selectedContact.contactId,
+                managedProfileUserIdForShare
+            );
+            if (res.statusCode === 200 || res.statusCode === 1) {
+                refreshInbox();
+                const normalized = normalizeChatMessage(res.result as Record<string, unknown>);
+                if (normalized) {
+                    setMessages((prev) => [...prev, normalized]);
+                    scrollToBottom();
+                }
+                setChatStatusToast('Horoscope shared');
+                setTimeout(() => setChatStatusToast(''), 1800);
+            } else {
+                const msg = String(res.message || res.Message || 'Could not share horoscope');
+                setChatStatusToast(msg);
+                setTimeout(() => setChatStatusToast(''), 2200);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Could not share horoscope';
+            setChatStatusToast(msg);
+            setTimeout(() => setChatStatusToast(''), 2200);
+        } finally {
+            setSharingHoroscope(false);
+        }
+    };
+
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!canSendInThread) return;
@@ -581,12 +1005,18 @@ function MessagesContent() {
                 content: content,
                 sentAt: new Date().toISOString(),
                 isRead: false,
+                managedProfileUserId: selectedContact.managedProfileUserId ?? null,
                 __localPending: true,
             };
             setMessages(prev => [...prev, newMsgObj]);
             scrollToBottom();
 
-            const res = await matrimonialService.sendMessage(Number(user.id), selectedContact.contactId, content);
+            const res = await matrimonialService.sendMessage(
+                Number(user.id),
+                selectedContact.contactId,
+                content,
+                selectedContact.managedProfileUserId ?? activeSubAccountId
+            );
 
             // Replace temporary ID if needed or let SignalR handle the sync
             if (res.statusCode === 200 || res.statusCode === 1) {
@@ -637,6 +1067,79 @@ function MessagesContent() {
 
     if (!user) return null;
 
+    const subAccountPanelLabel =
+        user.accountType === 'Matchmaker' ? 'Clients' : 'Sub-accounts';
+    const isMatchmakerAccount = user.accountType === 'Matchmaker';
+
+    const renderSubAccountTab = (sub: ManagedSubAccount, compact = false) => {
+        const isActive = activeSubAccountId === sub.id;
+        const unread = subAccountUnreadMap[sub.id] ?? 0;
+        const name = subAccountDisplayName(sub);
+        return (
+            <button
+                key={sub.id}
+                type="button"
+                onClick={() => handleSelectSubAccount(sub.id)}
+                title={name}
+                className={`relative flex flex-col items-center gap-1.5 rounded-xl transition-all duration-200 border ${
+                    compact ? 'shrink-0 min-w-[76px] px-2 py-2' : 'w-full px-2 py-3'
+                } ${
+                    isActive
+                        ? 'bg-gold/15 border-primary/40 shadow-sm ring-1 ring-primary/20'
+                        : 'bg-transparent border-transparent hover:bg-gold/8 hover:border-gold/20'
+                }`}
+            >
+                <div className="relative">
+                    <div
+                        className={`rounded-full overflow-hidden border-2 bg-cream ${
+                            compact ? 'w-11 h-11' : 'w-12 h-12'
+                        } ${isActive ? 'border-primary' : 'border-white shadow-sm ring-1 ring-black/5'}`}
+                    >
+                        <img
+                            src={sub.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
+                            alt={name}
+                            className="w-full h-full object-cover"
+                        />
+                    </div>
+                    {unread > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-white text-[0.62rem] font-bold flex items-center justify-center shadow-sm">
+                            {unread > 99 ? '99+' : unread}
+                        </span>
+                    )}
+                    {isMatchmakerAccount && unread <= 0 && (
+                        <span
+                            className="absolute -bottom-0.5 -right-0.5 w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center shadow-sm"
+                            style={{ background: 'linear-gradient(135deg, #fef3c7, #fde68a)' }}
+                            title="Client profile"
+                            aria-hidden
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width={9}
+                                height={9}
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="#92400e"
+                                strokeWidth={2.5}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z" />
+                            </svg>
+                        </span>
+                    )}
+                </div>
+                <span
+                    className={`text-[0.68rem] leading-tight text-center line-clamp-2 max-w-full ${
+                        isActive ? 'text-primary font-semibold' : 'text-text-light font-medium'
+                    }`}
+                >
+                    {sub.firstName || name}
+                </span>
+            </button>
+        );
+    };
+
     return (
         <main className="min-h-screen bg-cream flex flex-col font-source-sans">
             <Header onOpenLogin={() => { }} onOpenRegister={() => { }} onOpenVerify={() => { }} />
@@ -644,13 +1147,36 @@ function MessagesContent() {
             <section className="flex-1 min-h-0 pt-[100px] pb-12 px-4 md:px-8 max-w-[1400px] mx-auto w-full flex flex-col">
                 <div className="flex-1 min-h-0 bg-white rounded-2xl md:rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gold/10 overflow-hidden flex flex-col md:flex-row min-h-[min(600px,calc(100dvh-170px))] md:h-[calc(100vh-150px)] md:max-h-[calc(100vh-150px)]">
 
+                    {/* Sub-account tabs — left rail when multiple managed profiles */}
+                    {showSubAccountTabs && (
+                        <div className="hidden md:flex w-[92px] shrink-0 flex-col min-h-0 border-r border-gold/10 bg-[#fffdfb]">
+                            <div className="px-2 py-4 border-b border-gold/10 text-center">
+                                <p className="text-[0.62rem] font-bold uppercase tracking-wide text-text-light m-0 leading-tight">
+                                    {subAccountPanelLabel}
+                                </p>
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 py-3 flex flex-col gap-2">
+                                {subAccounts.map((sub) => renderSubAccountTab(sub))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Inbox Sidebar List */}
                     <div className={`w-full md:w-[380px] flex flex-col min-h-0 border-r border-gray-100 bg-[#fdfaf7] ${selectedContact ? 'hidden md:flex' : 'flex'}`}>
                         <div className="p-6 border-b border-gold/10 bg-white">
                             <div className="flex items-start justify-between gap-3">
-                                <div>
+                                <div className="min-w-0">
                                     <h2 className="text-2xl font-playfair font-bold text-text-dark">Messages</h2>
-                                    <p className="text-sm text-text-light mt-1">Connect with your matches</p>
+                                    {showSubAccountTabs && activeSubAccount ? (
+                                        <div className="flex items-center gap-2 flex-wrap mt-1">
+                                            <p className="text-sm text-primary font-medium truncate">
+                                                {subAccountDisplayName(activeSubAccount)}
+                                            </p>
+                                            {isMatchmakerAccount ? <ClientProfileBadge variant="compact" /> : null}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-text-light mt-1">Connect with your matches</p>
+                                    )}
                                 </div>
                                 <button
                                     type="button"
@@ -663,33 +1189,59 @@ function MessagesContent() {
                             </div>
                         </div>
 
+                        {showSubAccountTabs && (
+                            <div className="md:hidden shrink-0 border-b border-gold/10 bg-white px-3 py-3">
+                                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-text-light mb-2 px-1">
+                                    {subAccountPanelLabel}
+                                </p>
+                                <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-1">
+                                    {subAccounts.map((sub) => renderSubAccountTab(sub, true))}
+                                </div>
+                            </div>
+                        )}
+
                         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                             {isLoading ? (
                                 <div className="p-8 text-center text-text-light animate-pulse">Loading conversations...</div>
-                            ) : inbox.length === 0 ? (
+                            ) : filteredInbox.length === 0 ? (
                                 <div className="p-8 text-center text-text-light">
                                     <div className="text-4xl mb-3 opacity-50">👥</div>
-                                    No conversations yet.
+                                    {showSubAccountTabs && activeSubAccount
+                                        ? `No messages for ${subAccountDisplayName(activeSubAccount)} yet.`
+                                        : 'No conversations yet.'}
                                 </div>
                             ) : (
-                                inbox.map(contact => (
+                                filteredInbox.map(contact => {
+                                    const presentation = resolveManagedInboxPresentation(
+                                        contact,
+                                        subAccounts,
+                                        isManagedParent
+                                    );
+                                    return (
                                     <div
-                                        key={contact.contactId}
-                                        onClick={() => handleSelectContact(contact.contactId)}
-                                        className={`flex p-4 cursor-pointer border-b border-gray-50 transition-all duration-300 hover:bg-gold/5 ${selectedContact?.contactId === contact.contactId ? 'bg-gold/10 border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}`}
+                                        key={inboxThreadKey(contact.contactId, contact.managedProfileUserId)}
+                                        onClick={() => handleSelectContact(contact)}
+                                        className={`flex p-4 cursor-pointer border-b border-gray-50 transition-all duration-300 hover:bg-gold/5 ${contactsMatch(selectedContact, contact) ? 'bg-gold/10 border-l-4 border-l-primary' : 'border-l-4 border-l-transparent'}`}
                                     >
                                         <div className="w-[50px] h-[50px] rounded-full bg-cream mr-4 overflow-hidden shrink-0 border-2 border-white shadow-sm ring-1 ring-black/5">
                                             <img
-                                                src={contact.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
-                                                alt={contact.firstName}
+                                                src={presentation.listPhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
+                                                alt={presentation.listName}
                                                 className="w-full h-full object-cover"
                                             />
                                         </div>
                                         <div className="flex-1 overflow-hidden">
                                             <div className="flex justify-between items-center mb-1 gap-2">
-                                                <h4 className="font-semibold text-text-dark text-[1rem] truncate">
-                                                    {contact.firstName} {contact.lastName}
-                                                </h4>
+                                                <div className="min-w-0">
+                                                    <h4 className="font-semibold text-text-dark text-[1rem] truncate">
+                                                        {presentation.listName}
+                                                    </h4>
+                                                    {presentation.listSubtitle && (
+                                                        <p className="text-[0.72rem] text-primary font-medium truncate m-0 mt-0.5">
+                                                            {presentation.listSubtitle}
+                                                        </p>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
                                                     {!readMatrimonialChatEnabledFromRow(contact) && (
                                                         <span className="text-[0.65rem] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
@@ -720,7 +1272,14 @@ function MessagesContent() {
                                             })()}
                                             <div className="flex justify-between items-center">
                                                 <p className={`text-[0.85rem] m-0 truncate ${contact.unreadCount > 0 ? 'text-text-dark font-semibold' : 'text-text-light'}`}>
-                                                    {contact.latestMessage}
+                                                    {(() => {
+                                                        const preview =
+                                                            horoscopeSharePreviewText(
+                                                                stripManagedMessagePrefix(contact.latestMessage)
+                                                            ) ??
+                                                            stripManagedMessagePrefix(contact.latestMessage);
+                                                        return preview;
+                                                    })()}
                                                 </p>
                                                 {contact.unreadCount > 0 && (
                                                     <div className="bg-primary text-white rounded-full min-w-[20px] h-[20px] flex items-center justify-center text-[0.7rem] font-bold px-1.5 ml-2 shrink-0 shadow-sm animate-pulse">
@@ -730,7 +1289,8 @@ function MessagesContent() {
                                             </div>
                                         </div>
                                     </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
                     </div>
@@ -752,13 +1312,25 @@ function MessagesContent() {
                                     </button>
                                     <div className="w-[45px] h-[45px] rounded-full overflow-hidden mr-3 border-2 border-white shadow-sm ring-1 ring-black/5">
                                         <img
-                                            src={selectedContact.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
-                                            alt={selectedContact.firstName}
+                                            src={selectedContact.peerProfilePhoto || selectedContact.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
+                                            alt={peerNameFromContact(selectedContact)}
                                             className="w-full h-full object-cover"
                                         />
                                     </div>
-                                    <div className="flex flex-col">
-                                        <h3 className="font-playfair text-xl md:text-2xl font-semibold m-0 leading-tight">{selectedContact.firstName} {selectedContact.lastName}</h3>
+                                    <div className="flex flex-col min-w-0">
+                                        <h3 className="font-playfair text-xl md:text-2xl font-semibold m-0 leading-tight">
+                                            {peerNameFromContact(selectedContact)}
+                                        </h3>
+                                        {actingSubAccount && (
+                                            <span className="text-xs text-primary font-medium mt-0.5 truncate flex items-center gap-1.5">
+                                                <img
+                                                    src={actingSubAccount.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
+                                                    alt={subAccountDisplayName(actingSubAccount)}
+                                                    className="w-4 h-4 rounded-full object-cover shrink-0 ring-1 ring-primary/20"
+                                                />
+                                                Replying as {subAccountDisplayName(actingSubAccount)}
+                                            </span>
+                                        )}
                                         {remoteTyping ? (
                                             <span className="text-xs text-primary font-medium animate-pulse mt-0.5">typing...</span>
                                         ) : (() => {
@@ -778,18 +1350,60 @@ function MessagesContent() {
                                         const isMe = Number(msg.senderId) === Number(user.id);
                                         const rowKey =
                                             typeof msg.id === 'number' && Number.isInteger(msg.id) ? msg.id : `pending-${index}`;
+                                        const horoscopeShare = msg.horoscopeShare ?? parseHoroscopeShareFromContent(
+                                            stripManagedMessagePrefix(msg.content)
+                                        );
                                         return (
                                             <div
                                                 key={`msg-${rowKey}-${index}`}
                                                 className={`flex flex-col max-w-[85%] md:max-w-[70%] group ${isMe ? 'self-end' : 'self-start'}`}
                                                 onContextMenu={(e) => handleMessageRightClick(e, msg)}
                                             >
+                                                {isMe && actingSubAccount && (
+                                                    <div className="flex items-center gap-1.5 self-end mb-1 pr-1">
+                                                        <img
+                                                            src={actingSubAccount.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
+                                                            alt={subAccountDisplayName(actingSubAccount)}
+                                                            className="w-5 h-5 rounded-full object-cover ring-1 ring-primary/25"
+                                                        />
+                                                        <span className="text-[0.65rem] text-text-light font-medium">
+                                                            {subAccountDisplayName(actingSubAccount)}
+                                                        </span>
+                                                    </div>
+                                                )}
                                                 <div className="relative">
                                                     <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${isMe
                                                         ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl rounded-tr-sm'
                                                         : 'bg-white text-text-dark rounded-2xl rounded-tl-sm border border-gold/10'
                                                         }`}>
-                                                        <p className="m-0 text-[0.95rem] leading-relaxed">{msg.content}</p>
+                                                        {horoscopeShare ? (
+                                                            <div className="flex flex-col gap-2">
+                                                                <p className="m-0 text-[0.95rem] font-semibold leading-relaxed">
+                                                                    Horoscope shared
+                                                                </p>
+                                                                <p className={`m-0 text-[0.82rem] leading-relaxed ${isMe ? 'text-white/85' : 'text-text-light'}`}>
+                                                                    {horoscopeShare.pages.length} page{horoscopeShare.pages.length === 1 ? '' : 's'} attached
+                                                                </p>
+                                                                <div className="flex flex-wrap gap-2 pt-1">
+                                                                    {horoscopeShare.pages.map((pageSrc, pageIdx) => (
+                                                                        <button
+                                                                            key={`${rowKey}-h-${pageIdx}`}
+                                                                            type="button"
+                                                                            onClick={() => setHoroscopeLightboxSrc(pageSrc)}
+                                                                            className={`text-[0.8rem] font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                                                                                isMe
+                                                                                    ? 'border-white/40 bg-white/15 hover:bg-white/25 text-white'
+                                                                                    : 'border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary'
+                                                                            }`}
+                                                                        >
+                                                                            View page {pageIdx + 1}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="m-0 text-[0.95rem] leading-relaxed">{stripManagedMessagePrefix(msg.content)}</p>
+                                                        )}
                                                     </div>
 
                                                     {/* Delete button (own messages only) */}
@@ -855,6 +1469,32 @@ function MessagesContent() {
                                             You {"can't"} send messages until they turn chat back on.
                                         </div>
                                     )}
+                                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleShareHoroscope()}
+                                            disabled={
+                                                !canSendInThread ||
+                                                sharingHoroscope ||
+                                                shareHoroscopePages.length === 0 ||
+                                                (isManagedParent && managedProfileUserIdForShare == null)
+                                            }
+                                            title={
+                                                shareHoroscopePages.length === 0
+                                                    ? 'Upload a horoscope on your profile first'
+                                                    : 'Share horoscope with this conversation'
+                                            }
+                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        >
+                                            <span aria-hidden>☸</span>
+                                            {sharingHoroscope ? 'Sharing…' : 'Share horoscope'}
+                                        </button>
+                                        {shareHoroscopePages.length === 0 ? (
+                                            <span className="text-xs text-text-light">
+                                                Upload horoscope on your profile to enable sharing.
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     <form onSubmit={handleSendMessage} className="flex gap-3 bg-[#fdfaf7] border border-gold/20 p-2 rounded-full shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
                                         <input
                                             type="text"
@@ -917,6 +1557,13 @@ function MessagesContent() {
                     {chatStatusToast}
                 </div>
             )}
+
+            <HoroscopeLightbox
+                open={!!horoscopeLightboxSrc}
+                src={horoscopeLightboxSrc || ''}
+                alt="Shared horoscope"
+                onClose={() => setHoroscopeLightboxSrc(null)}
+            />
         </main>
     );
 }

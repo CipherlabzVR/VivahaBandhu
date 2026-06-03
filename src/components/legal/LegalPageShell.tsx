@@ -13,8 +13,8 @@ type LegalPageShellProps = {
     effectiveDateLabel: string;
     children: React.ReactNode;
     /** Cross-link to the companion legal document */
-    siblingHref?: '/terms-of-service' | '/privacy-policy';
-    siblingTitleKey?: 'privacyPolicy' | 'termsOfService';
+    siblingHref?: '/terms-of-service' | '/privacy-policy' | '/cookie-policy' | '/refund-policy';
+    siblingTitleKey?: 'privacyPolicy' | 'termsOfService' | 'cookiePolicy' | 'refundPolicy';
 };
 
 export default function LegalPageShell({

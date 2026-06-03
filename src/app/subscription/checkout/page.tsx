@@ -11,11 +11,14 @@ import {
     CHECKOUT_PLAN_PREMIUM_SELF,
     CHECKOUT_PLAN_MATCHMAKER_GOLD,
     CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
+    CHECKOUT_PLAN_SUB_ACCOUNT,
 } from '../../../constants/subscription';
 import {
     BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY,
     PENDING_BANK_PREMIUM_STORAGE_KEY,
+    PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
+    SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
 } from '../../../constants/premiumActivation';
 import { sanitizeNameInput } from '../../../utils/nameInput';
 import { PasswordVisibilityToggle } from '../../../components/PasswordVisibilityToggle';
@@ -29,6 +32,8 @@ function planLabel(plan: string, isMatchmaker: boolean): string {
             return 'Matchmaker Gold';
         case CHECKOUT_PLAN_MATCHMAKER_DIAMOND:
             return 'Matchmaker Diamond';
+        case CHECKOUT_PLAN_SUB_ACCOUNT:
+            return 'Sub-account slot';
         case CHECKOUT_PLAN_PREMIUM_SELF:
         default:
             return isMatchmaker ? 'Matchmaker checkout' : 'Premium (Self)';
@@ -58,6 +63,7 @@ export default function SubscriptionCheckoutPage() {
     const [success, setSuccess] = useState('');
 
     const isMatchmakerAccount = user?.accountType === 'Matchmaker';
+    const isSubAccountCheckout = checkoutPlan === CHECKOUT_PLAN_SUB_ACCOUNT;
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -68,23 +74,39 @@ export default function SubscriptionCheckoutPage() {
             url.searchParams.get('Plan') ||
             CHECKOUT_PLAN_PREMIUM_SELF;
 
-        setCheckoutPlan(queryPlan.trim().toLowerCase());
+        const normalizedPlan = queryPlan.trim().toLowerCase();
+        setCheckoutPlan(normalizedPlan);
 
         if (queryAmount && queryAmount.trim() !== '') {
             setAmount(queryAmount);
             return;
         }
 
-        if (queryPlan === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
+        if (normalizedPlan === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
             setAmount(String(MATCHMAKER_GOLD_LKR));
             return;
         }
-        if (queryPlan === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
+        if (normalizedPlan === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
             setAmount(String(MATCHMAKER_DIAMOND_LKR));
             return;
         }
+        if (normalizedPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
+            matrimonialService.getActiveSubAccountPackage().then((pkg) => {
+                if (pkg?.price != null) {
+                    setAmount(String(pkg.price));
+                    return;
+                }
+                const fromUser = user?.familySubAccountAdditionalAmountLkr;
+                if (fromUser != null && fromUser > 0) {
+                    setAmount(String(fromUser));
+                    return;
+                }
+                setAmount(String(PREMIUM_SUBSCRIPTION_LKR));
+            });
+            return;
+        }
         setAmount(String(PREMIUM_SUBSCRIPTION_LKR));
-    }, []);
+    }, [user?.familySubAccountAdditionalAmountLkr]);
 
     const formatCardNumber = (value: string) => {
         const digits = value.replace(/\D/g, '').slice(0, 16);
@@ -157,6 +179,26 @@ export default function SubscriptionCheckoutPage() {
         }
     };
 
+    const applySubAccountSlotPatch = (
+        purchased?: number,
+        subscriptionExpiresAt?: string,
+        subscriptionIsLifetime?: boolean,
+    ) => {
+        const nextPurchased =
+            purchased ??
+            Math.max(0, (user?.familySubAccountSlotsPurchased ?? 0) + 1);
+        updateUser({
+            familySubAccountSlotsPurchased: nextPurchased,
+            isSubscribed: true,
+            matchmakerTier: undefined,
+            ...(subscriptionIsLifetime
+                ? { subscriptionIsLifetime: true, subscriptionExpiresAt: undefined }
+                : subscriptionExpiresAt
+                  ? { subscriptionExpiresAt, subscriptionIsLifetime: false }
+                  : {}),
+        });
+    };
+
     const handleMockPayment = async () => {
         if (!user?.id) {
             setError('Please log in first.');
@@ -165,6 +207,13 @@ export default function SubscriptionCheckoutPage() {
 
         let subscriptionPlan =
             checkoutPlan.trim().length > 0 ? checkoutPlan.trim().toLowerCase() : CHECKOUT_PLAN_PREMIUM_SELF;
+
+        if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
+            if (user.accountType !== 'Parents' && user.accountType !== 'Relation' && user.accountType !== 'Father' && user.accountType !== 'Mother') {
+                setError('Sub-account checkout is only for Parents and Relation accounts.');
+                return;
+            }
+        }
 
         if (subscriptionPlan.startsWith('matchmaker_') && user.accountType !== 'Matchmaker') {
             setError('This checkout is only for Matchmaker accounts. Open pricing while logged in as a matchmaker.');
@@ -195,6 +244,26 @@ export default function SubscriptionCheckoutPage() {
                 subscriptionPlan
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
+                if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
+                    const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
+                    const newPurchased = r
+                        ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? (user?.familySubAccountSlotsPurchased ?? 0) + 1)
+                        : (user?.familySubAccountSlotsPurchased ?? 0) + 1;
+                    const rawUntil = r?.subscribedUntil ?? r?.SubscribedUntil;
+                    let untilIso: string | undefined;
+                    if (rawUntil != null && String(rawUntil).trim() !== '') {
+                        const d = new Date(String(rawUntil));
+                        if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
+                    }
+                    const lifetime =
+                        r?.subscriptionIsLifetime === true ||
+                        r?.SubscriptionIsLifetime === true;
+                    applySubAccountSlotPatch(newPurchased, untilIso, lifetime);
+                    setSuccess('Payment successful. Premium membership is active and you can create a sub-account from your profile.');
+                    showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
+                    window.setTimeout(() => router.replace('/profile'), 800);
+                    return;
+                }
                 const rawUntil =
                     (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
                         ?.subscribedUntil ??
@@ -251,22 +320,28 @@ export default function SubscriptionCheckoutPage() {
                         Number(user.id),
                         parsedAmount,
                         base64,
-                        bankRemarks
+                        bankRemarks,
+                        isSubAccountCheckout ? 'sub_account' : isMatchmakerAccount ? 'matchmaker' : 'premium',
                     );
                     if (res?.statusCode === 200 || res?.statusCode === 1) {
                         if (typeof window !== 'undefined') {
-                            localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
-                            sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+                            if (isSubAccountCheckout) {
+                                localStorage.setItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, '1');
+                            } else {
+                                localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
+                                sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+                            }
                         }
                         setSuccess(
-                            'Slip received! Our admin team will review your payment and activate your subscription shortly. ' +
-                            'You will be redirected to the home page in a moment.'
+                            isSubAccountCheckout
+                                ? 'Slip received! Our team will review your payment and add your sub-account slot shortly. Redirecting to profile…'
+                                : 'Slip received! Our admin team will review your payment and activate your subscription shortly. You will be redirected to the home page in a moment.',
                         );
                         setBankSlipFile(null);
                         setBankSlipPreview(null);
                         setBankRemarks('');
                         window.setTimeout(() => {
-                            router.replace('/');
+                            router.replace(isSubAccountCheckout ? '/profile' : '/');
                         }, 2000);
                     } else {
                         setError(res?.message || 'Failed to submit bank transfer.');

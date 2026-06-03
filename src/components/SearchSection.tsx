@@ -5,19 +5,34 @@ import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
-import MatchmakerBadge from './MatchmakerBadge';
+import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
 import { religionFilterMatches } from '../utils/religionMatch';
 
 import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
+import { excludeOwnedProfilesFromBrowse } from '../utils/browseProfileFilters';
+import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
+import PreferredSearchProfilePicker from './PreferredSearchProfilePicker';
+import {
+    canManageSubAccounts,
+    subAccountDisplayName,
+    type ManagedSubAccount,
+} from '../utils/managedSubAccounts';
+import {
+    defaultBrowseGenderForUser,
+    effectiveBrowseGenderForUser,
+    managedParentShowsBothGenders,
+    profileMatchesBrowseGender,
+} from '../utils/selfAccountBrowseGender';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
 }
 
 const BROWSE_FILTERS_STORAGE_KEY = 'cbass:browse-profile-filters';
+const PREFERRED_SEARCH_PROFILE_KEY = 'cbass:preferred-search-profile';
 
 type BrowseFilterFields = {
     gender: string;
@@ -39,15 +54,28 @@ const defaultBrowseFields = (): BrowseFilterFields => ({
     sortBy: 'latest',
 });
 
+function defaultBrowseFieldsForUser(
+    user: { gender?: string; accountType?: string; parentUserId?: number | null } | null | undefined,
+    subAccounts: readonly Pick<ManagedSubAccount, 'gender'>[] = []
+): BrowseFilterFields {
+    const fields = defaultBrowseFields();
+    const g = defaultBrowseGenderForUser(user, subAccounts);
+    if (g) fields.gender = g;
+    return fields;
+}
+
 function browseOwnerKey(user: { id: string } | null | undefined): string {
     return user?.id != null && user.id !== '' ? `user:${user.id}` : 'anon';
 }
 
-function profileMatchesBrowseFilters(profile: any, f: BrowseFilterFields): boolean {
-    if (f.gender) {
-        const g = String(profile.gender ?? profile.Gender ?? '').trim();
-        if (g.toLowerCase() !== f.gender.trim().toLowerCase()) return false;
-    }
+function profileMatchesBrowseFilters(
+    profile: any,
+    f: BrowseFilterFields,
+    user?: { gender?: string; accountType?: string; parentUserId?: number | null } | null,
+    subAccounts: readonly Pick<ManagedSubAccount, 'gender'>[] = []
+): boolean {
+    const genderFilter = effectiveBrowseGenderForUser(user, f.gender, subAccounts);
+    if (genderFilter && !profileMatchesBrowseGender(profile, genderFilter)) return false;
     const age = Number(profile.age ?? profile.Age ?? 0);
     if (f.minAge) {
         const min = parseInt(f.minAge, 10);
@@ -114,13 +142,48 @@ function clearSavedBrowseFilters(): void {
     }
 }
 
+function loadPreferredSearchProfileId(ownerKey: string): number | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(PREFERRED_SEARCH_PROFILE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw) as { ownerKey?: string; profileId?: number };
+        if (data.ownerKey !== ownerKey) return null;
+        const id = Number(data.profileId);
+        return Number.isFinite(id) && id > 0 ? id : null;
+    } catch {
+        return null;
+    }
+}
+
+function persistPreferredSearchProfileId(ownerKey: string, profileId: number | null): void {
+    if (typeof window === 'undefined') return;
+    try {
+        if (profileId == null) {
+            localStorage.removeItem(PREFERRED_SEARCH_PROFILE_KEY);
+            return;
+        }
+        localStorage.setItem(
+            PREFERRED_SEARCH_PROFILE_KEY,
+            JSON.stringify({ ownerKey, profileId })
+        );
+    } catch {
+        /* ignore */
+    }
+}
+
 export default function SearchSection({ onOpenProfileDetail }: SearchSectionProps) {
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const { user, loading: authLoading } = useAuth();
+    const { ownedIds, subAccounts } = useOwnedSubAccountsForBrowse();
+    const isManagedParent = canManageSubAccounts(user?.accountType);
     
     const [preferredSearch, setPreferredSearch] = useState(false);
+    const [preferredSearchProfileId, setPreferredSearchProfileId] = useState<number | null>(null);
+    const [showPreferredProfilePicker, setShowPreferredProfilePicker] = useState(false);
+    const [pickerDraftProfileId, setPickerDraftProfileId] = useState<number | null>(null);
 
     const [draftFilters, setDraftFilters] = useState<BrowseFilterFields>(defaultBrowseFields);
     const [activeFilters, setActiveFilters] = useState<ActiveBrowseFilters>(() => ({
@@ -128,6 +191,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         pageNumber: 1,
         pageSize: 99,
     }));
+    /** Last filters persisted via Save (used for “unsaved changes” hint only). */
+    const [persistedFilters, setPersistedFilters] = useState<BrowseFilterFields | null>(null);
+    const ageApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [totalCount, setTotalCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [actionToast, setActionToast] = useState('');
@@ -156,18 +222,57 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         const saved = loadSavedBrowseFields(ownerKey);
         if (saved) {
             const ageOk = validateMatrimonialSearchAge(saved.minAge, saved.maxAge);
-            const fields = ageOk.ok ? saved : { ...saved, minAge: '', maxAge: '' };
+            let fields = ageOk.ok ? saved : { ...saved, minAge: '', maxAge: '' };
+            if (!fields.gender && defaultBrowseGenderForUser(user, subAccounts)) {
+                fields = { ...fields, gender: defaultBrowseGenderForUser(user, subAccounts) };
+            }
             if (!ageOk.ok) {
                 persistBrowseFields(ownerKey, fields);
             }
             setDraftFilters(fields);
             setActiveFilters(prev => ({ ...fields, pageNumber: 1, pageSize: prev.pageSize }));
+            setPersistedFilters(fields);
         } else {
-            const defaults = defaultBrowseFields();
+            const defaults = defaultBrowseFieldsForUser(user, subAccounts);
             setDraftFilters(defaults);
             setActiveFilters((prev) => ({ ...defaults, pageNumber: 1, pageSize: prev.pageSize }));
+            setPersistedFilters(null);
         }
-    }, [user?.id, authLoading]);
+    }, [user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts, authLoading]);
+
+    const preferredSearchSubAccount = useMemo(
+        () => subAccounts.find((s) => s.id === preferredSearchProfileId) ?? null,
+        [subAccounts, preferredSearchProfileId]
+    );
+
+    useEffect(() => {
+        if (authLoading || !user?.id || !isManagedParent) return;
+        const ownerKey = browseOwnerKey(user);
+        const savedId = loadPreferredSearchProfileId(ownerKey);
+        if (savedId != null && subAccounts.some((s) => s.id === savedId)) {
+            setPreferredSearchProfileId(savedId);
+        }
+    }, [authLoading, user?.id, isManagedParent, subAccounts]);
+
+    useEffect(() => {
+        if (!preferredSearch || !isManagedParent || subAccounts.length === 0) return;
+        if (
+            preferredSearchProfileId != null &&
+            subAccounts.some((s) => s.id === preferredSearchProfileId)
+        ) {
+            return;
+        }
+        if (subAccounts.length === 1) {
+            setPreferredSearchProfileId(subAccounts[0]!.id);
+            persistPreferredSearchProfileId(browseOwnerKey(user), subAccounts[0]!.id);
+        }
+    }, [preferredSearch, isManagedParent, subAccounts, preferredSearchProfileId, user]);
+
+    useEffect(() => {
+        return () => {
+            if (ageApplyTimerRef.current) clearTimeout(ageApplyTimerRef.current);
+        };
+    }, []);
 
     // Close suggestion dropdown when clicking outside
     useEffect(() => {
@@ -215,8 +320,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     const profilesMatchingActiveCriteria = useMemo(() => {
         if (preferredSearch) return profiles;
-        return profiles.filter((p) => profileMatchesBrowseFilters(p, activeCriteria));
-    }, [profiles, activeCriteria, preferredSearch]);
+        return profiles.filter((p) => profileMatchesBrowseFilters(p, activeCriteria, user, subAccounts));
+    }, [profiles, activeCriteria, preferredSearch, user, subAccounts]);
 
     const filteredProfiles = useMemo(() => {
         if (!searchTerm) return profilesMatchingActiveCriteria;
@@ -289,10 +394,83 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         }
     };
 
+    const handlePreferredSearchToggle = useCallback(() => {
+        if (!user?.id) {
+            showToast('Please log in and complete your profile to use Preferred Search.', 'error');
+            return;
+        }
+        if (preferredSearch) {
+            setPreferredSearch(false);
+            setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
+            return;
+        }
+        if (isManagedParent) {
+            if (subAccounts.length === 0) {
+                showToast('Add at least one profile before using Preferred Search.', 'error');
+                return;
+            }
+            if (subAccounts.length === 1) {
+                const subId = subAccounts[0]!.id;
+                setPreferredSearchProfileId(subId);
+                persistPreferredSearchProfileId(browseOwnerKey(user), subId);
+                setPreferredSearch(true);
+                setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
+                return;
+            }
+            const savedValid =
+                preferredSearchProfileId != null &&
+                subAccounts.some((s) => s.id === preferredSearchProfileId);
+            if (savedValid) {
+                setPreferredSearch(true);
+                setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
+                return;
+            }
+            setPickerDraftProfileId(
+                preferredSearchProfileId ?? subAccounts[0]?.id ?? null
+            );
+            setShowPreferredProfilePicker(true);
+            return;
+        }
+        setPreferredSearch(true);
+        setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
+    }, [
+        user?.id,
+        preferredSearch,
+        isManagedParent,
+        subAccounts,
+        preferredSearchProfileId,
+    ]);
+
+    const handleConfirmPreferredProfile = useCallback(() => {
+        if (pickerDraftProfileId == null) return;
+        setPreferredSearchProfileId(pickerDraftProfileId);
+        persistPreferredSearchProfileId(browseOwnerKey(user), pickerDraftProfileId);
+        setShowPreferredProfilePicker(false);
+        setPreferredSearch(true);
+        setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
+    }, [pickerDraftProfileId, user]);
+
+    const handleCancelPreferredProfilePicker = useCallback(() => {
+        setShowPreferredProfilePicker(false);
+    }, []);
+
+    const handleChangePreferredProfile = useCallback(() => {
+        setPickerDraftProfileId(
+            preferredSearchProfileId ?? subAccounts[0]?.id ?? null
+        );
+        setShowPreferredProfilePicker(true);
+    }, [preferredSearchProfileId, subAccounts]);
+
     const fetchProfiles = async () => {
         setLoading(true);
         try {
             const usePreferred = !!(preferredSearch && user?.id);
+            if (usePreferred && isManagedParent && !preferredSearchProfileId) {
+                setProfiles([]);
+                setTotalCount(0);
+                return;
+            }
+            const apiGender = effectiveBrowseGenderForUser(user, activeFilters.gender, subAccounts) || null;
 
             // Preferred search uses partner preferences only — do not send manual browse filters to the API.
             const searchParams: Record<string, unknown> = usePreferred
@@ -306,10 +484,13 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     pageNumber: activeFilters.pageNumber,
                     pageSize: activeFilters.pageSize,
                     preferredSearch: true,
-                    userId: Number(user.id),
+                    userId: Number(user!.id),
+                    ...(isManagedParent && preferredSearchProfileId
+                        ? { managedProfileUserId: preferredSearchProfileId }
+                        : {}),
                 }
                 : {
-                    gender: activeFilters.gender || null,
+                    gender: apiGender,
                     minAge: activeFilters.minAge ? parseInt(activeFilters.minAge, 10) : null,
                     maxAge: activeFilters.maxAge ? parseInt(activeFilters.maxAge, 10) : null,
                     religion: activeFilters.religion || null,
@@ -323,8 +504,14 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             const res = await matrimonialService.searchProfiles(searchParams);
             const ok = (res.statusCode === 200 || res.statusCode === 1) && res.result;
             if (ok) {
-                setProfiles(res.result.profiles || res.result.Profiles || []);
-                setTotalCount(res.result.totalCount || res.result.TotalCount || 0);
+                const raw = res.result.profiles || res.result.Profiles || [];
+                const filtered = excludeOwnedProfilesFromBrowse(raw, ownedIds);
+                setProfiles(filtered);
+                setTotalCount(
+                    ownedIds.size > 0 && filtered.length !== raw.length
+                        ? Math.max(0, (res.result.totalCount || res.result.TotalCount || 0) - (raw.length - filtered.length))
+                        : res.result.totalCount || res.result.TotalCount || 0
+                );
             } else {
                 setProfiles([]);
                 setTotalCount(0);
@@ -341,7 +528,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     useEffect(() => {
         fetchProfiles();
         // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when applied criteria, mode, or account changes
-    }, [activeFilters, preferredSearch, user?.id]);
+    }, [activeFilters, preferredSearch, preferredSearchProfileId, user?.id, ownedIds, subAccounts, isManagedParent]);
 
     useEffect(() => {
         const fetchInteractions = async () => {
@@ -363,18 +550,42 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         fetchInteractions();
     }, [user?.id]);
 
+    /** Apply chosen filters to results immediately (API refetch uses activeFilters). */
+    const applyBrowseFiltersLive = useCallback((fields: BrowseFilterFields) => {
+        setDraftFilters(fields);
+        const ageCheck = validateMatrimonialSearchAge(fields.minAge, fields.maxAge);
+        if (!ageCheck.ok) {
+            setAgeFilterError(ageCheck.message);
+            return;
+        }
+        setAgeFilterError(null);
+        setActiveFilters((prev) => ({ ...fields, pageNumber: 1, pageSize: prev.pageSize }));
+    }, []);
+
     const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
         const { name, value } = e.target;
-        if (name === 'minAge' || name === 'maxAge') setAgeFilterError(null);
-        setDraftFilters((prev) => ({ ...prev, [name]: value }));
+        const next = { ...draftFilters, [name]: value };
+        if (name === 'minAge' || name === 'maxAge') {
+            setDraftFilters(next);
+            if (ageApplyTimerRef.current) clearTimeout(ageApplyTimerRef.current);
+            ageApplyTimerRef.current = setTimeout(() => applyBrowseFiltersLive(next), 400);
+            return;
+        }
+        applyBrowseFiltersLive(next);
     };
 
     const handleGenderToggle = (gender: string) => {
-        setDraftFilters((prev) => ({ ...prev, gender: prev.gender === gender ? '' : gender }));
+        const nextGender =
+            draftFilters.gender === gender
+                ? managedParentShowsBothGenders(subAccounts)
+                    ? ''
+                    : defaultBrowseGenderForUser(user, subAccounts)
+                : gender;
+        applyBrowseFiltersLive({ ...draftFilters, gender: nextGender });
     };
 
     const handleSaveBrowseFilters = () => {
-        const ageCheck = validateMatrimonialSearchAge(draftFilters.minAge, draftFilters.maxAge);
+        const ageCheck = validateMatrimonialSearchAge(activeCriteria.minAge, activeCriteria.maxAge);
         if (!ageCheck.ok) {
             setAgeFilterError(ageCheck.message);
             showToast(ageCheck.message, 'error');
@@ -382,20 +593,25 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         }
         setAgeFilterError(null);
         const ownerKey = browseOwnerKey(user);
-        persistBrowseFields(ownerKey, draftFilters);
-        setActiveFilters((prev) => ({ ...draftFilters, pageNumber: 1, pageSize: prev.pageSize }));
-        showToast('Search saved. Results now match your chosen filters.', 'success');
+        persistBrowseFields(ownerKey, activeCriteria);
+        setPersistedFilters({ ...activeCriteria });
+        showToast('Filters saved for your next visit.', 'success');
     };
 
     const clearFilters = () => {
         clearSavedBrowseFilters();
         setAgeFilterError(null);
-        const cleared = defaultBrowseFields();
+        if (ageApplyTimerRef.current) clearTimeout(ageApplyTimerRef.current);
+        const cleared = defaultBrowseFieldsForUser(user, subAccounts);
         setDraftFilters(cleared);
         setActiveFilters({ ...cleared, pageNumber: 1, pageSize: 99 });
+        setPersistedFilters(null);
     };
 
-    const filtersDirty = !sameBrowseFields(draftFilters, activeCriteria);
+    const filtersDirty = useMemo(() => {
+        const baseline = persistedFilters ?? defaultBrowseFieldsForUser(user, subAccounts);
+        return !sameBrowseFields(activeCriteria, baseline);
+    }, [activeCriteria, persistedFilters, user, subAccounts]);
 
     const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
@@ -548,11 +764,11 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
                         <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#666' }}>
-                            Adjust filters, then click <strong>Save</strong> to apply them and keep this search for next time.
+                            Results update as you change filters. Click <strong>Save</strong> to remember this search for next time.
                         </p>
                         {filtersDirty && (
                             <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#b45309' }}>
-                                You have unsaved changes — results still reflect your last saved filters.
+                                Current filters are not saved yet — click Save to keep them for your next visit.
                             </p>
                         )}
                         <button
@@ -640,9 +856,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, padding: '12px 14px', background: 'white', border: '1px solid #eee', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', color: '#6b7280', fontSize: '0.9rem' }}>
                                 {preferredSearch
                                     ? 'No matching profiles in current results. Try a different keyword or turn off Preferred Search.'
-                                    : (filtersDirty
-                                        ? 'No matches in the current (saved) results. Click Save to apply new filters, or clear the search box.'
-                                        : 'No matching profiles in current results. Try adjusting your filters.')}
+                                    : 'No matching profiles with your current filters. Try adjusting filters or clear the search box.'}
                             </div>
                         )}
                     </div>
@@ -654,14 +868,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                 <input 
                                     type="checkbox" 
                                     checked={preferredSearch}
-                                    onChange={() => {
-                                        if (!user?.id) {
-                                            showToast('Please log in and complete your profile to use Preferred Search.', 'error');
-                                            return;
-                                        }
-                                        setPreferredSearch(!preferredSearch);
-                                        setActiveFilters((prev) => ({ ...prev, pageNumber: 1 }));
-                                    }}
+                                    onChange={handlePreferredSearchToggle}
                                     style={{ opacity: 0, width: 0, height: 0 }} 
                                 />
                                 <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: preferredSearch ? 'var(--primary)' : '#ccc', borderRadius: '24px', transition: 'background-color 0.3s' }}>
@@ -681,11 +888,44 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     </div>
                     
                     {preferredSearch && (
-                        <div style={{ marginBottom: '15px', padding: '12px 16px', backgroundColor: '#fdf8f3', borderRadius: '10px', border: '1px solid #f0e0c0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ marginBottom: '15px', padding: '12px 16px', backgroundColor: '#fdf8f3', borderRadius: '10px', border: '1px solid #f0e0c0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px' }}>
                             <span style={{ fontSize: '1.2rem' }}>💡</span>
-                            <p style={{ margin: 0, fontSize: '0.9rem', color: '#666' }}>
-                                Showing profiles that match your partner preferences. Complete your <strong>Detailed Profile</strong> partner preferences for better results.
+                            <p style={{ margin: 0, fontSize: '0.9rem', color: '#666', flex: '1 1 220px' }}>
+                                {isManagedParent && preferredSearchSubAccount ? (
+                                    <>
+                                        Showing matches for{' '}
+                                        <strong>{subAccountDisplayName(preferredSearchSubAccount)}</strong>
+                                        &apos;s partner preferences.
+                                        {subAccounts.length > 1 ? (
+                                            <> Complete that profile&apos;s partner preferences for better results.</>
+                                        ) : null}
+                                    </>
+                                ) : (
+                                    <>
+                                        Showing profiles that match your partner preferences. Complete your{' '}
+                                        <strong>Detailed Profile</strong> partner preferences for better results.
+                                    </>
+                                )}
                             </p>
+                            {isManagedParent && subAccounts.length > 1 ? (
+                                <button
+                                    type="button"
+                                    onClick={handleChangePreferredProfile}
+                                    style={{
+                                        padding: '8px 14px',
+                                        borderRadius: '8px',
+                                        border: '1px solid #e8cfa8',
+                                        background: 'white',
+                                        color: 'var(--primary, #c8922a)',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    Change profile
+                                </button>
+                            ) : null}
                         </div>
                     )}
 
@@ -698,7 +938,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             });
 
                             const isPremium = !!(profile.isPremium || profile.IsPremium);
-                            const isManaged = !!(profile.isMatchmakerManaged || profile.IsMatchmakerManaged);
+                            const isManaged = profileHasManagedBadge(profile);
                             const cardStyle: React.CSSProperties = {
                                 borderRadius: '20px',
                                 overflow: 'hidden',
@@ -720,7 +960,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                         <span style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                                             {isPremium && <PremiumBadge variant="compact" />}
                                             {isManaged && (
-                                                <MatchmakerBadge matchmakerName={profile.matchmakerName || profile.MatchmakerName} variant="compact" />
+                                                <ProfileManagedBadge profile={profile} variant="compact" />
                                             )}
                                         </span>
                                     )}
@@ -865,6 +1105,16 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     {actionToast}
                 </div>
             )}
+
+            <PreferredSearchProfilePicker
+                open={showPreferredProfilePicker}
+                subAccounts={subAccounts}
+                accountType={user?.accountType}
+                selectedId={pickerDraftProfileId}
+                onSelect={setPickerDraftProfileId}
+                onConfirm={handleConfirmPreferredProfile}
+                onCancel={handleCancelPreferredProfilePicker}
+            />
         </section>
     );
 }

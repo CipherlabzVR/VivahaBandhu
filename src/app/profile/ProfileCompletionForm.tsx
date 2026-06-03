@@ -9,6 +9,20 @@ import { sanitizeNameInput } from '../../utils/nameInput';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
+import { isRelationAccountType } from '../../utils/matrimonialAccountTypes';
+import { matrimonialService } from '../../services/matrimonialService';
+import { sanitizeNicInput, nicOrPassportFormatError, parseNicToDobAndGender } from '../../utils/nicInput';
+import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
+import { AUTH_FIELD_MAX_LENGTH } from '../../constants/inputLimits';
+import {
+    isManagedProfileCreateResponseSuccess,
+    isManagedProfileDraftPersistBlocked,
+    loadManagedProfileDraft,
+    markManagedProfileDraftCompleted,
+    managedProfileDraftHasContent,
+    saveManagedProfileDraft,
+    shouldRestoreManagedProfileDraft,
+} from '../../utils/managedProfileDraft';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -695,31 +709,68 @@ export default function ProfileCompletionForm({
     onClose,
     onComplete,
     scrollContainerRef,
+    managedCreate,
 }: {
     onClose?: () => void;
     onComplete?: () => void;
     /** Scroll host for the full-screen detailed profile modal (step changes scroll this to top). */
     scrollContainerRef?: RefObject<HTMLElement | null>;
+    /** When set, creates a managed sub-profile for the parent in one step (no separate login). */
+    managedCreate?: {
+        parentUserId: number;
+    };
 }) {
     const { user, updateUser } = useAuth();
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const router = useRouter();
     /**
-     * Father / Mother / Relation / Sister / Brother accounts only need to fill the
-     * Partner Preferences section in the detailed profile editor. The other steps
-     * (personal, family, education, horoscope etc.) are not relevant because they're
-     * managing matches on behalf of someone else.
+     * Relation accounts only need to fill the Partner Preferences section in the
+     * detailed profile editor. Parents and Self complete the full wizard.
      */
-    const isPartnerPrefsOnly =
-        user?.accountType === 'Father' ||
-        user?.accountType === 'Mother' ||
-        user?.accountType === 'Relation' ||
-        user?.accountType === 'Sister' ||
-        user?.accountType === 'Brother';
+    const isPartnerPrefsOnly = !managedCreate && isRelationAccountType(user?.accountType);
     const [step, setStep] = useState(isPartnerPrefsOnly ? 5 : 1);
     useEffect(() => {
         if (isPartnerPrefsOnly && step !== 5) setStep(5);
     }, [isPartnerPrefsOnly, step]);
+    const [managedBasic, setManagedBasic] = useState({
+        firstName: '',
+        lastName: '',
+        nic: '',
+        dob: '',
+        gender: '',
+        phone: '',
+        whatsapp: '',
+        profilePhotoBase64: '',
+    });
+    const [managedPhotoPreview, setManagedPhotoPreview] = useState('');
+    const [managedDraftHydrated, setManagedDraftHydrated] = useState(!managedCreate);
+    const [managedDraftNotice, setManagedDraftNotice] = useState<string | null>(null);
+    const managedDraftHydratedRef = useRef(!managedCreate);
+    const managedSkipDraftPersistRef = useRef(false);
+    const managedDraftSnapshotRef = useRef({
+        step: 1,
+        managedBasic: {
+            firstName: '',
+            lastName: '',
+            nic: '',
+            dob: '',
+            gender: '',
+            phone: '',
+            whatsapp: '',
+            profilePhotoBase64: '',
+        },
+        managedPhotoPreview: '',
+        formData: {} as Record<string, string>,
+    });
+    const managedHasNicInput = managedBasic.nic.trim().length > 0;
+    const managedNicLocksDobGender = !!parseNicToDobAndGender(managedBasic.nic);
+    const managedDobGenderDisabled = !managedHasNicInput || managedNicLocksDobGender;
+    const managedDobGenderTitle = !managedHasNicInput
+        ? 'Enter NIC or passport number first'
+        : managedNicLocksDobGender
+            ? 'Locked — values are taken from the NIC. Clear or change ID to edit manually.'
+            : 'Enter manually for passport; a valid NIC auto-fills and locks these fields.';
+
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -734,17 +785,49 @@ export default function ProfileCompletionForm({
     const upload1FileInputRef = useRef<HTMLInputElement>(null);
     const upload2FileInputRef = useRef<HTMLInputElement>(null);
     const upload3FileInputRef = useRef<HTMLInputElement>(null);
+    const wizardStepsAnchorRef = useRef<HTMLDivElement>(null);
+    const activeStepContentRef = useRef<HTMLDivElement>(null);
+
+    const managedCreateParentUserId = managedCreate?.parentUserId;
 
     useEffect(() => {
         setHoroscopeViewerSlot(null);
     }, [step]);
 
     useEffect(() => {
-        scrollContainerRef?.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-        if (typeof window !== 'undefined') {
-            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-        }
-    }, [step, scrollContainerRef]);
+        const scrollToStepSection = () => {
+            const scrollHost = scrollContainerRef?.current;
+
+            if (managedCreateParentUserId && step > 1) {
+                const scrollTarget = activeStepContentRef.current ?? wizardStepsAnchorRef.current;
+                if (scrollTarget && scrollHost) {
+                    const hostRect = scrollHost.getBoundingClientRect();
+                    const targetRect = scrollTarget.getBoundingClientRect();
+                    scrollHost.scrollTo({
+                        top: scrollHost.scrollTop + (targetRect.top - hostRect.top),
+                        left: 0,
+                        behavior: 'auto',
+                    });
+                }
+                return;
+            }
+
+            if (managedCreateParentUserId && step === 1) {
+                scrollHost?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                return;
+            }
+
+            if (!managedCreateParentUserId) {
+                if (scrollHost) {
+                    scrollHost.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                } else if (typeof window !== 'undefined') {
+                    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                }
+            }
+        };
+
+        requestAnimationFrame(scrollToStepSection);
+    }, [step, managedCreateParentUserId, scrollContainerRef]);
 
     const [formData, setFormData] = useState({
         // Personal
@@ -813,6 +896,97 @@ export default function ProfileCompletionForm({
         profilePhoto: '',
         remarks: ''
     });
+
+    const handleManagedNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = sanitizeNicInput(e.target.value);
+        if (!value.trim()) {
+            setManagedBasic(p => ({ ...p, nic: value, dob: '', gender: '' }));
+            setFormData(prev => ({ ...prev, dob: '', gender: '' }));
+            return;
+        }
+        const parsed = parseNicToDobAndGender(value);
+        setManagedBasic(p => {
+            const next = { ...p, nic: value };
+            if (parsed) {
+                return { ...next, dob: parsed.dob, gender: parsed.gender };
+            }
+            return next;
+        });
+        if (parsed) {
+            setFormData(prev => ({ ...prev, dob: parsed.dob, gender: parsed.gender }));
+        }
+    };
+
+    useEffect(() => {
+        if (!managedCreate?.parentUserId) return;
+
+        if (!shouldRestoreManagedProfileDraft(managedCreate.parentUserId)) {
+            setManagedDraftHydrated(true);
+            managedDraftHydratedRef.current = true;
+            return;
+        }
+
+        const draft = loadManagedProfileDraft(managedCreate.parentUserId);
+        if (draft && managedProfileDraftHasContent(draft)) {
+            setManagedBasic({
+                firstName: draft.managedBasic.firstName ?? '',
+                lastName: draft.managedBasic.lastName ?? '',
+                nic: draft.managedBasic.nic ?? '',
+                dob: draft.managedBasic.dob ?? '',
+                gender: draft.managedBasic.gender ?? '',
+                phone: draft.managedBasic.phone ?? '',
+                whatsapp: draft.managedBasic.whatsapp ?? '',
+                profilePhotoBase64: draft.managedBasic.profilePhotoBase64 ?? '',
+            });
+            setManagedPhotoPreview(draft.managedPhotoPreview ?? '');
+            setFormData((prev) => ({ ...prev, ...draft.formData }));
+            if (draft.step >= 1 && draft.step <= 6) {
+                setStep(draft.step);
+            }
+            setManagedDraftNotice('Your saved draft was restored. Changes are saved locally as you fill the form.');
+        }
+
+        setManagedDraftHydrated(true);
+        managedDraftHydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [managedCreate?.parentUserId]);
+
+    useEffect(() => {
+        if (!managedCreate?.parentUserId) return;
+        managedDraftSnapshotRef.current = { step, managedBasic, managedPhotoPreview, formData };
+    }, [managedCreate?.parentUserId, step, managedBasic, managedPhotoPreview, formData]);
+
+    useEffect(() => {
+        if (!managedCreate?.parentUserId || !managedDraftHydrated) return;
+
+        const timer = window.setTimeout(() => {
+            if (managedSkipDraftPersistRef.current) return;
+            if (isManagedProfileDraftPersistBlocked(managedCreate.parentUserId)) return;
+            saveManagedProfileDraft(managedCreate.parentUserId, {
+                step,
+                managedBasic,
+                managedPhotoPreview,
+                formData,
+            });
+        }, 500);
+
+        return () => window.clearTimeout(timer);
+    }, [managedCreate?.parentUserId, managedDraftHydrated, step, managedBasic, managedPhotoPreview, formData]);
+
+    useEffect(() => {
+        if (!managedCreate?.parentUserId) return;
+        return () => {
+            if (!managedDraftHydratedRef.current || managedSkipDraftPersistRef.current) return;
+            if (isManagedProfileDraftPersistBlocked(managedCreate.parentUserId)) return;
+            saveManagedProfileDraft(managedCreate.parentUserId, managedDraftSnapshotRef.current);
+        };
+    }, [managedCreate?.parentUserId]);
+
+    useEffect(() => {
+        if (!managedDraftNotice) return;
+        const timer = window.setTimeout(() => setManagedDraftNotice(null), 8000);
+        return () => window.clearTimeout(timer);
+    }, [managedDraftNotice]);
 
     // Only fetch once when the form mounts (not on every user state change).
     const [initialFetchDone, setInitialFetchDone] = useState(false);
@@ -917,6 +1091,11 @@ export default function ProfileCompletionForm({
         if (initialFetchDone) return;
         if (!user?.id) return;
 
+        if (managedCreate) {
+            setInitialFetchDone(true);
+            return;
+        }
+
         setFormData(prev => ({
             ...prev,
             dob: safeDate(user.dob) || prev.dob,
@@ -1008,7 +1187,7 @@ export default function ProfileCompletionForm({
         fetchProfile();
         setInitialFetchDone(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, initialFetchDone]);
+    }, [user?.id, initialFetchDone, managedCreateParentUserId]);
 
     useEffect(() => {
         // If the user removes all residence countries, drop the now-orphaned city.
@@ -1194,32 +1373,34 @@ export default function ProfileCompletionForm({
                 setFormData(prev => ({ ...prev, [fieldName]: cleanUrl }));
                 setPreviewBusters(prev => ({ ...prev, [fieldName]: Date.now() }));
 
-                // Immediately reflect key uploads in the user context (header avatar / profile pic).
-                if (fieldName === 'profilePhoto') {
-                    updateUser({ profilePhoto: withCacheBuster(cleanUrl) });
-                }
-                if (fieldName === 'horoscopeDocument') {
-                    updateUser({ horoscopeDocument: withCacheBuster(cleanUrl) });
-                }
-                if (fieldName === 'horoscopeDocument2') {
-                    updateUser({ horoscopeDocument2: withCacheBuster(cleanUrl) });
-                }
-                if (fieldName === 'horoscopeDocument3') {
-                    updateUser({ horoscopeDocument3: withCacheBuster(cleanUrl) });
-                }
+                if (!managedCreate) {
+                    // Immediately reflect key uploads in the user context (header avatar / profile pic).
+                    if (fieldName === 'profilePhoto') {
+                        updateUser({ profilePhoto: withCacheBuster(cleanUrl) });
+                    }
+                    if (fieldName === 'horoscopeDocument') {
+                        updateUser({ horoscopeDocument: withCacheBuster(cleanUrl) });
+                    }
+                    if (fieldName === 'horoscopeDocument2') {
+                        updateUser({ horoscopeDocument2: withCacheBuster(cleanUrl) });
+                    }
+                    if (fieldName === 'horoscopeDocument3') {
+                        updateUser({ horoscopeDocument3: withCacheBuster(cleanUrl) });
+                    }
 
-                // Persist key file fields to the matrimonial profile *immediately* so the
-                // S3 URL survives the user refreshing, closing the tab or jumping
-                // backwards in the wizard before the final submit. Without this the
-                // upload only lives in local React state until the very last step,
-                // which is what made the horoscope appear "lost" between pages.
-                if (
-                    fieldName === 'horoscopeDocument' ||
-                    fieldName === 'horoscopeDocument2' ||
-                    fieldName === 'horoscopeDocument3' ||
-                    fieldName === 'profilePhoto'
-                ) {
-                    void persistFieldUpdate(fieldName, cleanUrl);
+                    // Persist key file fields to the matrimonial profile *immediately* so the
+                    // S3 URL survives the user refreshing, closing the tab or jumping
+                    // backwards in the wizard before the final submit. Without this the
+                    // upload only lives in local React state until the very last step,
+                    // which is what made the horoscope appear "lost" between pages.
+                    if (
+                        fieldName === 'horoscopeDocument' ||
+                        fieldName === 'horoscopeDocument2' ||
+                        fieldName === 'horoscopeDocument3' ||
+                        fieldName === 'profilePhoto'
+                    ) {
+                        void persistFieldUpdate(fieldName, cleanUrl);
+                    }
                 }
             } else {
                 const errorText = await response.text().catch(() => '');
@@ -1365,6 +1546,7 @@ export default function ProfileCompletionForm({
     };
 
     const saveDraft = async () => {
+        if (managedCreate) return true;
         if (!user) {
             setSubmitError('User not authenticated');
             return false;
@@ -1622,6 +1804,79 @@ export default function ProfileCompletionForm({
             return;
         }
 
+        if (managedCreate) {
+            const fn = managedBasic.firstName.trim();
+            const ln = managedBasic.lastName.trim();
+            if (!fn || !ln) {
+                setSubmitError('First and last name are required.');
+                return;
+            }
+            if (!managedBasic.nic.trim()) {
+                setSubmitError('NIC or passport number is required.');
+                return;
+            }
+            const nicErr = nicOrPassportFormatError(managedBasic.nic);
+            if (nicErr) {
+                setSubmitError(nicErr);
+                return;
+            }
+            if (!managedBasic.dob) {
+                setSubmitError('Date of birth is required.');
+                return;
+            }
+            if (!managedBasic.gender) {
+                setSubmitError('Gender is required.');
+                return;
+            }
+            const phoneErr = sriLankanPhoneFormatErrorIfInvalid(managedBasic.phone, 'Phone number');
+            if (phoneErr) {
+                setSubmitError(phoneErr);
+                return;
+            }
+            const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(
+                managedBasic.whatsapp || managedBasic.phone,
+                'WhatsApp number',
+            );
+            if (whatsappErr) {
+                setSubmitError(whatsappErr);
+                return;
+            }
+
+            setLoading(true);
+            setSubmitError('');
+            try {
+                const profilePayload = buildProfilePayload();
+                const { userId: _uid, ...profileFields } = profilePayload as Record<string, unknown>;
+                const data = await matrimonialService.createManagedSubProfile({
+                    parentUserId: managedCreate.parentUserId,
+                    firstName: fn,
+                    lastName: ln,
+                    nic: managedBasic.nic.trim(),
+                    dateOfBirth: managedBasic.dob.length === 10 ? `${managedBasic.dob}T00:00:00` : managedBasic.dob,
+                    gender: managedBasic.gender,
+                    phone: managedBasic.phone,
+                    whatsApp: managedBasic.whatsapp || managedBasic.phone,
+                    profilePhotoBase64: managedBasic.profilePhotoBase64 || undefined,
+                    profile: profileFields,
+                });
+                if (isManagedProfileCreateResponseSuccess(data)) {
+                    markManagedProfileDraftCompleted(managedCreate.parentUserId);
+                    managedSkipDraftPersistRef.current = true;
+                    setManagedDraftNotice(null);
+                    setSubmitError('');
+                    if (onComplete) onComplete();
+                    if (onClose) onClose();
+                } else {
+                    setSubmitError(data.message || data.Message || 'Failed to create managed profile');
+                }
+            } catch (error: unknown) {
+                setSubmitError(error instanceof Error ? error.message : 'An error occurred');
+            } finally {
+                setLoading(false);
+            }
+            return;
+        }
+
         if (!user) {
             setSubmitError("User not authenticated");
             return;
@@ -1708,8 +1963,104 @@ export default function ProfileCompletionForm({
                     features will unlock once the payment is approved.
                 </div>
             )}
+            {managedDraftNotice && (
+                <div
+                    role="status"
+                    style={{
+                        marginBottom: '1.25rem',
+                        padding: '0.85rem 1rem',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                        border: '1px solid #93c5fd',
+                        color: '#1e40af',
+                        fontSize: '0.92rem',
+                        lineHeight: 1.5,
+                    }}
+                >
+                    {managedDraftNotice}
+                </div>
+            )}
+            {managedCreate && (
+                <div style={{ marginBottom: '2rem', padding: '1.25rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '1rem', color: 'var(--primary)' }}>Basic details</h3>
+                    <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                        Enter the profile holder&apos;s basic details, then complete all profile sections below. No separate login is needed — you manage everything from your account.
+                    </p>
+                    <div className="form-grid">
+                        <div className="form-group">
+                            <label>First name *</label>
+                            <input type="text" maxLength={AUTH_FIELD_MAX_LENGTH} value={managedBasic.firstName} onChange={(e) => setManagedBasic(p => ({ ...p, firstName: sanitizeNameInput(e.target.value) }))} />
+                        </div>
+                        <div className="form-group">
+                            <label>Last name *</label>
+                            <input type="text" maxLength={AUTH_FIELD_MAX_LENGTH} value={managedBasic.lastName} onChange={(e) => setManagedBasic(p => ({ ...p, lastName: sanitizeNameInput(e.target.value) }))} />
+                        </div>
+                        <div className="form-group">
+                            <label>NIC / Passport *</label>
+                            <input type="text" value={managedBasic.nic} onChange={handleManagedNicChange} placeholder="e.g. 901234567V or N1234567" />
+                            {managedBasic.nic.trim() && nicOrPassportFormatError(managedBasic.nic) && (
+                                <span style={{ color: '#dc2626', fontSize: '0.8rem', display: 'block', marginTop: '0.35rem' }}>
+                                    {nicOrPassportFormatError(managedBasic.nic)}
+                                </span>
+                            )}
+                        </div>
+                        <div className="form-group">
+                            <label>Date of birth *</label>
+                            <input
+                                type="date"
+                                value={managedBasic.dob}
+                                disabled={managedDobGenderDisabled}
+                                title={managedDobGenderTitle}
+                                onChange={(e) => {
+                                    const dob = e.target.value;
+                                    setManagedBasic(p => ({ ...p, dob }));
+                                    setFormData(prev => ({ ...prev, dob }));
+                                }}
+                                style={managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : undefined}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Gender *</label>
+                            <select
+                                value={managedBasic.gender}
+                                disabled={managedDobGenderDisabled}
+                                title={managedDobGenderTitle}
+                                onChange={(e) => {
+                                    const gender = e.target.value;
+                                    setManagedBasic(p => ({ ...p, gender }));
+                                    setFormData(prev => ({ ...prev, gender }));
+                                }}
+                                style={managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : undefined}
+                            >
+                                <option value="">Select</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label>Phone *</label>
+                            <input type="tel" value={managedBasic.phone} onChange={(e) => setManagedBasic(p => ({ ...p, phone: sanitizeSriLankanPhoneInput(e.target.value) }))} />
+                        </div>
+                        <div className="form-group">
+                            <label>WhatsApp</label>
+                            <input type="tel" value={managedBasic.whatsapp} onChange={(e) => setManagedBasic(p => ({ ...p, whatsapp: sanitizeSriLankanPhoneInput(e.target.value) }))} placeholder="Same as phone if blank" />
+                        </div>
+                    </div>
+                    {managedHasNicInput && (
+                        <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.75rem 0 0', lineHeight: 1.5 }}>
+                            {managedNicLocksDobGender
+                                ? 'Date of birth and gender are set from the NIC. Clear the ID field or use passport format to edit them manually.'
+                                : 'For passport numbers, enter DOB and gender manually. A valid NIC auto-fills both fields and locks them.'}
+                        </p>
+                    )}
+                </div>
+            )}
             {!isPartnerPrefsOnly && (
-            <div className="steps-indicator" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}>
+            <div
+                ref={wizardStepsAnchorRef}
+                className="steps-indicator"
+                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}
+            >
                 {[1, 2, 3, 4, 5, 6].map(i => (
                     <button
                         key={i}
@@ -1741,7 +2092,7 @@ export default function ProfileCompletionForm({
                 {submitError && <div style={{ color: 'red', marginBottom: '1rem', padding: '10px', background: '#ffebee', borderRadius: '4px' }}>{submitError}</div>}
 
                 {step === 1 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Personal Details</h3>
                         <div className="form-grid">
                             <div className="form-group">
@@ -1792,7 +2143,7 @@ export default function ProfileCompletionForm({
                 )}
 
                 {step === 2 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Education & Career</h3>
                         <div className="form-grid">
                             <div className="form-group">
@@ -1876,7 +2227,7 @@ export default function ProfileCompletionForm({
                 )}
 
                 {step === 3 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Additional Details</h3>
                         <div className="form-grid">
                             <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -2103,7 +2454,7 @@ export default function ProfileCompletionForm({
                 )}
 
                 {step === 4 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Parents Details</h3>
 
                         <h4 style={{ marginTop: '1rem', color: 'var(--primary)' }}>Father</h4>
@@ -2245,7 +2596,7 @@ export default function ProfileCompletionForm({
                 )}
 
                 {step === 5 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Partner Preferences</h3>
                         <div className="form-grid">
                             <div className="form-group">
@@ -2372,7 +2723,7 @@ export default function ProfileCompletionForm({
                 )}
 
                 {step === 6 && (
-                    <div className="step-content">
+                    <div className="step-content" ref={activeStepContentRef}>
                         <h3>Profile Verification & Uploads</h3>
                         <div className="form-grid">
                             <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -2564,7 +2915,7 @@ export default function ProfileCompletionForm({
                         <button type="button" className="btn btn-primary" onClick={handleNext}>Next</button>
                     ) : (
                         <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
-                            {loading ? 'Saving...' : 'Save Profile'}
+                            {loading ? 'Saving...' : (managedCreate ? 'Create profile' : 'Save Profile')}
                         </button>
                     )}
                 </div>

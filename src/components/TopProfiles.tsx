@@ -7,17 +7,16 @@ import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
-import MatchmakerBadge from './MatchmakerBadge';
+import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
-
-function excludeSelfFromFeatured(uid: number | undefined, items: unknown): any[] {
-    const arr = Array.isArray(items) ? items : [];
-    if (uid == null || Number.isNaN(Number(uid))) return arr.slice(0, 4);
-    const u = Number(uid);
-    return arr.filter((p: any) => Number(p?.userId ?? p?.UserId ?? 0) !== u).slice(0, 4);
-}
+import { excludeSelfFromFeaturedBrowse } from '../utils/browseProfileFilters';
+import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
+import {
+    filterProfilesForBrowse,
+    viewerUserIdForBrowseGenderFilter,
+} from '../utils/selfAccountBrowseGender';
 
 interface TopProfilesProps {
     onOpenProfileDetail: (profile: any) => void;
@@ -26,6 +25,7 @@ interface TopProfilesProps {
 export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
     const { t } = useLanguage();
     const { user } = useAuth();
+    const { viewerId, subAccounts } = useOwnedSubAccountsForBrowse();
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[]; Shortlists: number[] }>({
         Favorites: [],
@@ -34,24 +34,30 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
     const [actionToast, setActionToast] = useState('');
 
     useEffect(() => {
-        const uidNum = user?.id != null ? Number(user.id) : undefined;
+        const uidNum = viewerId ?? (user?.id != null ? Number(user.id) : undefined);
+        const viewerForGender = viewerUserIdForBrowseGenderFilter(user);
+
+        const commitFeatured = (items: unknown) => {
+            const genderFiltered = filterProfilesForBrowse(items, user, null, subAccounts);
+            setProfiles(excludeSelfFromFeaturedBrowse(uidNum, subAccounts, genderFiltered));
+        };
 
         const fetchPremium = async () => {
             try {
-                const res = await matrimonialService.getRecentPremiumProfiles(8);
+                const res = await matrimonialService.getRecentPremiumProfiles(8, viewerForGender);
                 if ((res.statusCode === 200 || res.statusCode === 1) && res.result && Array.isArray(res.result)) {
-                    setProfiles(excludeSelfFromFeatured(uidNum, res.result));
+                    commitFeatured(res.result);
                     return;
                 }
             } catch {
                 /* Deployed API may not expose GetRecentPremiumProfiles yet */
             }
             try {
-                const fallback = await matrimonialService.getRecentProfiles(48);
+                const fallback = await matrimonialService.getRecentProfiles(48, viewerForGender);
                 const ok = fallback.statusCode === 200 || fallback.statusCode === 1;
                 if (ok && Array.isArray(fallback.result)) {
                     const onlyPremium = fallback.result.filter((p: any) => p?.isPremium || p?.IsPremium);
-                    setProfiles(excludeSelfFromFeatured(uidNum, onlyPremium));
+                    commitFeatured(onlyPremium);
                 } else {
                     setProfiles([]);
                 }
@@ -78,7 +84,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
 
         fetchPremium();
         fetchInteractions();
-    }, [user?.id]);
+    }, [user?.id, user?.gender, user?.accountType, user?.parentUserId, viewerId, subAccounts]);
 
     const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
@@ -148,7 +154,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
             </div>
             <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 top-profiles-list">
                 {profiles.map((profile) => {
-                    const isManaged = !!(profile.isMatchmakerManaged || profile.IsMatchmakerManaged);
+                    const isManaged = profileHasManagedBadge(profile);
                     const photoSrc =
                         profile.profilePhoto ||
                         getDefaultAvatarDataUri({
@@ -185,12 +191,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
                                 }}
                             >
                                 <PremiumBadge variant="compact" />
-                                {isManaged && (
-                                    <MatchmakerBadge
-                                        matchmakerName={profile.matchmakerName || profile.MatchmakerName}
-                                        variant="compact"
-                                    />
-                                )}
+                                {isManaged && <ProfileManagedBadge profile={profile} variant="compact" />}
                             </span>
                             <div className="relative">
                                 <img src={photoSrc} alt="" className="w-full h-80 object-cover" />

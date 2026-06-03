@@ -2,6 +2,8 @@
  * Shared parsing helpers for Matrimonial interest notification payloads (REST + SignalR).
  */
 
+import { readManagedProfileUserId } from './managedMessageContent';
+
 export function referenceIdFromNotification(notification: Record<string, unknown> | undefined | null): number {
     if (!notification) return 0;
     const raw = notification.referenceId ?? notification.ReferenceId;
@@ -29,4 +31,17 @@ export function notificationDescriptionFallback(notification: Record<string, unk
     return isInterestBackNotification(notification)
         ? 'A member reciprocated — interest back.'
         : 'Someone is interested in your profile.';
+}
+
+/** Sub-profile id when interest is for a managed client / family profile (stored as ReservationId in API). */
+export function managedProfileUserIdFromNotification(
+    notification: Record<string, unknown> | undefined | null
+): number | null {
+    if (!notification) return null;
+    return readManagedProfileUserId(
+        notification.managedProfileUserId ??
+            notification.ManagedProfileUserId ??
+            notification.reservationId ??
+            notification.ReservationId
+    );
 }

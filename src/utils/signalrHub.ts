@@ -1,4 +1,5 @@
 import * as signalR from '@microsoft/signalr';
+import { ensureCorsOriginRegistered } from './corsBootstrap';
 
 /**
  * Resolved Chat hub URLs — must stay in sync with API:
@@ -65,6 +66,8 @@ export function isSignalRNegotiation404(error: unknown): boolean {
  * Builds a SignalR connection and tries hub URL candidates until one negotiates successfully.
  */
 export async function connectMatrimonialHub(apiBaseUrl: string): Promise<signalR.HubConnection> {
+    await ensureCorsOriginRegistered(apiBaseUrl);
+
     const candidates = getMatrimonialSignalRHubCandidates(apiBaseUrl);
     let lastError: unknown;
 

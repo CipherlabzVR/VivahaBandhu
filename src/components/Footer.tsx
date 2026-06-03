@@ -158,7 +158,7 @@ export default function Footer() {
                     <ul className="space-y-2">
                         <li><Link href="/#faq" className="text-gray-300 hover:text-primary transition-colors">{t('helpCenter')}</Link></li>
                         <li><Link href="/contact" className="text-gray-300 hover:text-primary transition-colors">{t('contactUs')}</Link></li>
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('safetyTips')}</Link></li>
+                        <li><Link href="/#blog" className="text-gray-300 hover:text-primary transition-colors">{t('safetyTips')}</Link></li>
                         <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('reportMisuse')}</Link></li>
                     </ul>
                 </div>
@@ -167,8 +167,8 @@ export default function Footer() {
                     <ul className="space-y-2">
                         <li><Link href="/privacy-policy" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
                         <li><Link href="/terms-of-service" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
+                        <li><Link href="/cookie-policy" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
+                        <li><Link href="/refund-policy" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
                     </ul>
                 </div>
             </div>

@@ -14,6 +14,7 @@ import { useAuth } from './AuthContext';
 import { connectMatrimonialHub } from '../utils/signalrHub';
 import {
     isInterestBackNotification,
+    managedProfileUserIdFromNotification,
     notificationTitleFallback,
     referenceIdFromNotification,
 } from '../utils/matrimonialInterestNotifications';
@@ -29,6 +30,7 @@ export type MatrimonialInterestNotification = Record<string, unknown> & {
     description?: string;
     isRead?: boolean;
     referenceId?: number;
+    managedProfileUserId?: number | null;
     createdOn?: string;
 };
 
@@ -49,13 +51,15 @@ const MatrimonialNotificationsContext = createContext<MatrimonialNotificationsCo
 );
 
 function normalizeNotification(n: MatrimonialInterestNotification): MatrimonialInterestNotification {
+    const asRecord = n as Record<string, unknown>;
     return {
         ...n,
         id: (n as any)?.id ?? (n as any)?.Id,
-        title: (n as any)?.title ?? (n as any)?.Title ?? notificationTitleFallback(n as Record<string, unknown>),
+        title: (n as any)?.title ?? (n as any)?.Title ?? notificationTitleFallback(asRecord),
         description: (n as any)?.description ?? (n as any)?.Description ?? '',
         isRead: (n as any)?.isRead ?? (n as any)?.IsRead ?? false,
         referenceId: (n as any)?.referenceId ?? (n as any)?.ReferenceId,
+        managedProfileUserId: managedProfileUserIdFromNotification(asRecord),
         createdOn: (n as any)?.createdOn ?? (n as any)?.CreatedOn,
     };
 }
@@ -76,7 +80,7 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
         setLoadingNotifications(true);
         try {
             const response = await fetch(
-                `${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${user.id}`,
+                `${API_BASE_URL}/Matrimonial/GetInterestNotifications?userId=${user.id}&unreadOnly=true`,
                 { method: 'GET', headers: { 'Content-Type': 'application/json' } }
             );
             if (!response.ok) return;
@@ -163,6 +167,7 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                                 payload.ReferenceId ??
                                 payload.interestedUserId ??
                                 payload.InterestedUserId) as number | undefined,
+                        managedProfileUserId: managedProfileUserIdFromNotification(payload),
                         referenceType: 'MatrimonialInterest',
                         isRead: false,
                         createdOn: (payload.createdOn as string) || now,
@@ -213,11 +218,10 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                     // no-op
                 }
             }
-            setInterestNotifications((prev) =>
-                prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n))
-            );
+            setInterestNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+            bumpLiveRevision();
         },
-        [user?.id]
+        [user?.id, bumpLiveRevision]
     );
 
     const value = useMemo(

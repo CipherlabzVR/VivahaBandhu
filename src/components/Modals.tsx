@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, MouseEvent, useMemo, type ChangeEvent, typ
 import { useAuth } from '../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, mapUserFieldsFromSignInResult, type RecoveryAccount, type ForgotPasswordInitiateRequest, type MatrimonialLoginResponse } from '../services/matrimonialService';
-import { sanitizeNicInput } from '../utils/nicInput';
+import { sanitizeNicInput, parseNicToDobAndGender } from '../utils/nicInput';
 import { sanitizeNameInput, nameLettersOnlyError } from '../utils/nameInput';
 import {
     sanitizeSriLankanPhoneInput,
@@ -17,23 +17,28 @@ import {
     WHATSAPP_SAME_AS_PHONE_MSG,
 } from '../utils/sriLankanPhone';
 import {
-    PREMIUM_SUBSCRIPTION_LKR,
-    MATCHMAKER_GOLD_LKR,
-    MATCHMAKER_DIAMOND_LKR,
-    CHECKOUT_PLAN_PREMIUM_SELF,
-    CHECKOUT_PLAN_MATCHMAKER_GOLD,
-    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
-} from '../constants/subscription';
+    type PublicMatrimonialPackage,
+    isFreePackage,
+    normalizePublicPackages,
+    packageFeatureLabels,
+    packageId,
+    packageName,
+    packagePeriodLabel,
+    packagePrice,
+    publicPackagesAudienceParam,
+    resolveCheckoutPlan,
+} from '../utils/matrimonialPackages';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
 import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
-import MatchmakerBadge from './MatchmakerBadge';
+import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
 import { showToast } from '../utils/toast';
+import { REGISTER_MATRIMONIAL_ACCOUNT_TYPES } from '../utils/matrimonialAccountTypes';
 
 /** Matrimonial profile card / modal may expose viewer id as userId, UserId, or numeric id */
 function viewerProfileUserId(p: Record<string, unknown> | null | undefined): number | null {
@@ -643,17 +648,54 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [profileTab, setProfileTab] = useState('about');
     const [galleryLightboxSrc, setGalleryLightboxSrc] = useState<string | null>(null);
     const [registerAccountType, setRegisterAccountType] = useState('Self');
-    const [subscriptionOption, setSubscriptionOption] = useState('Free');
-    const [matchmakerCheckoutPick, setMatchmakerCheckoutPick] = useState<'gold' | 'diamond'>('gold');
+    const [subscriptionPackages, setSubscriptionPackages] = useState<PublicMatrimonialPackage[]>([]);
+    const [subscriptionPackagesLoading, setSubscriptionPackagesLoading] = useState(false);
+    const [selectedSubscriptionPackageId, setSelectedSubscriptionPackageId] = useState<number | null>(null);
 
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
     useEffect(() => {
-        if (activeModal === 'subscription') {
-            setMatchmakerCheckoutPick('gold');
-        }
-    }, [activeModal]);
+        if (activeModal !== 'subscription') return;
+
+        let cancelled = false;
+        setSubscriptionPackagesLoading(true);
+        const audience = publicPackagesAudienceParam(user?.accountType);
+
+        matrimonialService
+            .getPublicPackages(audience)
+            .then((res) => {
+                if (cancelled) return;
+                const list = normalizePublicPackages(res?.result ?? res?.Result);
+                setSubscriptionPackages(list);
+                const defaultPick =
+                    list.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
+                    list.find((p) => !isFreePackage(p)) ??
+                    list[0];
+                setSelectedSubscriptionPackageId(defaultPick ? packageId(defaultPick) : null);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setSubscriptionPackages([]);
+                    setSelectedSubscriptionPackageId(null);
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setSubscriptionPackagesLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [activeModal, user?.accountType]);
+
+    const selectedSubscriptionPackage = useMemo(
+        () =>
+            subscriptionPackages.find((p) => packageId(p) === selectedSubscriptionPackageId) ??
+            subscriptionPackages[0] ??
+            null,
+        [subscriptionPackages, selectedSubscriptionPackageId]
+    );
 
     const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
     const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
@@ -1699,50 +1741,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
     };
 
-    const parseNIC = (nicNumber: string) => {
-        const normalizedNIC = nicNumber.trim().toUpperCase();
-        const currentYear = new Date().getFullYear();
-        let year = '';
-        let dayText = '';
-        let gender = '';
-
-        // Old NIC: 9 digits + V/X
-        if (/^\d{9}[VX]$/.test(normalizedNIC)) {
-            year = `19${normalizedNIC.substring(0, 2)}`;
-            dayText = normalizedNIC.substring(2, 5);
-        }
-        // New NIC: 12 digits, first 4 digits are year
-        else if (/^\d{12}$/.test(normalizedNIC)) {
-            const parsedYear = Number(normalizedNIC.substring(0, 4));
-            // Restrict to realistic years to avoid parsing passport/other IDs as NIC
-            if (parsedYear < 1900 || parsedYear > currentYear) return null;
-            year = normalizedNIC.substring(0, 4);
-            dayText = normalizedNIC.substring(4, 7);
-        } else {
-            return null;
-        }
-
-        let dayOfYear = parseInt(dayText, 10);
-        if (Number.isNaN(dayOfYear)) return null;
-
-        if (dayOfYear > 500) {
-            gender = 'Female';
-            dayOfYear -= 500;
-        } else {
-            gender = 'Male';
-        }
-
-        if (dayOfYear < 1 || dayOfYear > 366) return null;
-
-        // Sri Lankan NIC always counts February as 29 days even in non-leap
-        // years, so use a fixed leap year for the month/day extraction.
-        const refDate = new Date(Date.UTC(2000, 0, 1));
-        refDate.setUTCDate(dayOfYear);
-        const month = String(refDate.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(refDate.getUTCDate()).padStart(2, '0');
-        const formattedDate = `${year}-${month}-${day}`;
-        return { dob: formattedDate, gender };
-    };
+    const parseNIC = parseNicToDobAndGender;
 
     /** Valid NIC: DOB/gender come from ID and are locked. Passport / partial NIC: editable after ID field has input. */
     const hasNicInput = nic.trim().length > 0;
@@ -3041,7 +3040,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     ) : (
                                         <div className="account-types">
-                                            {['Self', 'Father', 'Mother', 'Relation', 'Sister', 'Brother', 'Matchmaker'].map(type => (
+                                            {REGISTER_MATRIMONIAL_ACCOUNT_TYPES.map(type => (
                                                 <div key={type} className={`account-type ${registerAccountType === type ? 'selected' : ''}`} onClick={() => setRegisterAccountType(type)}>
                                                     <span>👤</span>
                                                     {type}
@@ -3584,7 +3583,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         </div>
                                     ) : (
                                         <div className="account-types">
-                                            {['Self', 'Father', 'Mother', 'Relation', 'Sister', 'Brother', 'Matchmaker'].map(type => (
+                                            {REGISTER_MATRIMONIAL_ACCOUNT_TYPES.map(type => (
                                                 <div key={type} className={`account-type ${registerAccountType === type ? 'selected' : ''}`} onClick={() => setRegisterAccountType(type)}>
                                                     <span>👤</span>
                                                     {type}
@@ -3662,152 +3661,116 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             : 'Both plans now include the same full feature set'}</p>
                     </div>
                     <div className="modal-body">
-                        {user?.accountType === 'Matchmaker' ? (
-                            <>
-                                <div className="subscription-comparison">
-                                    <div className="sub-option selected recommended">
-                                        <h4>Free</h4>
-                                        <div className="price">LKR 0</div>
-                                        <p>Browse listings &amp; basics only</p>
-                                        <p style={{ fontSize: '0.8rem', opacity: 0.85, marginTop: '0.35rem', lineHeight: 1.4 }}>
-                                            No contact info, messaging, or client profiles.
-                                        </p>
-                                    </div>
-                                    <div
-                                        className={`sub-option ${matchmakerCheckoutPick === 'gold' ? 'selected recommended' : ''}`}
-                                        onClick={() => setMatchmakerCheckoutPick('gold')}
-                                        role="button"
-                                        tabIndex={0}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') setMatchmakerCheckoutPick('gold');
-                                        }}
-                                    >
-                                        <h4>Gold</h4>
-                                        <div className="price">LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')}<span>/yr</span></div>
-                                        <p>50 full profiles / day</p>
-                                        <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>Up to 5 client profiles</p>
-                                    </div>
-                                    <div
-                                        className={`sub-option ${matchmakerCheckoutPick === 'diamond' ? 'selected recommended' : ''}`}
-                                        onClick={() => setMatchmakerCheckoutPick('diamond')}
-                                        role="button"
-                                        tabIndex={0}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' || e.key === ' ') setMatchmakerCheckoutPick('diamond');
-                                        }}
-                                    >
-                                        <h4>Diamond</h4>
-                                        <div className="price">LKR {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}<span>/yr</span></div>
-                                        <p>Unlimited full profiles</p>
-                                        <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>Up to 10 client profiles</p>
-                                    </div>
-                                </div>
-                                <div className="features-unlocked">
-                                    <h4>{matchmakerCheckoutPick === 'gold' ? 'Gold includes' : 'Diamond includes'}</h4>
-                                    <div className="unlock-grid">
-                                        <div className="unlock-item"><span>✓</span> Full profile &amp; family details</div>
-                                        <div className="unlock-item"><span>✓</span> Contact numbers &amp; messaging</div>
-                                        <div className="unlock-item"><span>✓</span> Add client profiles (plan limit)</div>
-                                        <div className="unlock-item"><span>✓</span> {matchmakerCheckoutPick === 'gold' ? '50 detailed views per day' : 'Unlimited detailed views'}</div>
-                                    </div>
-                                </div>
-                                <div style={{ marginTop: '1.5rem' }}>
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline"
-                                        style={{ width: '100%', justifyContent: 'center', padding: '0.85rem', marginBottom: '0.65rem' }}
-                                        onClick={() => {
-                                            onClose();
-                                            router.push('/search');
-                                        }}
-                                    >
-                                        Continue on Free plan
-                                    </button>
-                                    <button
-                                        className="btn btn-primary"
-                                        style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
-                                        onClick={() => {
-                                            onClose();
-                                            const plan =
-                                                matchmakerCheckoutPick === 'diamond'
-                                                    ? CHECKOUT_PLAN_MATCHMAKER_DIAMOND
-                                                    : CHECKOUT_PLAN_MATCHMAKER_GOLD;
-                                            const amt =
-                                                matchmakerCheckoutPick === 'diamond'
-                                                    ? MATCHMAKER_DIAMOND_LKR
-                                                    : MATCHMAKER_GOLD_LKR;
-                                            router.push(`/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amt}`);
-                                        }}
-                                    >
-                                        Continue to Payment
-                                    </button>
-                                    <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
-                                        🔒 Secure payment • Matches bank transfer amounts LKR {MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')} /{' '}
-                                        {MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')}
-                                    </p>
-                                </div>
-                            </>
+                        {subscriptionPackagesLoading ? (
+                            <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>Loading plans…</p>
+                        ) : subscriptionPackages.length === 0 ? (
+                            <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>
+                                No plans are available right now. Please try again later.
+                            </p>
                         ) : (
                             <>
-                                <div className="subscription-comparison">
-                                    <div className={`sub-option ${subscriptionOption === 'Free' ? 'selected' : ''}`} onClick={() => setSubscriptionOption('Free')}>
-                                        <h4>Free</h4>
-                                        <div className="price">LKR 0<span>/mo</span></div>
-                                        <p>10 profile views/day</p>
-                                    </div>
-                                    <div className={`sub-option ${subscriptionOption === 'Premium' ? 'selected recommended' : ''}`} onClick={() => setSubscriptionOption('Premium')}>
-                                        <h4>Premium</h4>
-                                        <div className="price">LKR {PREMIUM_SUBSCRIPTION_LKR.toLocaleString('en-LK')}<span>/mo</span></div>
-                                        <p>Unlimited access + chat</p>
-                                    </div>
+                                <div
+                                    className="subscription-comparison"
+                                    style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1rem' }}
+                                >
+                                    {subscriptionPackages.map((pkg) => {
+                                        const id = packageId(pkg);
+                                        const selected = selectedSubscriptionPackageId === id;
+                                        const popular = !!(pkg.isPopular ?? pkg.IsPopular);
+                                        const period = packagePeriodLabel(pkg);
+                                        const desc = pkg.description ?? pkg.Description;
+                                        return (
+                                            <div
+                                                key={id || packageName(pkg)}
+                                                className={`sub-option ${selected ? 'selected' : ''} ${popular ? 'recommended' : ''}`}
+                                                onClick={() => setSelectedSubscriptionPackageId(id)}
+                                                role="button"
+                                                tabIndex={0}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                        e.preventDefault();
+                                                        setSelectedSubscriptionPackageId(id);
+                                                    }
+                                                }}
+                                                style={{ flex: '1 1 160px', maxWidth: '220px' }}
+                                            >
+                                                <h4>{packageName(pkg)}</h4>
+                                                <div className="price">
+                                                    LKR {packagePrice(pkg).toLocaleString('en-LK')}
+                                                    {period ? <span>{period}</span> : null}
+                                                </div>
+                                                {desc ? (
+                                                    <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>
+                                                        {desc}
+                                                    </p>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
-                                <div className="features-unlocked">
-                                    <h4>{subscriptionOption === 'Free' ? '📋 Free Plan Includes' : '🔓 Premium Unlocks'}</h4>
-                                    <div className="unlock-grid">
-                                        {subscriptionOption === 'Free' ? (
-                                            <>
-                                                <div className="unlock-item"><span>✓</span> Create Profile</div>
-                                                <div className="unlock-item"><span>✓</span> Add Photos</div>
-                                                <div className="unlock-item"><span>✓</span> Search Profiles</div>
-                                                <div className="unlock-item"><span>✓</span> Send Interest</div>
-                                                <div className="unlock-item"><span>✓</span> View 10 Profiles / Day</div>
-                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> View Contact Info</div>
-                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Direct Chat</div>
-                                                <div className="unlock-item" style={{ opacity: 0.45 }}><span>✕</span> Unlimited Profile Views</div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className="unlock-item"><span>✓</span> Unlimited Profile Views</div>
-                                                <div className="unlock-item"><span>✓</span> View Contact Info</div>
-                                                <div className="unlock-item"><span>✓</span> Direct Chat</div>
-                                                <div className="unlock-item"><span>✓</span> Create Profile</div>
-                                                <div className="unlock-item"><span>✓</span> Add Photos</div>
-                                                <div className="unlock-item"><span>✓</span> Search Profiles</div>
-                                                <div className="unlock-item"><span>✓</span> Send Interest</div>
-                                                <div className="unlock-item"><span>✓</span> Priority Support</div>
-                                            </>
-                                        )}
+                                {selectedSubscriptionPackage ? (
+                                    <div className="features-unlocked">
+                                        <h4>{packageName(selectedSubscriptionPackage)} includes</h4>
+                                        <div className="unlock-grid">
+                                            {packageFeatureLabels(selectedSubscriptionPackage).map((label) => (
+                                                <div key={label} className="unlock-item">
+                                                    <span>✓</span> {label}
+                                                </div>
+                                            ))}
+                                            {packageFeatureLabels(selectedSubscriptionPackage).length === 0 ? (
+                                                <div className="unlock-item" style={{ opacity: 0.7 }}>
+                                                    No features listed for this package.
+                                                </div>
+                                            ) : null}
+                                        </div>
                                     </div>
-                                </div>
+                                ) : null}
 
                                 <div style={{ marginTop: '1.5rem' }}>
+                                    {user?.accountType === 'Matchmaker' &&
+                                    subscriptionPackages.some((p) => isFreePackage(p)) ? (
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            style={{
+                                                width: '100%',
+                                                justifyContent: 'center',
+                                                padding: '0.85rem',
+                                                marginBottom: '0.65rem',
+                                            }}
+                                            onClick={() => {
+                                                onClose();
+                                                router.push('/search');
+                                            }}
+                                        >
+                                            Continue on Free plan
+                                        </button>
+                                    ) : null}
                                     <button
                                         className="btn btn-primary"
                                         style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
+                                        disabled={!selectedSubscriptionPackage}
                                         onClick={() => {
+                                            if (!selectedSubscriptionPackage) return;
                                             onClose();
-                                            if (subscriptionOption === 'Free') {
+                                            if (isFreePackage(selectedSubscriptionPackage)) {
                                                 router.push('/search');
                                                 return;
                                             }
-                                            router.push(`/subscription/checkout?plan=${CHECKOUT_PLAN_PREMIUM_SELF}&amount=${PREMIUM_SUBSCRIPTION_LKR}`);
+                                            const plan = resolveCheckoutPlan(selectedSubscriptionPackage);
+                                            const amt = packagePrice(selectedSubscriptionPackage);
+                                            router.push(
+                                                `/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amt}`
+                                            );
                                         }}
                                     >
-                                        {subscriptionOption === 'Free' ? 'Continue with Free Plan' : 'Continue to Payment'}
+                                        {selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage)
+                                            ? 'Continue with Free Plan'
+                                            : 'Continue to Payment'}
                                     </button>
                                     <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
-                                        🔒 Secure payment • Cancel anytime
+                                        🔒 Secure payment • Plans and prices are managed in backoffice
                                     </p>
                                 </div>
                             </>
@@ -3929,16 +3892,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                                 <div className="profile-detail-summary">
                                     <h2>{selectedProfile.firstName || ''} {selectedProfile.lastName || ''}</h2>
-                                    {((selectedProfile.isPremium || selectedProfile.IsPremium) || (selectedProfile.isMatchmakerManaged || selectedProfile.IsMatchmakerManaged)) && (
+                                    {((selectedProfile.isPremium || selectedProfile.IsPremium) || profileHasManagedBadge(selectedProfile)) && (
                                         <div style={{ marginTop: '6px', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                             {(selectedProfile.isPremium || selectedProfile.IsPremium) && (
                                                 <PremiumBadge variant="full" />
                                             )}
-                                            {(selectedProfile.isMatchmakerManaged || selectedProfile.IsMatchmakerManaged) && (
-                                                <MatchmakerBadge
-                                                    matchmakerName={selectedProfile.matchmakerName || selectedProfile.MatchmakerName}
-                                                    variant="full"
-                                                />
+                                            {profileHasManagedBadge(selectedProfile) && (
+                                                <ProfileManagedBadge profile={selectedProfile} variant="full" />
                                             )}
                                         </div>
                                     )}
