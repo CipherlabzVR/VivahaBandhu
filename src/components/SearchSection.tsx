@@ -15,6 +15,11 @@ import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../uti
 import { excludeOwnedProfilesFromBrowse } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import PreferredSearchProfilePicker from './PreferredSearchProfilePicker';
+import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
+import {
+    managedProfileUserIdForApi,
+    useManagedSubAccountActionPicker,
+} from '../hooks/useManagedSubAccountActionPicker';
 import {
     canManageSubAccounts,
     subAccountDisplayName,
@@ -179,6 +184,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const { user, loading: authLoading } = useAuth();
     const { ownedIds, subAccounts } = useOwnedSubAccountsForBrowse();
     const isManagedParent = canManageSubAccounts(user?.accountType);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
     
     const [preferredSearch, setPreferredSearch] = useState(false);
     const [preferredSearchProfileId, setPreferredSearchProfileId] = useState<number | null>(null);
@@ -613,7 +619,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         return !sameBrowseFields(activeCriteria, baseline);
     }, [activeCriteria, persistedFilters, user, subAccounts]);
 
-    const handleToggleFavorite = async (e: React.MouseEvent, profileId: number) => {
+    const handleToggleFavorite = (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
         if (!user) {
             showToast('Please login to add favorites', 'error');
@@ -623,27 +629,36 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             window.dispatchEvent(new CustomEvent('open-verify-modal'));
             return;
         }
-        try {
-            const res = await matrimonialService.toggleFavorite(Number(user.id), profileId);
-            if (res.statusCode === 200) {
-                setInteractions(prev => {
-                    const currentFavorites = prev.Favorites || [];
-                    return {
-                        ...prev,
-                        Favorites: currentFavorites.includes(profileId)
-                            ? currentFavorites.filter(id => id !== profileId)
-                            : [...currentFavorites, profileId]
-                    };
-                });
-                setActionToast('Interest updated successfully');
-                setTimeout(() => setActionToast(''), 2000);
+        managedActionPicker.runWithManagedAccount('interest', async (managedProfileUserId) => {
+            try {
+                const res = await matrimonialService.toggleFavorite(
+                    Number(user.id),
+                    profileId,
+                    managedProfileUserIdForApi(managedProfileUserId)
+                );
+                if (res.statusCode === 200) {
+                    setInteractions((prev) => {
+                        const currentFavorites = prev.Favorites || [];
+                        return {
+                            ...prev,
+                            Favorites: currentFavorites.includes(profileId)
+                                ? currentFavorites.filter((id) => id !== profileId)
+                                : [...currentFavorites, profileId],
+                        };
+                    });
+                    setActionToast('Interest updated successfully');
+                    setTimeout(() => setActionToast(''), 2000);
+                } else {
+                    showToast(res?.message || res?.Message || 'Could not update interest.', 'error');
+                }
+            } catch (error) {
+                console.error('Error toggling favorite', error);
+                showToast('Could not update interest.', 'error');
             }
-        } catch (error) {
-            console.error("Error toggling favorite", error);
-        }
+        });
     };
 
-    const handleToggleShortlist = async (e: React.MouseEvent, profileId: number) => {
+    const handleToggleShortlist = (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
         if (!user) {
             showToast('Please login to shortlist profiles', 'error');
@@ -653,24 +668,33 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             window.dispatchEvent(new CustomEvent('open-verify-modal'));
             return;
         }
-        try {
-            const res = await matrimonialService.toggleShortlist(Number(user.id), profileId);
-            if (res.statusCode === 200) {
-                setInteractions(prev => {
-                    const currentShortlists = prev.Shortlists || [];
-                    return {
-                        ...prev,
-                        Shortlists: currentShortlists.includes(profileId)
-                            ? currentShortlists.filter(id => id !== profileId)
-                            : [...currentShortlists, profileId]
-                    };
-                });
-                setActionToast('Saved profiles updated successfully');
-                setTimeout(() => setActionToast(''), 2000);
+        managedActionPicker.runWithManagedAccount('save', async (managedProfileUserId) => {
+            try {
+                const res = await matrimonialService.toggleShortlist(
+                    Number(user.id),
+                    profileId,
+                    managedProfileUserIdForApi(managedProfileUserId)
+                );
+                if (res.statusCode === 200) {
+                    setInteractions((prev) => {
+                        const currentShortlists = prev.Shortlists || [];
+                        return {
+                            ...prev,
+                            Shortlists: currentShortlists.includes(profileId)
+                                ? currentShortlists.filter((id) => id !== profileId)
+                                : [...currentShortlists, profileId],
+                        };
+                    });
+                    setActionToast('Saved profiles updated successfully');
+                    setTimeout(() => setActionToast(''), 2000);
+                } else {
+                    showToast(res?.message || res?.Message || 'Could not update saved profiles.', 'error');
+                }
+            } catch (error) {
+                console.error('Error toggling shortlist', error);
+                showToast('Could not update saved profiles.', 'error');
             }
-        } catch (error) {
-            console.error("Error toggling shortlist", error);
-        }
+        });
     };
 
     const toggleFilter = (group: string) => {
@@ -1114,6 +1138,17 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                 onSelect={setPickerDraftProfileId}
                 onConfirm={handleConfirmPreferredProfile}
                 onCancel={handleCancelPreferredProfilePicker}
+            />
+
+            <ManagedSubAccountActionPicker
+                open={managedActionPicker.open}
+                subAccounts={subAccounts}
+                accountType={user?.accountType}
+                action={managedActionPicker.action}
+                selectedId={managedActionPicker.selectedId}
+                onSelect={managedActionPicker.setSelectedId}
+                onConfirm={() => void managedActionPicker.confirmPicker()}
+                onCancel={managedActionPicker.cancelPicker}
             />
         </section>
     );

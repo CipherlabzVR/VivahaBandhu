@@ -19,26 +19,34 @@ import {
 import {
     type PublicMatrimonialPackage,
     isFreePackage,
+    isUserCurrentPackage,
     normalizePublicPackages,
-    packageFeatureLabels,
     packageId,
     packageName,
-    packagePeriodLabel,
     packagePrice,
     publicPackagesAudienceParam,
     resolveCheckoutPlan,
+    resolveUserCurrentPackage,
 } from '../utils/matrimonialPackages';
+import SubscriptionPlanPicker from './SubscriptionPlanPicker';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
 import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge from './PremiumBadge';
+import { premiumBadgeLabelForProfile } from '../constants/subscription';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
 import { showToast } from '../utils/toast';
 import { REGISTER_MATRIMONIAL_ACCOUNT_TYPES } from '../utils/matrimonialAccountTypes';
+import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
+import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
+import {
+    managedProfileUserIdForApi,
+    useManagedSubAccountActionPicker,
+} from '../hooks/useManagedSubAccountActionPicker';
 
 /** Matrimonial profile card / modal may expose viewer id as userId, UserId, or numeric id */
 function viewerProfileUserId(p: Record<string, unknown> | null | undefined): number | null {
@@ -640,8 +648,92 @@ function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNod
     );
 }
 
+function profileCanViewContact(profile: Record<string, unknown> | null | undefined): boolean {
+    if (!profile) return false;
+    return Boolean(profile.canViewContact ?? profile.CanViewContact);
+}
+
+function profileOwnerShowsContact(profile: Record<string, unknown> | null | undefined): boolean {
+    if (!profile) return true;
+    const raw = profile.showContactInformation ?? profile.ShowContactInformation;
+    return raw !== false;
+}
+
+function profileContactFields(profile: Record<string, unknown> | null | undefined) {
+    if (!profile) {
+        return { phone: '', whatsapp: '', email: '' };
+    }
+    return {
+        phone: String(profile.phoneNumber ?? profile.PhoneNumber ?? profile.phone ?? '').trim(),
+        whatsapp: String(profile.whatsApp ?? profile.WhatsApp ?? profile.whatsapp ?? '').trim(),
+        email: String(profile.email ?? profile.Email ?? '').trim(),
+    };
+}
+
+function ProfileContactSection({
+    profile,
+    viewerIsSubscribed,
+    onUpgrade,
+}: {
+    profile: Record<string, unknown>;
+    viewerIsSubscribed: boolean;
+    onUpgrade: () => void;
+}) {
+    const canView = profileCanViewContact(profile);
+    const ownerShows = profileOwnerShowsContact(profile);
+    const { phone, whatsapp, email } = profileContactFields(profile);
+    const displayValue = (value: string) => (canView && value ? value : '••••••••••');
+
+    return (
+        <div className={`contact-section${canView ? '' : ' blurred-section'}`}>
+            {!canView && (
+                <div className="contact-blur-overlay">
+                    <span>🔒</span>
+                    <h4>Contact details locked</h4>
+                    <p>
+                        {!ownerShows
+                            ? 'This member has turned off contact sharing in their settings.'
+                            : 'Premium members can view phone, WhatsApp, and email when the member allows it.'}
+                    </p>
+                    {!viewerIsSubscribed && ownerShows && (
+                        <button type="button" className="btn btn-primary btn-sm" onClick={onUpgrade}>
+                            Upgrade to Premium
+                        </button>
+                    )}
+                </div>
+            )}
+            <div className={canView ? undefined : 'contact-info-hidden'}>
+                <div className="profile-section" style={{ marginTop: 0, padding: 0, background: 'transparent' }}>
+                    <h3>Contact details</h3>
+                    <div className="info-grid">
+                        <div className="info-item">
+                            <label>Mobile</label>
+                            <span>{displayValue(phone) || 'Not provided'}</span>
+                        </div>
+                        <div className="info-item">
+                            <label>WhatsApp</label>
+                            <span>{displayValue(whatsapp) || 'Not provided'}</span>
+                        </div>
+                        <div className="info-item">
+                            <label>Email</label>
+                            <span>{displayValue(email) || 'Not provided'}</span>
+                        </div>
+                    </div>
+                    {canView && ownerShows && (
+                        <p style={{ margin: '1rem 0 0', fontSize: '0.85rem', color: 'var(--text-light)' }}>
+                            Use contact details respectfully. In-app messaging is also available.
+                        </p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user } = useAuth();
+    const { subAccounts } = useOwnedSubAccountsForBrowse();
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
     const router = useRouter();
     const pathname = usePathname();
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
@@ -668,7 +760,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 if (cancelled) return;
                 const list = normalizePublicPackages(res?.result ?? res?.Result);
                 setSubscriptionPackages(list);
+                const currentPlan = resolveUserCurrentPackage(list, user);
                 const defaultPick =
+                    currentPlan ??
                     list.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
                     list.find((p) => !isFreePackage(p)) ??
                     list[0];
@@ -687,7 +781,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         return () => {
             cancelled = true;
         };
-    }, [activeModal, user?.accountType]);
+    }, [activeModal, user?.accountType, user?.isSubscribed, user?.matchmakerTier]);
 
     const selectedSubscriptionPackage = useMemo(
         () =>
@@ -697,10 +791,20 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         [subscriptionPackages, selectedSubscriptionPackageId]
     );
 
+    const selectedIsCurrentPlan = useMemo(
+        () =>
+            selectedSubscriptionPackage
+                ? isUserCurrentPackage(selectedSubscriptionPackage, subscriptionPackages, user)
+                : false,
+        [selectedSubscriptionPackage, subscriptionPackages, user]
+    );
+
     const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
     const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
     const [interactionFavoriteIds, setInteractionFavoriteIds] = useState<number[]>([]);
+    const [interactionShortlistIds, setInteractionShortlistIds] = useState<number[]>([]);
     const [expressInterestLoading, setExpressInterestLoading] = useState(false);
+    const [shortlistLoading, setShortlistLoading] = useState(false);
 
     useEffect(() => {
         if (initialSelectedProfile) {
@@ -779,11 +883,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     useEffect(() => {
         if (activeModal !== 'profile') {
             setInteractionFavoriteIds([]);
+            setInteractionShortlistIds([]);
             return;
         }
         const targetId = viewerProfileUserId(selectedProfile);
         if (!user?.id || !targetId || String(user.id) === String(targetId)) {
             setInteractionFavoriteIds([]);
+            setInteractionShortlistIds([]);
             return;
         }
         let cancelled = false;
@@ -792,13 +898,25 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             .then((res) => {
                 if (cancelled) return;
                 const fav = res?.result?.Favorites ?? res?.result?.favorites ?? [];
-                const ids = (Array.isArray(fav) ? fav : [])
+                const favoriteIds = (Array.isArray(fav) ? fav : [])
                     .map((x: unknown) => (typeof x === 'number' ? x : Number((x as any)?.favoriteProfileId ?? (x as any)?.profileId ?? (x as any)?.id)))
                     .filter((x: number) => Number.isFinite(x));
-                setInteractionFavoriteIds(ids);
+                const short = res?.result?.Shortlists ?? res?.result?.shortlists ?? [];
+                const shortlistIds = (Array.isArray(short) ? short : [])
+                    .map((x: unknown) =>
+                        typeof x === 'number'
+                            ? x
+                            : Number((x as any)?.shortlistedProfileId ?? (x as any)?.profileId ?? (x as any)?.id)
+                    )
+                    .filter((x: number) => Number.isFinite(x));
+                setInteractionFavoriteIds(favoriteIds);
+                setInteractionShortlistIds(shortlistIds);
             })
             .catch(() => {
-                if (!cancelled) setInteractionFavoriteIds([]);
+                if (!cancelled) {
+                    setInteractionFavoriteIds([]);
+                    setInteractionShortlistIds([]);
+                }
             });
         return () => {
             cancelled = true;
@@ -811,6 +929,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     );
     const isInterestExpressed =
         interestTargetUserId !== null && interactionFavoriteIds.includes(interestTargetUserId);
+    const isShortlisted =
+        interestTargetUserId !== null && interactionShortlistIds.includes(interestTargetUserId);
 
     const [isWhatsAppSame, setIsWhatsAppSame] = useState(false);
     const [nic, setNic] = useState('');
@@ -1868,7 +1988,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         if (e.target === e.currentTarget) close();
     };
 
-    const handleExpressInterest = async () => {
+    const handleExpressInterest = () => {
         if (selectedProfile?.viewAsOthers) return;
         const targetProfileUserId = viewerProfileUserId(selectedProfile);
         if (!targetProfileUserId) return;
@@ -1882,21 +2002,91 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             return;
         }
 
-        setExpressInterestLoading(true);
-        try {
-            const res = await matrimonialService.toggleFavorite(Number(user.id), targetProfileUserId);
-            if (res.statusCode === 200) {
-                setInteractionFavoriteIds((prev) => {
-                    const has = prev.includes(targetProfileUserId);
-                    return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
-                });
-                showToast('Interest updated successfully', 'success');
+        managedActionPicker.runWithManagedAccount('interest', async (managedProfileUserId) => {
+            setExpressInterestLoading(true);
+            try {
+                const res = await matrimonialService.toggleFavorite(
+                    Number(user.id),
+                    targetProfileUserId,
+                    managedProfileUserIdForApi(managedProfileUserId)
+                );
+                if (res.statusCode === 200) {
+                    setInteractionFavoriteIds((prev) => {
+                        const has = prev.includes(targetProfileUserId);
+                        return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
+                    });
+                    showToast('Interest updated successfully', 'success');
+                } else {
+                    showToast(res?.message || res?.Message || 'Could not update interest. Try again.', 'error');
+                }
+            } catch {
+                showToast('Could not update interest. Try again.', 'error');
+            } finally {
+                setExpressInterestLoading(false);
             }
-        } catch {
-            showToast('Could not update interest. Try again.', 'error');
-        } finally {
-            setExpressInterestLoading(false);
+        });
+    };
+
+    const handleToggleShortlist = () => {
+        if (selectedProfile?.viewAsOthers || isProfileLockedByDailyLimit) return;
+        const targetProfileUserId = viewerProfileUserId(selectedProfile);
+        if (!targetProfileUserId) return;
+
+        if (!user) {
+            onSwitch('login');
+            return;
         }
+        if (user.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+
+        managedActionPicker.runWithManagedAccount('save', async (managedProfileUserId) => {
+            setShortlistLoading(true);
+            try {
+                const res = await matrimonialService.toggleShortlist(
+                    Number(user.id),
+                    targetProfileUserId,
+                    managedProfileUserIdForApi(managedProfileUserId)
+                );
+                if (res.statusCode === 200) {
+                    setInteractionShortlistIds((prev) => {
+                        const has = prev.includes(targetProfileUserId);
+                        return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
+                    });
+                    showToast(isShortlisted ? 'Removed from shortlist.' : 'Added to shortlist.', 'success');
+                } else {
+                    showToast(res?.message || res?.Message || 'Could not update shortlist. Try again.', 'error');
+                }
+            } catch {
+                showToast('Could not update shortlist. Try again.', 'error');
+            } finally {
+                setShortlistLoading(false);
+            }
+        });
+    };
+
+    const handleOpenMessage = () => {
+        if (selectedProfile?.viewAsOthers || isProfileLockedByDailyLimit) return;
+        if (!user) {
+            onSwitch('login');
+            return;
+        }
+        const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
+        if (!canMessage) {
+            setProfileAccessMessage('Messaging needs an active subscription.');
+            return;
+        }
+        const targetUserId = selectedProfile.userId || selectedProfile.id;
+        managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
+            onClose();
+            const managedQuery = managedProfileUserIdForApi(managedProfileUserId);
+            router.push(
+                managedQuery != null
+                    ? `/messages?userId=${targetUserId}&managedProfileUserId=${managedQuery}`
+                    : `/messages?userId=${targetUserId}`
+            );
+        });
     };
 
     const handleSendVerificationCode = async (method: string) => {
@@ -3657,8 +3847,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     <div className="modal-header">
                         <h2>{user?.accountType === 'Matchmaker' ? 'Matchmaker Plans' : 'Choose Subscription Plan'}</h2>
                         <p>{user?.accountType === 'Matchmaker'
-                            ? 'Gold and Diamond unlock contacts, messaging, and client profiles. Free can browse summaries only.'
-                            : 'Both plans now include the same full feature set'}</p>
+                            ? 'Compare Free, Gold, and Diamond — same plans as on our homepage pricing section.'
+                            : 'Compare Free and Premium — same plans and features as on our homepage pricing section.'}</p>
                     </div>
                     <div className="modal-body">
                         {subscriptionPackagesLoading ? (
@@ -3669,63 +3859,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             </p>
                         ) : (
                             <>
-                                <div
-                                    className="subscription-comparison"
-                                    style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1rem' }}
-                                >
-                                    {subscriptionPackages.map((pkg) => {
-                                        const id = packageId(pkg);
-                                        const selected = selectedSubscriptionPackageId === id;
-                                        const popular = !!(pkg.isPopular ?? pkg.IsPopular);
-                                        const period = packagePeriodLabel(pkg);
-                                        const desc = pkg.description ?? pkg.Description;
-                                        return (
-                                            <div
-                                                key={id || packageName(pkg)}
-                                                className={`sub-option ${selected ? 'selected' : ''} ${popular ? 'recommended' : ''}`}
-                                                onClick={() => setSelectedSubscriptionPackageId(id)}
-                                                role="button"
-                                                tabIndex={0}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                        e.preventDefault();
-                                                        setSelectedSubscriptionPackageId(id);
-                                                    }
-                                                }}
-                                                style={{ flex: '1 1 160px', maxWidth: '220px' }}
-                                            >
-                                                <h4>{packageName(pkg)}</h4>
-                                                <div className="price">
-                                                    LKR {packagePrice(pkg).toLocaleString('en-LK')}
-                                                    {period ? <span>{period}</span> : null}
-                                                </div>
-                                                {desc ? (
-                                                    <p style={{ fontSize: '0.8rem', marginTop: '0.35rem', lineHeight: 1.4 }}>
-                                                        {desc}
-                                                    </p>
-                                                ) : null}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-
-                                {selectedSubscriptionPackage ? (
-                                    <div className="features-unlocked">
-                                        <h4>{packageName(selectedSubscriptionPackage)} includes</h4>
-                                        <div className="unlock-grid">
-                                            {packageFeatureLabels(selectedSubscriptionPackage).map((label) => (
-                                                <div key={label} className="unlock-item">
-                                                    <span>✓</span> {label}
-                                                </div>
-                                            ))}
-                                            {packageFeatureLabels(selectedSubscriptionPackage).length === 0 ? (
-                                                <div className="unlock-item" style={{ opacity: 0.7 }}>
-                                                    No features listed for this package.
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                ) : null}
+                                <SubscriptionPlanPicker
+                                    packages={subscriptionPackages}
+                                    selectedPackageId={selectedSubscriptionPackageId}
+                                    onSelectPackage={setSelectedSubscriptionPackageId}
+                                    isMatchmaker={user?.accountType === 'Matchmaker'}
+                                    user={user}
+                                    currentPackageLabel="Your current package"
+                                />
 
                                 <div style={{ marginTop: '1.5rem' }}>
                                     {user?.accountType === 'Matchmaker' &&
@@ -3750,9 +3891,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     <button
                                         className="btn btn-primary"
                                         style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
-                                        disabled={!selectedSubscriptionPackage}
+                                        disabled={!selectedSubscriptionPackage || selectedIsCurrentPlan}
                                         onClick={() => {
-                                            if (!selectedSubscriptionPackage) return;
+                                            if (!selectedSubscriptionPackage || selectedIsCurrentPlan) return;
                                             onClose();
                                             if (isFreePackage(selectedSubscriptionPackage)) {
                                                 router.push('/search');
@@ -3765,9 +3906,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             );
                                         }}
                                     >
-                                        {selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage)
-                                            ? 'Continue with Free Plan'
-                                            : 'Continue to Payment'}
+                                        {selectedIsCurrentPlan
+                                            ? 'Current plan'
+                                            : selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage)
+                                              ? 'Continue with Free Plan'
+                                              : 'Continue to Payment'}
                                     </button>
                                     <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
                                         🔒 Secure payment • Plans and prices are managed in backoffice
@@ -3895,7 +4038,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     {((selectedProfile.isPremium || selectedProfile.IsPremium) || profileHasManagedBadge(selectedProfile)) && (
                                         <div style={{ marginTop: '6px', marginBottom: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                             {(selectedProfile.isPremium || selectedProfile.IsPremium) && (
-                                                <PremiumBadge variant="full" />
+                                                <PremiumBadge
+                                                    variant="full"
+                                                    label={premiumBadgeLabelForProfile(selectedProfile, user)}
+                                                />
                                             )}
                                             {profileHasManagedBadge(selectedProfile) && (
                                                 <ProfileManagedBadge profile={selectedProfile} variant="full" />
@@ -3956,38 +4102,33 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                             ? { opacity: 0.65, cursor: 'not-allowed' }
                                                             : undefined
                                                     }
-                                                    onClick={() => {
-                                                        if (selectedProfile.viewAsOthers || isProfileLockedByDailyLimit) return;
-                                                        if (!user) {
-                                                            onSwitch('login');
-                                                        } else {
-                                                            const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
-                                                            if (!canMessage) {
-                                                                setProfileAccessMessage('Messaging needs an active subscription.');
-                                                                return;
-                                                            }
-                                                            onClose();
-                                                            router.push(`/messages?userId=${selectedProfile.userId || selectedProfile.id}`);
-                                                        }
-                                                    }}
+                                                    onClick={handleOpenMessage}
                                                 >
                                                     <span>💬</span> Message
                                                 </button>
                                                 <button
                                                     type="button"
                                                     className="btn btn-outline"
-                                                    disabled={!!selectedProfile.viewAsOthers || isProfileLockedByDailyLimit}
+                                                    disabled={!!selectedProfile.viewAsOthers || shortlistLoading || isProfileLockedByDailyLimit}
                                                     style={
                                                         selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
                                                             ? { opacity: 0.65, cursor: 'not-allowed' }
                                                             : undefined
                                                     }
                                                     onClick={() => {
-                                                        if (selectedProfile.viewAsOthers || isProfileLockedByDailyLimit) return;
-                                                        onSwitch('login');
+                                                        void handleToggleShortlist();
                                                     }}
                                                 >
-                                                    <BookmarkIcon size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} /> Shortlist
+                                                    <BookmarkIcon
+                                                        filled={isShortlisted}
+                                                        size={16}
+                                                        style={{ marginRight: '0.4rem', verticalAlign: '-3px' }}
+                                                    />{' '}
+                                                    {shortlistLoading
+                                                        ? 'Please wait…'
+                                                        : isShortlisted
+                                                          ? 'Shortlisted'
+                                                          : 'Shortlist'}
                                                 </button>
                                             </>
                                         )}
@@ -4059,6 +4200,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
                                         <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
                                         <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
+                                        <button className={`profile-tab ${profileTab === 'contact' ? 'active' : ''}`} onClick={() => setProfileTab('contact')}>Contact</button>
                                     </div>
 
                                     {/* About Tab */}
@@ -4165,22 +4307,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                                    {/*
-                                        Contact info (mobile / WhatsApp / email) is intentionally hidden
-                                        from the profile detail view. Members should connect through the
-                                        in-app messaging feature instead.
-                                    */}
-                                    {!(selectedProfile?.canViewContact || selectedProfile?.CanViewContact) && (
-                                        <div className="contact-section">
-                                            <div className="contact-info-hidden">
-                                                <div className="contact-item">
-                                                    <span>🔢</span>
-                                                    <div>
-                                                        <label>Daily profile views left</label>
-                                                        <span>{selectedProfile.remainingDailyProfileViews ?? selectedProfile.RemainingDailyProfileViews ?? 0}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                    {profileTab === 'contact' && (
+                                        <div className="profile-tab-content active">
+                                            <ProfileContactSection
+                                                profile={selectedProfile}
+                                                viewerIsSubscribed={user?.isSubscribed === true}
+                                                onUpgrade={() => onSwitch('subscription')}
+                                            />
                                         </div>
                                     )}
                                 </>
@@ -4466,6 +4599,17 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     )}
                 </div>
             </div>
+
+            <ManagedSubAccountActionPicker
+                open={managedActionPicker.open}
+                subAccounts={subAccounts}
+                accountType={user?.accountType}
+                action={managedActionPicker.action}
+                selectedId={managedActionPicker.selectedId}
+                onSelect={managedActionPicker.setSelectedId}
+                onConfirm={() => void managedActionPicker.confirmPicker()}
+                onCancel={managedActionPicker.cancelPicker}
+            />
         </>
     );
 }

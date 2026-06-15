@@ -1,5 +1,6 @@
 import { getStoredToken } from '../utils/authStorage';
 import { isFamilyParentAccountType } from '../utils/matrimonialAccountTypes';
+import { normalizePublicPackages, packagePrice, type PublicMatrimonialPackage } from '../utils/matrimonialPackages';
 import { ensureCorsOriginRegistered } from '../utils/corsBootstrap';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
@@ -676,6 +677,40 @@ export const matrimonialService = {
         }
     },
 
+    /**
+     * Persist browse visibility and profile-photo visibility preferences.
+     */
+    async setMatrimonialPrivacyPreferences(
+        userId: number,
+        showInBrowse: boolean,
+        photoVisibility: 'everyone' | 'premium',
+    ): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SetMatrimonialPrivacyPreferences`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify({
+                    UserId: userId,
+                    ShowInBrowse: showInBrowse,
+                    PhotoVisibility: photoVisibility,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(
+                    (data as { message?: string }).message || 'Failed to update privacy preferences'
+                );
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async sendMessage(
         senderId: number,
         receiverId: number,
@@ -791,9 +826,22 @@ export const matrimonialService = {
         }
     },
 
-    async toggleFavorite(userId: number, profileId: number): Promise<any> {
+    async toggleFavorite(
+        userId: number,
+        profileId: number,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleFavorite?userId=${userId}&profileId=${profileId}`, {
+            const params = new URLSearchParams({
+                userId: String(userId),
+                profileId: String(profileId),
+            });
+            const managedId =
+                managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                params.set('managedProfileUserId', String(managedId));
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleFavorite?${params.toString()}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -816,9 +864,22 @@ export const matrimonialService = {
         }
     },
 
-    async toggleShortlist(userId: number, profileId: number): Promise<any> {
+    async toggleShortlist(
+        userId: number,
+        profileId: number,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
         try {
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleShortlist?userId=${userId}&profileId=${profileId}`, {
+            const params = new URLSearchParams({
+                userId: String(userId),
+                profileId: String(profileId),
+            });
+            const managedId =
+                managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                params.set('managedProfileUserId', String(managedId));
+            }
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ToggleShortlist?${params.toString()}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -931,6 +992,27 @@ export const matrimonialService = {
         }
     },
 
+    async updateManagedSubProfile(payload: Record<string, unknown>): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/UpdateManagedSubProfile`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data?.message || data?.Message || 'Failed to update managed profile');
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     /**
      * Delete a sub-account (managed/client profile) created under the given parent user.
      * Removes related matrimonial profile, messages, favourites, shortlists and notifications.
@@ -956,8 +1038,9 @@ export const matrimonialService = {
     },
 
     /**
-     * Cancel the current user's premium subscription. The user remains registered and
-     * can re-subscribe later; only the SUBSCRIPTION_ACTIVE flag is cleared.
+     * Cancel the current user's premium subscription. If the paid period is still
+     * ongoing the cancel takes effect at the period end: premium features stay usable
+     * until then and the user can reactivate before the end date.
      */
     async cancelSubscription(userId: number): Promise<any> {
         try {
@@ -980,9 +1063,57 @@ export const matrimonialService = {
     },
 
     /**
+     * Undo a cancel-at-period-end while the paid period is still ongoing.
+     * If the period has already expired the backend asks the user to subscribe again.
+     */
+    async reactivateSubscription(userId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ReactivateSubscription?userId=${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to reactivate subscription');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    /**
      * Persist the user's notification preferences (currently only the
      * "email me when someone shows interest" toggle) to the server.
      */
+    /** One-click unsubscribe from interest emails using the token from an email link. */
+    async unsubscribeInterestEmails(userId: number, token: string): Promise<any> {
+        try {
+            const params = new URLSearchParams({
+                userId: String(userId),
+                token,
+            });
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/UnsubscribeInterestEmails?${params.toString()}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || data.Message || 'Could not unsubscribe');
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async updateNotificationPreferences(userId: number, emailOnInterest: boolean): Promise<any> {
         try {
             const token = getStoredToken();
@@ -1053,7 +1184,12 @@ export const matrimonialService = {
         }
     },
 
-    async activateMockSubscription(userId: number, mockReference: string, subscriptionPlan?: string): Promise<any> {
+    async activateMockSubscription(
+        userId: number,
+        mockReference: string,
+        subscriptionPlan?: string,
+        amount?: number,
+    ): Promise<any> {
         try {
             const token = getStoredToken();
             const response = await fetch(`${API_BASE_URL}/Matrimonial/ActivateMockSubscription`, {
@@ -1065,7 +1201,8 @@ export const matrimonialService = {
                 body: JSON.stringify({
                     userId,
                     mockReference,
-                    ...(subscriptionPlan ? { subscriptionPlan } : {})
+                    ...(subscriptionPlan ? { subscriptionPlan } : {}),
+                    ...(amount != null && Number.isFinite(amount) ? { amount } : {}),
                 })
             });
 
@@ -1212,6 +1349,28 @@ export const matrimonialService = {
         }
     },
 
+    async getMatchmakerPackages(): Promise<PublicMatrimonialPackage[]> {
+        const res = await this.getPublicPackages('matchmaker');
+        const list = normalizePublicPackages(res?.result ?? res?.Result);
+        return [...list].sort((a, b) => {
+            const popA = (a.isPopular ?? a.IsPopular) ? 1 : 0;
+            const popB = (b.isPopular ?? b.IsPopular) ? 1 : 0;
+            if (popB !== popA) return popB - popA;
+            return packagePrice(a) - packagePrice(b);
+        });
+    },
+
+    async getSubAccountPackages(): Promise<PublicMatrimonialPackage[]> {
+        const res = await this.getPublicPackages('sub_account');
+        const list = normalizePublicPackages(res?.result ?? res?.Result);
+        return [...list].sort((a, b) => {
+            const popA = (a.isPopular ?? a.IsPopular) ? 1 : 0;
+            const popB = (b.isPopular ?? b.IsPopular) ? 1 : 0;
+            if (popB !== popA) return popB - popA;
+            return packagePrice(a) - packagePrice(b);
+        });
+    },
+
     async getActiveSubAccountPackage(): Promise<{ price: number; validityMonths?: number } | null> {
         const res = await this.getPublicPackages('sub_account');
         const pkgs = res?.result ?? res?.Result ?? [];
@@ -1254,6 +1413,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     matchmakerDailyFullProfileViewsRemaining?: number;
     subscriptionExpiresAt?: string;
     subscriptionIsLifetime?: boolean;
+    subscriptionCancelled?: boolean;
     isFamilyParentAccount?: boolean;
     familySubAccountSlotsPurchased?: number;
     familySubAccountSlotsConsumed?: number;
@@ -1293,6 +1453,11 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
             ? toIsoExpiry(mx.MatchmakerSubscriptionUntilUtc ?? mx.matchmakerSubscriptionUntilUtc)
             : toIsoExpiry(mx.SelfPremiumSubscriptionUntilUtc ?? mx.selfPremiumSubscriptionUntilUtc);
 
+    const subscriptionCancelled =
+        accountType === 'Matchmaker'
+            ? (mx.MatchmakerSubscriptionCancelled ?? mx.matchmakerSubscriptionCancelled) === true
+            : (mx.SelfPremiumSubscriptionCancelled ?? mx.selfPremiumSubscriptionCancelled) === true;
+
     const maxCli = mx.MatchmakerMaxClientProfiles ?? mx.matchmakerMaxClientProfiles;
     const cntCli = mx.MatchmakerClientProfileCount ?? mx.matchmakerClientProfileCount;
     const canAdd = mx.MatchmakerCanAddClients ?? mx.matchmakerCanAddClients;
@@ -1324,6 +1489,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
                 : isPremiumSelf,
         subscriptionExpiresAt,
         subscriptionIsLifetime,
+        subscriptionCancelled,
         isFamilyParentAccount: isFamilyParent,
         familySubAccountSlotsPurchased: famPurchased != null && famPurchased !== '' ? Number(famPurchased) : undefined,
         familySubAccountSlotsConsumed: famConsumed != null && famConsumed !== '' ? Number(famConsumed) : undefined,

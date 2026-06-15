@@ -5,6 +5,7 @@
 import { useEffect, useCallback } from 'react';
 
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
 
 import { getStoredToken } from '../utils/authStorage';
 
@@ -153,6 +154,7 @@ async function fetchMatrimonialSubscriptionSnapshot(
 export default function PremiumActivationListener() {
 
     const { user, updateUser } = useAuth();
+    const { refreshInterestNotifications } = useMatrimonialNotifications();
 
 
 
@@ -216,6 +218,8 @@ export default function PremiumActivationListener() {
 
 
 
+            void refreshInterestNotifications();
+
             if (
 
                 !wasPaidBeforePoll &&
@@ -245,6 +249,8 @@ export default function PremiumActivationListener() {
         user?.matchmakerTier,
 
         updateUser,
+
+        refreshInterestNotifications,
 
     ]);
 

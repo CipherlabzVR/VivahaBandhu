@@ -136,6 +136,10 @@ const translations: Record<Language, Record<string, string>> = {
     // Pricing Section
     'pricingPlans': 'Pricing Plans',
     'pricingPlansDesc': 'Choose the plan that fits your needs. No hidden fees.',
+    'pricingPlansDescSubscribed': 'Your active plan is highlighted below. Upgrade or renew anytime.',
+    'yourCurrentPackage': 'Your current package',
+    'currentPlan': 'Current plan',
+    'managePlan': 'Manage plan',
     'free': 'Free',
     'gold': 'Gold',
     'diamond': 'Diamond',
@@ -350,6 +354,10 @@ const translations: Record<Language, Record<string, string>> = {
     // Pricing Section
     'pricingPlans': 'මිල නියමයන්',
     'pricingPlansDesc': 'ඔබේ අවශ්‍යතාවලට ගැලපෙන සැලැස්ම තෝරන්න. සැඟවුණු ගාස්තු නැත.',
+    'pricingPlansDescSubscribed': 'ඔබේ සක්‍රිය සැලැස්ම පහත ඉස්මතු කර ඇත. ඕනෑම වේලාවක උත්ශ්‍රේණි කරන්න හෝ අලුත් කරන්න.',
+    'yourCurrentPackage': 'ඔබේ වර්තමාන පැකේජය',
+    'currentPlan': 'වර්තමාන සැලැස්ම',
+    'managePlan': 'සැලැස්ම කළමනාකරණය',
     'free': 'නොමිලේ',
     'gold': 'රන්',
     'diamond': 'දියමන්ති',

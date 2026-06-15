@@ -29,6 +29,8 @@ export type PublicMatrimonialPackage = {
     IsLifetimeValidity?: boolean;
     validityMonths?: number | null;
     ValidityMonths?: number | null;
+    maxManagedAccounts?: number | null;
+    MaxManagedAccounts?: number | null;
 };
 
 export function normalizePublicPackages(raw: unknown): PublicMatrimonialPackage[] {
@@ -63,6 +65,12 @@ export function isFreePackage(pkg: PublicMatrimonialPackage): boolean {
     return packagePrice(pkg) <= 0;
 }
 
+export function packageMaxManagedAccounts(pkg: PublicMatrimonialPackage): number {
+    const raw = pkg.maxManagedAccounts ?? pkg.MaxManagedAccounts;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function packageValidityLabel(pkg: PublicMatrimonialPackage): string {
     if (pkg.isLifetimeValidity ?? pkg.IsLifetimeValidity) return 'Lifetime';
     const m = pkg.validityMonths ?? pkg.ValidityMonths;
@@ -80,6 +88,38 @@ export function packageFeatureLabels(pkg: PublicMatrimonialPackage): string[] {
         .filter(Boolean);
 }
 
+export function packageHasFeatureKey(pkg: PublicMatrimonialPackage, key: string): boolean {
+    const feats = pkg.features ?? pkg.Features ?? [];
+    return feats.some(
+        (f) => String(f.key ?? f.Key ?? '').trim().toLowerCase() === key.trim().toLowerCase()
+    );
+}
+
+/** Union of all features across packages (preserves first-seen order) for Free vs Premium comparison tables. */
+export function buildFeatureComparisonRows(
+    packages: PublicMatrimonialPackage[]
+): { key: string; label: string; includedIn: boolean[] }[] {
+    const keyOrder: string[] = [];
+    const keyLabels = new Map<string, string>();
+
+    for (const pkg of packages) {
+        const feats = pkg.features ?? pkg.Features ?? [];
+        for (const f of feats) {
+            const k = String(f.key ?? f.Key ?? '').trim();
+            const label = String(f.label ?? f.Label ?? k).trim();
+            if (!k) continue;
+            if (!keyOrder.includes(k)) keyOrder.push(k);
+            if (!keyLabels.has(k)) keyLabels.set(k, label);
+        }
+    }
+
+    return keyOrder.map((key) => ({
+        key,
+        label: keyLabels.get(key) ?? key,
+        includedIn: packages.map((pkg) => packageHasFeatureKey(pkg, key)),
+    }));
+}
+
 /** Maps a backoffice package to checkout `plan` query values understood by the API. */
 export function resolveCheckoutPlan(pkg: PublicMatrimonialPackage): string {
     if (isMatchmakerAudience(pkg)) {
@@ -95,4 +135,76 @@ export function publicPackagesAudienceParam(
     accountType: string | undefined | null
 ): 'user' | 'matchmaker' {
     return accountType === 'Matchmaker' ? 'matchmaker' : 'user';
+}
+
+export type UserPlanContext = {
+    isSubscribed?: boolean;
+    accountType?: string;
+    matchmakerTier?: string;
+} | null | undefined;
+
+function packageMatchmakerTier(pkg: PublicMatrimonialPackage): string {
+    return (pkg.matchmakerTier ?? pkg.MatchmakerTier ?? '').toUpperCase();
+}
+
+function packageSystemKey(pkg: PublicMatrimonialPackage): string {
+    return (pkg.systemPackageKey ?? pkg.SystemPackageKey ?? '').toLowerCase();
+}
+
+/** Resolves which public package row matches the signed-in user's active plan. */
+export function resolveUserCurrentPackage(
+    packages: PublicMatrimonialPackage[],
+    user: UserPlanContext
+): PublicMatrimonialPackage | null {
+    if (!user || packages.length === 0) return null;
+
+    const isMatchmaker = user.accountType === 'Matchmaker';
+    const mmTier = (user.matchmakerTier || 'FREE').toUpperCase();
+    const subscribed = user.isSubscribed === true;
+
+    if (isMatchmaker) {
+        if (!subscribed || mmTier === 'FREE') {
+            return (
+                packages.find((p) => packageSystemKey(p) === 'mm-free') ??
+                packages.find((p) => isMatchmakerAudience(p) && isFreePackage(p)) ??
+                null
+            );
+        }
+        if (mmTier === 'GOLD') {
+            return (
+                packages.find((p) => isMatchmakerAudience(p) && packageMatchmakerTier(p) === 'GOLD') ??
+                packages.find((p) => packageSystemKey(p).includes('gold')) ??
+                null
+            );
+        }
+        if (mmTier === 'DIAMOND') {
+            return (
+                packages.find((p) => isMatchmakerAudience(p) && packageMatchmakerTier(p) === 'DIAMOND') ??
+                packages.find((p) => packageSystemKey(p).includes('diamond')) ??
+                null
+            );
+        }
+        return null;
+    }
+
+    const selfPackages = packages.filter((p) => !isMatchmakerAudience(p));
+    if (!subscribed) {
+        return selfPackages.find((p) => isFreePackage(p)) ?? null;
+    }
+
+    return (
+        selfPackages.find((p) => packageSystemKey(p).includes('premium')) ??
+        selfPackages.find((p) => !isFreePackage(p)) ??
+        null
+    );
+}
+
+export function isUserCurrentPackage(
+    pkg: PublicMatrimonialPackage,
+    packages: PublicMatrimonialPackage[],
+    user: UserPlanContext
+): boolean {
+    const current = resolveUserCurrentPackage(packages, user);
+    if (!current) return false;
+    return packageId(pkg) === packageId(current);
 }

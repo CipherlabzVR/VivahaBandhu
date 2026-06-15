@@ -465,6 +465,92 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 const senderName = senderLabelFromDescription(n.description);
                                                 const initials = initialsFromName(senderName);
                                                 const rowKey = String(n.id);
+                                                const isSubscriptionNotification =
+                                                    ((n as any)?.referenceType ?? (n as any)?.ReferenceType) ===
+                                                    'MatrimonialSubscription';
+
+                                                if (isSubscriptionNotification) {
+                                                    const title = String(n.title || 'Subscription');
+                                                    const titleLower = title.toLowerCase();
+                                                    const isActivated =
+                                                        titleLower.includes('activated') ||
+                                                        titleLower.includes('purchased');
+                                                    const isPendingBank = titleLower.includes('bank transfer received');
+                                                    const isExpiryNotice =
+                                                        titleLower.includes('ending soon') ||
+                                                        titleLower.includes('has ended');
+
+                                                    return (
+                                                        <div
+                                                            key={rowKey}
+                                                            className="relative overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-amber-200 transition-shadow"
+                                                        >
+                                                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-l-xl" aria-hidden />
+                                                            <div className="flex gap-3 pl-4 pr-3 py-3">
+                                                                <div
+                                                                    className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-amber-100 to-orange-50 flex items-center justify-center text-xl ring-2 ring-white shadow-sm"
+                                                                    aria-hidden
+                                                                >
+                                                                    👑
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="text-sm font-semibold text-gray-900 leading-tight">
+                                                                        {title}
+                                                                    </div>
+                                                                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                                                        {n.description}
+                                                                    </p>
+                                                                    <div className="flex flex-wrap gap-2 mt-3">
+                                                                        {isActivated ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    await markInterestNotificationRead(n);
+                                                                                    setNotificationOpen(false);
+                                                                                    router.push('/search');
+                                                                                }}
+                                                                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                                            >
+                                                                                Browse profiles
+                                                                            </button>
+                                                                        ) : isPendingBank ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    await markInterestNotificationRead(n);
+                                                                                    setNotificationOpen(false);
+                                                                                    router.push('/profile?settings=open');
+                                                                                }}
+                                                                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                                            >
+                                                                                View status
+                                                                            </button>
+                                                                        ) : isExpiryNotice ? (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={async () => {
+                                                                                    await markInterestNotificationRead(n);
+                                                                                    setNotificationOpen(false);
+                                                                                    router.push('/profile?settings=open');
+                                                                                }}
+                                                                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                                            >
+                                                                                Manage subscription
+                                                                            </button>
+                                                                        ) : null}
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => markInterestNotificationRead(n)}
+                                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-amber-400 text-amber-900/90 bg-white hover:bg-amber-50/80 transition-colors"
+                                                                        >
+                                                                            Dismiss
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
 
                                                 return (
                                                     <div
