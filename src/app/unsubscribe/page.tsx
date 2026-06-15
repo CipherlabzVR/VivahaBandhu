@@ -111,7 +111,7 @@ function UnsubscribeContent() {
 export default function UnsubscribePage() {
     return (
         <>
-            <Header />
+            <Header onOpenLogin={() => {}} onOpenRegister={() => {}} onOpenVerify={() => {}} />
             <Suspense
                 fallback={
                     <main style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
