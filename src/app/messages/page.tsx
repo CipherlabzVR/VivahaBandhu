@@ -23,6 +23,11 @@ import {
     type ManagedSubAccount,
 } from '@/utils/managedSubAccounts';
 import ClientProfileBadge from '@/components/ClientProfileBadge';
+import ManagedSubAccountActionPicker from '@/components/ManagedSubAccountActionPicker';
+import {
+    managedProfileUserIdForApi,
+    useManagedSubAccountActionPicker,
+} from '@/hooks/useManagedSubAccountActionPicker';
 import HoroscopeLightbox from '@/components/HoroscopeLightbox';
 import {
     horoscopePagesFromProfile,
@@ -78,23 +83,33 @@ function peerNameFromContact(contact: {
     peerLastName?: string;
     firstName?: string;
     lastName?: string;
+    managedProfileUserId?: number | null;
 }): string {
-    const a = String(contact.peerFirstName ?? contact.firstName ?? '').trim();
-    const b = String(contact.peerLastName ?? contact.lastName ?? '').trim();
+    const preferPeer =
+        contact.managedProfileUserId != null && contact.managedProfileUserId > 0;
+    const a = String(
+        (preferPeer ? contact.peerFirstName : contact.peerFirstName ?? contact.firstName) ?? ''
+    ).trim();
+    const b = String(
+        (preferPeer ? contact.peerLastName : contact.peerLastName ?? contact.lastName) ?? ''
+    ).trim();
     const name = [a, b].filter(Boolean).join(' ').trim();
     return name || 'This member';
 }
 
-/** Hub / API payloads may use camelCase or PascalCase. */
+/** Inbox row: show the other member's name/photo; subtitle indicates managed client when applicable. */
 function resolveManagedInboxPresentation(
     contact: InboxContact,
     subAccounts: ManagedSubAccount[],
     isManagedParent: boolean
 ) {
+    const peerName = peerNameFromContact(contact);
+    const peerPhoto = contact.peerProfilePhoto ?? contact.profilePhoto;
+
     if (!isManagedParent || contact.managedProfileUserId == null) {
         return {
-            listName: peerNameFromContact(contact),
-            listPhoto: contact.peerProfilePhoto ?? contact.profilePhoto,
+            listName: peerName,
+            listPhoto: peerPhoto,
             listSubtitle: contact.managedProfileName ? `Re: ${contact.managedProfileName}` : null,
         };
     }
@@ -105,16 +120,11 @@ function resolveManagedInboxPresentation(
         contact.managedProfileName ||
         `${contact.firstName} ${contact.lastName}`.trim() ||
         'Profile';
-    const subPhoto =
-        sub?.profilePhoto ??
-        contact.managedProfilePhoto ??
-        contact.profilePhoto;
-    const peerName = peerNameFromContact(contact);
 
     return {
-        listName: subName,
-        listPhoto: subPhoto,
-        listSubtitle: peerName !== 'This member' ? `With ${peerName}` : null,
+        listName: peerName,
+        listPhoto: peerPhoto,
+        listSubtitle: subName ? `For ${subName}` : null,
     };
 }
 
@@ -262,12 +272,14 @@ function MessagesContent() {
     const [presenceMap, setPresenceMap] = useState<Record<string, PresenceInfo>>({});
     /** Bumps once per minute so "Last seen Xm ago" refreshes without leaving the page. */
     const [presenceClockTick, setPresenceClockTick] = useState(0);
+    const urlContactPickerHandledRef = useRef(false);
 
     // Use Refs for callbacks
     useEffect(() => {
         selectedContactRef.current = selectedContact;
     }, [selectedContact]);
 
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
     const showSubAccountTabs = subAccounts.length >= 2;
     const activeSubAccount = useMemo(
         () => subAccounts.find((s) => s.id === activeSubAccountId) ?? null,
@@ -762,12 +774,33 @@ function MessagesContent() {
     };
 
     useEffect(() => {
-        if (!urlUserId || selectedContactRef.current || inbox.length === 0) return;
+        if (!urlUserId || selectedContactRef.current) return;
         if (canManageSubAccounts(user?.accountType) && !subAccountsLoaded) return;
+
+        if (
+            isManagedParent &&
+            subAccounts.length >= 1 &&
+            urlManagedProfileUserId == null &&
+            !urlContactPickerHandledRef.current
+        ) {
+            managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
+                urlContactPickerHandledRef.current = true;
+                const managedId = managedProfileUserIdForApi(managedProfileUserId);
+                if (managedId != null) {
+                    setActiveSubAccountId(managedId);
+                }
+                void handleSelectContact(Number(urlUserId), managedId ?? null);
+                const managedQuery = managedId != null ? `&managedProfileUserId=${managedId}` : '';
+                router.replace(`/messages?userId=${urlUserId}${managedQuery}`);
+            });
+            return;
+        }
+
         if (showSubAccountTabs && activeSubAccountId == null) return;
+        if (!subAccountsLoaded && canManageSubAccounts(user?.accountType)) return;
         openContactFromUrl(inbox);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when inbox + sub tab are ready
-    }, [inbox, showSubAccountTabs, activeSubAccountId, subAccountsLoaded, urlUserId, user?.accountType]);
+    }, [inbox, showSubAccountTabs, activeSubAccountId, subAccountsLoaded, urlUserId, urlManagedProfileUserId, isManagedParent, subAccounts.length, user?.accountType]);
 
     const handleSelectContact = async (
         contactOrId: InboxContact | number,
@@ -986,18 +1019,13 @@ function MessagesContent() {
         }
     };
 
-    const handleSendMessage = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!canSendInThread) return;
-        if (!newMessage.trim() || !user || !selectedContact) return;
+    const sendMessageWithManagedProfile = async (content: string, managedProfileUserId: number | null | undefined) => {
+        if (!user || !selectedContact) return;
 
-        const content = newMessage.trim();
         const tempId = Math.random();
-        setNewMessage('');
-        setIsTyping(false);
+        const managedId = readManagedProfileUserId(managedProfileUserId);
 
         try {
-            // Optimistically update UI so it feels instant (__localPending merged away when SignalR echoes the server row).
             const newMsgObj = {
                 id: tempId,
                 senderId: Number(user.id),
@@ -1005,39 +1033,61 @@ function MessagesContent() {
                 content: content,
                 sentAt: new Date().toISOString(),
                 isRead: false,
-                managedProfileUserId: selectedContact.managedProfileUserId ?? null,
+                managedProfileUserId: managedId,
                 __localPending: true,
             };
-            setMessages(prev => [...prev, newMsgObj]);
+            setMessages((prev) => [...prev, newMsgObj]);
             scrollToBottom();
 
             const res = await matrimonialService.sendMessage(
                 Number(user.id),
                 selectedContact.contactId,
                 content,
-                selectedContact.managedProfileUserId ?? activeSubAccountId
+                managedId
             );
 
-            // Replace temporary ID if needed or let SignalR handle the sync
             if (res.statusCode === 200 || res.statusCode === 1) {
                 refreshInbox();
                 const serverIdRaw = res.result?.id ?? res.result?.Id;
                 if (serverIdRaw != null) {
                     const sid = Number(serverIdRaw);
-                    setMessages(prev =>
-                        prev.map(m => (m.id === tempId ? { ...m, id: sid, __localPending: false } : m))
+                    setMessages((prev) =>
+                        prev.map((m) => (m.id === tempId ? { ...m, id: sid, __localPending: false } : m))
                     );
                 }
             }
         } catch (err) {
-            console.error("Failed to send message", err);
+            console.error('Failed to send message', err);
             setNewMessage(content);
-            setMessages(prev => prev.filter(m => m.id !== tempId));
+            setMessages((prev) => prev.filter((m) => m.id !== tempId));
             if (err instanceof Error && err.message) {
                 setChatStatusToast(err.message);
                 setTimeout(() => setChatStatusToast(''), 2200);
             }
         }
+    };
+
+    const handleSendMessage = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!canSendInThread) return;
+        if (!newMessage.trim() || !user || !selectedContact) return;
+
+        const content = newMessage.trim();
+        setNewMessage('');
+        setIsTyping(false);
+
+        const existingManagedId = readManagedProfileUserId(
+            selectedContact.managedProfileUserId ?? activeSubAccountId
+        );
+
+        if (isManagedParent && subAccounts.length >= 1 && existingManagedId == null) {
+            managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
+                void sendMessageWithManagedProfile(content, managedProfileUserIdForApi(managedProfileUserId));
+            });
+            return;
+        }
+
+        void sendMessageWithManagedProfile(content, existingManagedId);
     };
 
     const handleDeleteMessage = async (msgId: number) => {
@@ -1563,6 +1613,20 @@ function MessagesContent() {
                 src={horoscopeLightboxSrc || ''}
                 alt="Shared horoscope"
                 onClose={() => setHoroscopeLightboxSrc(null)}
+            />
+
+            <ManagedSubAccountActionPicker
+                open={managedActionPicker.open}
+                subAccounts={subAccounts}
+                accountType={user?.accountType}
+                action={managedActionPicker.action}
+                selectedId={managedActionPicker.selectedId}
+                onSelect={managedActionPicker.setSelectedId}
+                onConfirm={() => void managedActionPicker.confirmPicker()}
+                onCancel={() => {
+                    urlContactPickerHandledRef.current = true;
+                    managedActionPicker.cancelPicker();
+                }}
             />
         </main>
     );

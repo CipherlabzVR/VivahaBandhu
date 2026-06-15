@@ -15,11 +15,15 @@ import {
 } from '../../../constants/subscription';
 import {
     BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY,
+    BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE,
+    BANK_TRANSFER_SUBMITTED_MESSAGE,
+    MATCHMAKER_PLAN_ACTIVATED_MESSAGE,
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
     SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
 } from '../../../constants/premiumActivation';
+import { useMatrimonialNotifications } from '../../../context/MatrimonialNotificationsContext';
 import { sanitizeNameInput } from '../../../utils/nameInput';
 import { PasswordVisibilityToggle } from '../../../components/PasswordVisibilityToggle';
 import { showToast } from '../../../utils/toast';
@@ -43,6 +47,7 @@ function planLabel(plan: string, isMatchmaker: boolean): string {
 export default function SubscriptionCheckoutPage() {
     const router = useRouter();
     const { user, updateUser } = useAuth();
+    const { refreshInterestNotifications } = useMatrimonialNotifications();
     const [checkoutPlan, setCheckoutPlan] = useState<string>(CHECKOUT_PLAN_PREMIUM_SELF);
     const [amount, setAmount] = useState(String(PREMIUM_SUBSCRIPTION_LKR));
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
@@ -179,23 +184,12 @@ export default function SubscriptionCheckoutPage() {
         }
     };
 
-    const applySubAccountSlotPatch = (
-        purchased?: number,
-        subscriptionExpiresAt?: string,
-        subscriptionIsLifetime?: boolean,
-    ) => {
+    const applySubAccountSlotPatch = (purchased?: number) => {
         const nextPurchased =
             purchased ??
             Math.max(0, (user?.familySubAccountSlotsPurchased ?? 0) + 1);
         updateUser({
             familySubAccountSlotsPurchased: nextPurchased,
-            isSubscribed: true,
-            matchmakerTier: undefined,
-            ...(subscriptionIsLifetime
-                ? { subscriptionIsLifetime: true, subscriptionExpiresAt: undefined }
-                : subscriptionExpiresAt
-                  ? { subscriptionExpiresAt, subscriptionIsLifetime: false }
-                  : {}),
         });
     };
 
@@ -241,7 +235,8 @@ export default function SubscriptionCheckoutPage() {
             const res = await matrimonialService.activateMockSubscription(
                 Number(user.id),
                 mockReference,
-                subscriptionPlan
+                subscriptionPlan,
+                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT ? parseFloat(amount) : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
@@ -249,18 +244,10 @@ export default function SubscriptionCheckoutPage() {
                     const newPurchased = r
                         ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? (user?.familySubAccountSlotsPurchased ?? 0) + 1)
                         : (user?.familySubAccountSlotsPurchased ?? 0) + 1;
-                    const rawUntil = r?.subscribedUntil ?? r?.SubscribedUntil;
-                    let untilIso: string | undefined;
-                    if (rawUntil != null && String(rawUntil).trim() !== '') {
-                        const d = new Date(String(rawUntil));
-                        if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
-                    }
-                    const lifetime =
-                        r?.subscriptionIsLifetime === true ||
-                        r?.SubscriptionIsLifetime === true;
-                    applySubAccountSlotPatch(newPurchased, untilIso, lifetime);
-                    setSuccess('Payment successful. Premium membership is active and you can create a sub-account from your profile.');
+                    applySubAccountSlotPatch(newPurchased);
+                    setSuccess('Payment successful. You can create a managed profile from your profile — premium activates on that profile when you create it.');
                     showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
+                    void refreshInterestNotifications();
                     window.setTimeout(() => router.replace('/profile'), 800);
                     return;
                 }
@@ -280,7 +267,14 @@ export default function SubscriptionCheckoutPage() {
                         ? 'Payment successful. Your matchmaker subscription is active.'
                         : 'Payment successful. Premium membership is now active.'
                 );
-                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
+                showToast(
+                    isMatchmakerAccount
+                        ? MATCHMAKER_PLAN_ACTIVATED_MESSAGE
+                        : PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
+                    'success',
+                    5500,
+                );
+                void refreshInterestNotifications();
                 window.setTimeout(() => {
                     router.replace('/');
                 }, 800);
@@ -337,6 +331,14 @@ export default function SubscriptionCheckoutPage() {
                                 ? 'Slip received! Our team will review your payment and add your sub-account slot shortly. Redirecting to profile…'
                                 : 'Slip received! Our admin team will review your payment and activate your subscription shortly. You will be redirected to the home page in a moment.',
                         );
+                        showToast(
+                            isSubAccountCheckout
+                                ? BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE
+                                : BANK_TRANSFER_SUBMITTED_MESSAGE,
+                            'success',
+                            5500,
+                        );
+                        void refreshInterestNotifications();
                         setBankSlipFile(null);
                         setBankSlipPreview(null);
                         setBankRemarks('');

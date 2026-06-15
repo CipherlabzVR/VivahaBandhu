@@ -35,6 +35,7 @@ type ManagedSubAccountActivityCardProps = {
     onInterestClick: (subUserId: number) => void;
     onMessagesClick: (subUserId: number) => void;
     onViewProfile: (subAccount: ManagedSubAccountRow) => void;
+    onEdit?: (subAccount: ManagedSubAccountRow) => void;
     onDelete?: (subAccount: ManagedSubAccountRow) => void;
     deletingSubAccountId?: number | null;
     /** Visual badge for managed sub-account type. */
@@ -44,6 +45,8 @@ type ManagedSubAccountActivityCardProps = {
     /** Shown under the name line (e.g. family vs matchmaker metadata). */
     detailLine?: string;
     footerLine?: string;
+    /** Premium subscription expiry for this managed profile (family parents). */
+    subscriptionLine?: string;
 };
 
 function badgeButtonStyle(bg: string, color: string): CSSProperties {
@@ -66,6 +69,7 @@ export default function ManagedSubAccountActivityCard({
     onInterestClick,
     onMessagesClick,
     onViewProfile,
+    onEdit,
     onDelete,
     deletingSubAccountId = null,
     badgeKind = 'none',
@@ -73,6 +77,7 @@ export default function ManagedSubAccountActivityCard({
     managedByLabel = 'Managed by parent',
     detailLine,
     footerLine,
+    subscriptionLine,
 }: ManagedSubAccountActivityCardProps) {
     const unreadInterest = activity?.unreadInterestCount ?? 0;
     const unreadMessages = activity?.unreadMessageCount ?? 0;
@@ -185,6 +190,11 @@ export default function ManagedSubAccountActivityCard({
                     {detailLine ? (
                         <p style={{ color: '#6B6560', fontSize: '0.875rem', wordBreak: 'break-word' }}>{detailLine}</p>
                     ) : null}
+                    {subscriptionLine ? (
+                        <p style={{ color: '#92400e', fontSize: '0.82rem', marginTop: '0.35rem', fontWeight: 500 }}>
+                            {subscriptionLine}
+                        </p>
+                    ) : null}
                     {footerLine ? (
                         <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '0.25rem' }}>{footerLine}</p>
                     ) : null}
@@ -218,6 +228,16 @@ export default function ManagedSubAccountActivityCard({
                     >
                         View profile
                     </button>
+                    {onEdit ? (
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.85rem', padding: '0.4rem 0.75rem' }}
+                            onClick={() => onEdit(subAccount)}
+                        >
+                            Edit profile
+                        </button>
+                    ) : null}
                     {onDelete ? (
                         <button
                             type="button"

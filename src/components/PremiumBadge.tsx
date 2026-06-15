@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react';
 interface PremiumBadgeProps {
     /** Compact crown pill (used inside small profile cards) vs full text pill (used in the detail view). */
     variant?: 'compact' | 'full';
+    /** Defaults to "Premium"; pass e.g. "Matchmaker Gold" for matchmaker tiers. */
+    label?: string;
     style?: CSSProperties;
 }
 
@@ -10,8 +12,8 @@ interface PremiumBadgeProps {
  * Gold "Premium" pill shown on profiles whose owner has an active subscription.
  * Designed to pair with the gold frame applied to the surrounding card.
  */
-export default function PremiumBadge({ variant = 'compact', style }: PremiumBadgeProps) {
-    const tooltip = 'Premium member';
+export default function PremiumBadge({ variant = 'compact', label = 'Premium', style }: PremiumBadgeProps) {
+    const tooltip = label === 'Premium' ? 'Premium member' : label;
 
     const baseStyle: CSSProperties = {
         display: 'inline-flex',
@@ -44,7 +46,7 @@ export default function PremiumBadge({ variant = 'compact', style }: PremiumBadg
                 {/* Crown icon */}
                 <path d="M3 7l4 4 5-7 5 7 4-4-2 12H5L3 7zm2 14h14v2H5v-2z" />
             </svg>
-            <span>Premium</span>
+            <span>{label}</span>
         </span>
     );
 }

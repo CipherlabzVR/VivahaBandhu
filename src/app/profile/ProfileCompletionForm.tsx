@@ -28,6 +28,22 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerq
 
 type CountryOption = { name: string; isoCode: string };
 
+const fieldErrorTextStyle: CSSProperties = {
+    color: '#b91c1c',
+    fontSize: '0.8rem',
+    display: 'block',
+    marginTop: '0.25rem',
+};
+
+function FieldErrorMessage({ message }: { message?: string }) {
+    if (!message) return null;
+    return (
+        <span style={fieldErrorTextStyle} role="alert">
+            {message}
+        </span>
+    );
+}
+
 /** Comma-separated values from a fixed list of string options (e.g. ethnicity, religion). */
 function OptionMultiSelect({
     idPrefix,
@@ -710,6 +726,7 @@ export default function ProfileCompletionForm({
     onComplete,
     scrollContainerRef,
     managedCreate,
+    managedEdit,
 }: {
     onClose?: () => void;
     onComplete?: () => void;
@@ -719,15 +736,22 @@ export default function ProfileCompletionForm({
     managedCreate?: {
         parentUserId: number;
     };
+    /** When set, edits an existing managed sub-profile owned by the parent. */
+    managedEdit?: {
+        parentUserId: number;
+        subUserId: number;
+    };
 }) {
     const { user, updateUser } = useAuth();
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
     const router = useRouter();
+    const isManagedFlow = !!(managedCreate || managedEdit);
+    const managedParentUserId = managedCreate?.parentUserId ?? managedEdit?.parentUserId;
     /**
      * Relation accounts only need to fill the Partner Preferences section in the
      * detailed profile editor. Parents and Self complete the full wizard.
      */
-    const isPartnerPrefsOnly = !managedCreate && isRelationAccountType(user?.accountType);
+    const isPartnerPrefsOnly = !isManagedFlow && isRelationAccountType(user?.accountType);
     const [step, setStep] = useState(isPartnerPrefsOnly ? 5 : 1);
     useEffect(() => {
         if (isPartnerPrefsOnly && step !== 5) setStep(5);
@@ -773,7 +797,25 @@ export default function ProfileCompletionForm({
 
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [successMessage, setSuccessMessage] = useState('');
+
+    const clearFieldError = (name: string) => {
+        setFieldErrors((prev) => {
+            if (!prev[name]) return prev;
+            const next = { ...prev };
+            delete next[name];
+            return next;
+        });
+    };
+
+    const applyFieldErrors = (errors: Record<string, string>) => {
+        setFieldErrors(errors);
+        setSubmitError('');
+    };
+
+    const fieldInputStyle = (name: string): CSSProperties | undefined =>
+        fieldErrors[name] ? { borderColor: '#b91c1c' } : undefined;
     const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
     const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
     type HoroscopeViewerSlot = null | 'horoscopeDocument' | 'horoscopeDocument2' | 'horoscopeDocument3';
@@ -788,7 +830,6 @@ export default function ProfileCompletionForm({
     const wizardStepsAnchorRef = useRef<HTMLDivElement>(null);
     const activeStepContentRef = useRef<HTMLDivElement>(null);
 
-    const managedCreateParentUserId = managedCreate?.parentUserId;
 
     useEffect(() => {
         setHoroscopeViewerSlot(null);
@@ -798,7 +839,7 @@ export default function ProfileCompletionForm({
         const scrollToStepSection = () => {
             const scrollHost = scrollContainerRef?.current;
 
-            if (managedCreateParentUserId && step > 1) {
+            if (isManagedFlow && step > 1) {
                 const scrollTarget = activeStepContentRef.current ?? wizardStepsAnchorRef.current;
                 if (scrollTarget && scrollHost) {
                     const hostRect = scrollHost.getBoundingClientRect();
@@ -812,12 +853,12 @@ export default function ProfileCompletionForm({
                 return;
             }
 
-            if (managedCreateParentUserId && step === 1) {
+            if (isManagedFlow && step === 1) {
                 scrollHost?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
                 return;
             }
 
-            if (!managedCreateParentUserId) {
+            if (!isManagedFlow) {
                 if (scrollHost) {
                     scrollHost.scrollTo({ top: 0, left: 0, behavior: 'auto' });
                 } else if (typeof window !== 'undefined') {
@@ -827,7 +868,7 @@ export default function ProfileCompletionForm({
         };
 
         requestAnimationFrame(scrollToStepSection);
-    }, [step, managedCreateParentUserId, scrollContainerRef]);
+    }, [step, isManagedFlow, scrollContainerRef]);
 
     const [formData, setFormData] = useState({
         // Personal
@@ -898,6 +939,7 @@ export default function ProfileCompletionForm({
     });
 
     const handleManagedNicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        clearFieldError('managedNic');
         const value = sanitizeNicInput(e.target.value);
         if (!value.trim()) {
             setManagedBasic(p => ({ ...p, nic: value, dob: '', gender: '' }));
@@ -1096,98 +1138,124 @@ export default function ProfileCompletionForm({
             return;
         }
 
-        setFormData(prev => ({
-            ...prev,
-            dob: safeDate(user.dob) || prev.dob,
-            gender: user.gender || prev.gender
-        }));
+        const applyProfileResult = (p: Record<string, unknown>) => {
+            const v = (key: string) => String(p[key] ?? p[key.charAt(0).toUpperCase() + key.slice(1)] ?? '');
+            const vOpt = (key: string) => {
+                const raw = v(key);
+                return raw === '-' ? '' : raw;
+            };
+            setFormData(prev => ({
+                ...prev,
+                gender: v('gender') || prev.gender,
+                dob: safeDate(String(p.dateOfBirth ?? p.DateOfBirth ?? '')) || prev.dob,
+                height: String(p.height ?? p.Height ?? prev.height),
+                complexion: v('complexion') || prev.complexion,
+                religion: v('religion') || prev.religion,
+                maritalStatus: v('maritalStatus') || prev.maritalStatus,
+                qualificationLevel: v('qualificationLevel') || prev.qualificationLevel,
+                occupation: sanitizeNameInput(String(v('occupation') || prev.occupation || '')),
+                countryOfOrigin: v('countryOfOrigin') || prev.countryOfOrigin,
+                countryOfResidence: v('countryOfResidence') || prev.countryOfResidence,
+                cityOfResidence: v('cityOfResidence') || prev.cityOfResidence,
+                residencyStatus: v('residencyStatus') || prev.residencyStatus,
+                hobbies: v('hobbies') || prev.hobbies,
+                drinkingHabits: v('drinkingHabits') || prev.drinkingHabits,
+                eatingHabits: v('eatingHabits') || prev.eatingHabits,
+                smokingHabits: v('smokingHabits') || prev.smokingHabits,
+                horoscope: v('horoscope') || prev.horoscope,
+                horoscopeDocument: v('horoscopeDocument') || prev.horoscopeDocument,
+                horoscopeDocument2: v('horoscopeDocument2') || prev.horoscopeDocument2,
+                horoscopeDocument3: v('horoscopeDocument3') || prev.horoscopeDocument3,
+                fatherName: v('fatherName') || prev.fatherName,
+                fatherCountryOfResidence: vOpt('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
+                fatherOccupation: sanitizeNameInput(String(v('fatherOccupation') || prev.fatherOccupation || '')),
+                fatherEthnicity: vOpt('fatherEthnicity') || prev.fatherEthnicity,
+                fatherReligion: v('fatherReligion') || prev.fatherReligion,
+                fatherCaste: vOpt('fatherCaste') || prev.fatherCaste,
+                fatherRemarks: vOpt('fatherRemarks') || prev.fatherRemarks,
+                motherName: v('motherName') || prev.motherName,
+                motherCountryOfResidence: vOpt('motherCountryOfResidence') || prev.motherCountryOfResidence,
+                motherOccupation: sanitizeNameInput(String(v('motherOccupation') || prev.motherOccupation || '')),
+                motherEthnicity: vOpt('motherEthnicity') || prev.motherEthnicity,
+                motherReligion: v('motherReligion') || prev.motherReligion,
+                motherCaste: vOpt('motherCaste') || prev.motherCaste,
+                motherRemarks: vOpt('motherRemarks') || prev.motherRemarks,
+                partnerMinAge: String(p.partnerMinAge ?? p.PartnerMinAge ?? prev.partnerMinAge),
+                partnerMaxAge: String(p.partnerMaxAge ?? p.PartnerMaxAge ?? prev.partnerMaxAge),
+                partnerEatingHabits: vOpt('partnerEatingHabits') || prev.partnerEatingHabits,
+                partnerDrinkingHabits: vOpt('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
+                partnerSmokingHabits: vOpt('partnerSmokingHabits') || prev.partnerSmokingHabits,
+                partnerQualificationLevel: v('partnerQualificationLevel') || prev.partnerQualificationLevel,
+                partnerReligion: v('partnerReligion') || prev.partnerReligion,
+                partnerEthnicity: v('partnerEthnicity') || prev.partnerEthnicity,
+                partnerCountryOfOrigin: vOpt('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
+                partnerCountryOfResidence: vOpt('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
+                partnerAdditionalRequirements: v('partnerAdditionalRequirements') || prev.partnerAdditionalRequirements,
+                upload1: v('upload1') || prev.upload1,
+                upload2: v('upload2') || prev.upload2,
+                upload3: v('upload3') || prev.upload3,
+                profilePhoto:
+                    String(p.profilePhotoFromProfile ?? p.ProfilePhotoFromProfile ?? v('profilePhoto') ?? prev.profilePhoto),
+                remarks: v('remarks') || prev.remarks,
+            }));
+        };
 
         const fetchProfile = async () => {
             try {
                 const token = getStoredToken();
                 if (!token) return;
 
-                const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const profileUserId = managedEdit?.subUserId ?? Number(user.id);
+                const requesterParam = managedEdit
+                    ? `&requesterUserId=${managedEdit.parentUserId}`
+                    : '';
+                const response = await fetch(
+                    `${API_BASE_URL}/Matrimonial/GetProfile?userId=${profileUserId}${requesterParam}`,
+                    { headers: { Authorization: `Bearer ${token}` } },
+                );
 
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.result) {
-                        const p = data.result;
-                        const v = (key: string) => p[key] || p[key.charAt(0).toUpperCase() + key.slice(1)] || '';
-                        // Strip the "-" placeholder we save for empty optional
-                        // parent fields, so the UI shows the empty placeholder
-                        // ("Select Ethnicity" / no chips) rather than a literal
-                        // hyphen pre-filled in the controls.
-                        const vOpt = (key: string) => {
-                            const raw = v(key);
-                            return raw === '-' ? '' : raw;
-                        };
-                        setFormData(prev => ({
-                            ...prev,
-                            gender: v('gender') || prev.gender,
-                            dob: safeDate(p.dateOfBirth || p.DateOfBirth) || prev.dob,
-                            height: p.height || p.Height || prev.height,
-                            complexion: v('complexion') || prev.complexion,
-                            religion: v('religion') || prev.religion,
-                            maritalStatus: v('maritalStatus') || prev.maritalStatus,
-                            qualificationLevel: v('qualificationLevel') || prev.qualificationLevel,
-                            occupation: sanitizeNameInput(String(v('occupation') || prev.occupation || '')),
-                            countryOfOrigin: v('countryOfOrigin') || prev.countryOfOrigin,
-                            countryOfResidence: v('countryOfResidence') || prev.countryOfResidence,
-                            cityOfResidence: v('cityOfResidence') || prev.cityOfResidence,
-                            residencyStatus: v('residencyStatus') || prev.residencyStatus,
-                            hobbies: v('hobbies') || prev.hobbies,
-                            drinkingHabits: v('drinkingHabits') || prev.drinkingHabits,
-                            eatingHabits: v('eatingHabits') || prev.eatingHabits,
-                            smokingHabits: v('smokingHabits') || prev.smokingHabits,
-                            horoscope: v('horoscope') || prev.horoscope,
-                            horoscopeDocument: v('horoscopeDocument') || prev.horoscopeDocument,
-                            horoscopeDocument2: v('horoscopeDocument2') || prev.horoscopeDocument2,
-                            horoscopeDocument3: v('horoscopeDocument3') || prev.horoscopeDocument3,
-                            fatherName: v('fatherName') || prev.fatherName,
-                            fatherCountryOfResidence: vOpt('fatherCountryOfResidence') || prev.fatherCountryOfResidence,
-                            fatherOccupation: sanitizeNameInput(String(v('fatherOccupation') || prev.fatherOccupation || '')),
-                            fatherEthnicity: vOpt('fatherEthnicity') || prev.fatherEthnicity,
-                            fatherReligion: v('fatherReligion') || prev.fatherReligion,
-                            fatherCaste: vOpt('fatherCaste') || prev.fatherCaste,
-                            fatherRemarks: vOpt('fatherRemarks') || prev.fatherRemarks,
-                            motherName: v('motherName') || prev.motherName,
-                            motherCountryOfResidence: vOpt('motherCountryOfResidence') || prev.motherCountryOfResidence,
-                            motherOccupation: sanitizeNameInput(String(v('motherOccupation') || prev.motherOccupation || '')),
-                            motherEthnicity: vOpt('motherEthnicity') || prev.motherEthnicity,
-                            motherReligion: v('motherReligion') || prev.motherReligion,
-                            motherCaste: vOpt('motherCaste') || prev.motherCaste,
-                            motherRemarks: vOpt('motherRemarks') || prev.motherRemarks,
-                            partnerMinAge: p.partnerMinAge || p.PartnerMinAge || prev.partnerMinAge,
-                            partnerMaxAge: p.partnerMaxAge || p.PartnerMaxAge || prev.partnerMaxAge,
-                            partnerEatingHabits: vOpt('partnerEatingHabits') || prev.partnerEatingHabits,
-                            partnerDrinkingHabits: vOpt('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
-                            partnerSmokingHabits: vOpt('partnerSmokingHabits') || prev.partnerSmokingHabits,
-                            partnerQualificationLevel: v('partnerQualificationLevel') || prev.partnerQualificationLevel,
-                            partnerReligion: v('partnerReligion') || prev.partnerReligion,
-                            partnerEthnicity: v('partnerEthnicity') || prev.partnerEthnicity,
-                            partnerCountryOfOrigin: vOpt('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
-                            partnerCountryOfResidence: vOpt('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
-                            partnerAdditionalRequirements: v('partnerAdditionalRequirements') || prev.partnerAdditionalRequirements,
-                            upload1: v('upload1') || prev.upload1,
-                            upload2: v('upload2') || prev.upload2,
-                            upload3: v('upload3') || prev.upload3,
-                            profilePhoto: p.profilePhotoFromProfile || p.ProfilePhotoFromProfile || v('profilePhoto') || prev.profilePhoto,
-                            remarks: v('remarks') || prev.remarks,
-                        }));
-                    }
+                if (!response.ok) return;
+                const data = await response.json();
+                const p = data?.result;
+                if (!p || typeof p !== 'object') return;
+
+                if (managedEdit) {
+                    const phoneDigits = String(p.phoneNumber ?? p.PhoneNumber ?? '').replace(/\D/g, '');
+                    const whatsappDigits = String(p.whatsApp ?? p.WhatsApp ?? phoneDigits).replace(/\D/g, '');
+                    const gender = String(p.gender ?? p.Gender ?? '');
+                    const dob = safeDate(String(p.dateOfBirth ?? p.DateOfBirth ?? ''));
+                    setManagedBasic({
+                        firstName: String(p.firstName ?? p.FirstName ?? '').trim(),
+                        lastName: String(p.lastName ?? p.LastName ?? '').trim(),
+                        nic: String(p.nic ?? p.Nic ?? '').trim(),
+                        dob,
+                        gender,
+                        phone: phoneDigits,
+                        whatsapp: whatsappDigits,
+                        profilePhotoBase64: '',
+                    });
+                    const photo = String(p.profilePhoto ?? p.ProfilePhoto ?? '').trim();
+                    if (photo) setManagedPhotoPreview(photo);
                 }
+
+                applyProfileResult(p as Record<string, unknown>);
             } catch (error) {
-                console.error("Failed to fetch profile", error);
+                console.error('Failed to fetch profile', error);
             }
         };
+
+        if (!managedEdit) {
+            setFormData(prev => ({
+                ...prev,
+                dob: safeDate(user.dob) || prev.dob,
+                gender: user.gender || prev.gender,
+            }));
+        }
 
         fetchProfile();
         setInitialFetchDone(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, initialFetchDone, managedCreateParentUserId]);
+    }, [user?.id, initialFetchDone, managedCreate, managedEdit?.subUserId, managedEdit?.parentUserId]);
 
     useEffect(() => {
         // If the user removes all residence countries, drop the now-orphaned city.
@@ -1240,6 +1308,7 @@ export default function ProfileCompletionForm({
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
+        clearFieldError(name);
         let nextValue: string = value;
         // Letters-only fields: names + occupations (own / father / mother).
         // Father / Mother names are the only "name" inputs in this wizard;
@@ -1315,9 +1384,10 @@ export default function ProfileCompletionForm({
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
+        clearFieldError(fieldName);
         const gate = photoPrerequisite(fieldName);
         if (!gate.ok) {
-            setSubmitError(gate.message || 'Please upload the previous photo first.');
+            applyFieldErrors({ [fieldName]: gate.message || 'Please upload the previous photo first.' });
             // Reset so the user can retry once the prerequisite is satisfied.
             e.target.value = '';
             return;
@@ -1343,12 +1413,13 @@ export default function ProfileCompletionForm({
 
     const uploadFile = async (file: File, fieldName: string) => {
         setUploading(prev => ({ ...prev, [fieldName]: true }));
+        clearFieldError(fieldName);
         setSubmitError('');
 
         try {
             const token = getStoredToken();
             if (!token) {
-                setSubmitError('Please login again to upload documents.');
+                applyFieldErrors({ [fieldName]: 'Please login again to upload documents.' });
                 return;
             }
             const data = new FormData();
@@ -1373,7 +1444,7 @@ export default function ProfileCompletionForm({
                 setFormData(prev => ({ ...prev, [fieldName]: cleanUrl }));
                 setPreviewBusters(prev => ({ ...prev, [fieldName]: Date.now() }));
 
-                if (!managedCreate) {
+                if (!isManagedFlow) {
                     // Immediately reflect key uploads in the user context (header avatar / profile pic).
                     if (fieldName === 'profilePhoto') {
                         updateUser({ profilePhoto: withCacheBuster(cleanUrl) });
@@ -1387,8 +1458,9 @@ export default function ProfileCompletionForm({
                     if (fieldName === 'horoscopeDocument3') {
                         updateUser({ horoscopeDocument3: withCacheBuster(cleanUrl) });
                     }
+                }
 
-                    // Persist key file fields to the matrimonial profile *immediately* so the
+                if (!managedCreate) {
                     // S3 URL survives the user refreshing, closing the tab or jumping
                     // backwards in the wizard before the final submit. Without this the
                     // upload only lives in local React state until the very last step,
@@ -1405,80 +1477,67 @@ export default function ProfileCompletionForm({
             } else {
                 const errorText = await response.text().catch(() => '');
                 const statusHint = response.status === 401 ? ' (Unauthorized - please login again)' : '';
-                setSubmitError(
-                    errorText
+                applyFieldErrors({
+                    [fieldName]: errorText
                         ? `Failed to upload file${statusHint}: ${errorText}`
-                        : `Failed to upload file${statusHint}. Please try again.`
-                );
+                        : `Failed to upload file${statusHint}. Please try again.`,
+                });
             }
         } catch (error) {
             console.error('Upload error:', error);
-            setSubmitError('An error occurred during upload.');
+            applyFieldErrors({ [fieldName]: 'An error occurred during upload.' });
         } finally {
             setUploading(prev => ({ ...prev, [fieldName]: false }));
         }
     };
 
     const validateStep = (currentStep: number) => {
-        // Implement validation per step
+        const errors: Record<string, string> = {};
+
         if (currentStep === 1) {
-            if (!formData.gender || !formData.height || !formData.religion || !formData.maritalStatus) {
-                setSubmitError('Please fill in all mandatory fields (*)');
-                return false;
-            }
-        }
-        if (currentStep === 2) {
+            if (!formData.gender) errors.gender = 'Please select your gender.';
+            if (!formData.height?.toString().trim()) errors.height = 'Please enter your height.';
+            if (!formData.religion) errors.religion = 'Please select your religion.';
+            if (!formData.maritalStatus) errors.maritalStatus = 'Please select your marital status.';
+        } else if (currentStep === 2) {
             const userCountries = formData.countryOfResidence.split(',').map((s) => s.trim()).filter(Boolean);
-            if (!formData.qualificationLevel || !formData.countryOfOrigin || userCountries.length === 0 || !formData.cityOfResidence || !formData.residencyStatus) {
-                setSubmitError('Please fill in all mandatory fields (*)');
-                return false;
-            }
-        }
-        if (currentStep === 3) {
-            if (!formData.horoscope) {
-                setSubmitError('Please select Horoscope option (*)');
-                return false;
-            }
-        }
-        if (currentStep === 4) {
-            // Country of Residence, Ethnicity and Caste for parents are now
-            // optional - the backend payload substitutes "-" for any blanks
-            // so the database still gets a placeholder rather than an empty
-            // string. Religion remains required for matchmaking accuracy.
-            if (!formData.fatherReligion || !formData.motherReligion) {
-                setSubmitError('Please select Religion for both parents (*)');
-                return false;
-            }
-        }
-        if (currentStep === 5) {
-            // Partner age range: both required, Min must be at least 18, and
-            // Max must be strictly greater than Min so the range is meaningful.
+            if (!formData.qualificationLevel) errors.qualificationLevel = 'Please select your highest qualification.';
+            if (!formData.countryOfOrigin) errors.countryOfOrigin = 'Please select your country of origin.';
+            if (userCountries.length === 0) errors.countryOfResidence = 'Please select at least one country of residence.';
+            if (!formData.cityOfResidence?.trim()) errors.cityOfResidence = 'Please enter your city of residence.';
+            if (!formData.residencyStatus) errors.residencyStatus = 'Please select your residency status.';
+        } else if (currentStep === 3) {
+            if (!formData.horoscope) errors.horoscope = 'Please select a horoscope matching option.';
+        } else if (currentStep === 4) {
+            if (!formData.fatherReligion) errors.fatherReligion = "Please select your father's religion.";
+            if (!formData.motherReligion) errors.motherReligion = "Please select your mother's religion.";
+        } else if (currentStep === 5) {
             const minRaw = formData.partnerMinAge.toString().trim();
             const maxRaw = formData.partnerMaxAge.toString().trim();
-            if (!minRaw || !maxRaw) {
-                setSubmitError('Please enter both Minimum and Maximum partner age (cannot be blank).');
-                return false;
-            }
-            const minAge = parseInt(minRaw, 10);
-            const maxAge = parseInt(maxRaw, 10);
-            if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
-                setSubmitError('Partner age must be a valid number.');
-                return false;
-            }
-            if (minAge < 18) {
-                setSubmitError('Minimum partner age must be at least 18.');
-                return false;
-            }
-            if (maxAge < 18) {
-                setSubmitError('Maximum partner age must be at least 18.');
-                return false;
-            }
-            if (maxAge <= minAge) {
-                setSubmitError('Maximum partner age must be greater than Minimum age.');
-                return false;
+            if (!minRaw) errors.partnerMinAge = 'Please enter the minimum partner age.';
+            if (!maxRaw) errors.partnerMaxAge = 'Please enter the maximum partner age.';
+            if (!errors.partnerMinAge && !errors.partnerMaxAge) {
+                const minAge = parseInt(minRaw, 10);
+                const maxAge = parseInt(maxRaw, 10);
+                if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
+                    errors.partnerMinAge = 'Partner age must be a valid number.';
+                    errors.partnerMaxAge = 'Partner age must be a valid number.';
+                } else {
+                    if (minAge < 18) errors.partnerMinAge = 'Minimum partner age must be at least 18.';
+                    if (maxAge < 18) errors.partnerMaxAge = 'Maximum partner age must be at least 18.';
+                    if (!errors.partnerMinAge && !errors.partnerMaxAge && maxAge <= minAge) {
+                        errors.partnerMaxAge = 'Maximum partner age must be greater than minimum age.';
+                    }
+                }
             }
         }
-        // Add more validation as needed
+
+        if (Object.keys(errors).length > 0) {
+            applyFieldErrors(errors);
+            return false;
+        }
+
+        setFieldErrors({});
         setSubmitError('');
         return true;
     };
@@ -1526,7 +1585,9 @@ export default function ProfileCompletionForm({
         // (the entity's int default) without lying about the value.
         const parsedMin = parseInt(formData.partnerMinAge, 10);
         const parsedMax = parseInt(formData.partnerMaxAge, 10);
-        const uid = user?.id != null && String(user.id).trim() !== '' ? Number(user.id) : 0;
+        const uid =
+            managedEdit?.subUserId ??
+            (user?.id != null && String(user.id).trim() !== '' ? Number(user.id) : 0);
         const base = withOptionalPlaceholders(formData);
         return {
             userId: uid,
@@ -1545,8 +1606,72 @@ export default function ProfileCompletionForm({
         };
     };
 
+    const buildManagedSubProfilePayload = () => {
+        const profilePayload = buildProfilePayload();
+        const { userId: _uid, ...profileFields } = profilePayload as Record<string, unknown>;
+        return {
+            parentUserId: managedParentUserId,
+            ...(managedEdit ? { subUserId: managedEdit.subUserId } : {}),
+            firstName: managedBasic.firstName.trim(),
+            lastName: managedBasic.lastName.trim(),
+            nic: managedBasic.nic.trim(),
+            dateOfBirth: managedBasic.dob.length === 10 ? `${managedBasic.dob}T00:00:00` : managedBasic.dob,
+            gender: managedBasic.gender,
+            phone: managedBasic.phone,
+            whatsApp: managedBasic.whatsapp || managedBasic.phone,
+            profilePhotoBase64: managedBasic.profilePhotoBase64 || undefined,
+            profile: profileFields,
+        };
+    };
+
+    const validateManagedBasicFields = () => {
+        const fn = managedBasic.firstName.trim();
+        const ln = managedBasic.lastName.trim();
+        const managedErrors: Record<string, string> = {};
+        if (!fn) managedErrors.managedFirstName = 'First name is required.';
+        if (!ln) managedErrors.managedLastName = 'Last name is required.';
+        if (!managedBasic.nic.trim()) {
+            managedErrors.managedNic = 'NIC or passport number is required.';
+        } else {
+            const nicErr = nicOrPassportFormatError(managedBasic.nic);
+            if (nicErr) managedErrors.managedNic = nicErr;
+        }
+        if (!managedBasic.dob) managedErrors.managedDob = 'Date of birth is required.';
+        if (!managedBasic.gender) managedErrors.managedGender = 'Gender is required.';
+        const phoneErr = sriLankanPhoneFormatErrorIfInvalid(managedBasic.phone, 'Phone number');
+        if (phoneErr) managedErrors.managedPhone = phoneErr;
+        const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(
+            managedBasic.whatsapp || managedBasic.phone,
+            'WhatsApp number',
+        );
+        if (whatsappErr) managedErrors.managedWhatsapp = whatsappErr;
+        if (Object.keys(managedErrors).length > 0) {
+            applyFieldErrors(managedErrors);
+            return false;
+        }
+        return true;
+    };
+
     const saveDraft = async () => {
         if (managedCreate) return true;
+        if (managedEdit) {
+            if (!managedParentUserId) {
+                setSubmitError('Parent account is required.');
+                return false;
+            }
+            try {
+                const data = await matrimonialService.updateManagedSubProfile(buildManagedSubProfilePayload());
+                if (isManagedProfileCreateResponseSuccess(data)) {
+                    setSubmitError('');
+                    return true;
+                }
+                setSubmitError(data.message || data.Message || 'Failed to save progress');
+                return false;
+            } catch (error: unknown) {
+                setSubmitError(error instanceof Error ? error.message : 'Failed to save progress');
+                return false;
+            }
+        }
         if (!user) {
             setSubmitError('User not authenticated');
             return false;
@@ -1598,6 +1723,17 @@ export default function ProfileCompletionForm({
      * the user (the final submit will save again at the end of the wizard).
      */
     const persistFieldUpdate = async (fieldName: string, value: string) => {
+        if (managedCreate) return;
+        if (managedEdit) {
+            try {
+                const payload = buildManagedSubProfilePayload();
+                payload.profile = { ...(payload.profile as Record<string, unknown>), [fieldName]: value };
+                await matrimonialService.updateManagedSubProfile(payload);
+            } catch (err) {
+                console.warn(`Auto-save of ${fieldName} threw:`, err);
+            }
+            return;
+        }
         if (!user) return;
         const token = getStoredToken();
         if (!token) return;
@@ -1755,8 +1891,11 @@ export default function ProfileCompletionForm({
         // Don't move on while a file is still uploading - otherwise the
         // intermediate saveDraft below would persist an empty URL and the
         // upload that finishes seconds later would only live in local state.
-        if (Object.values(uploading).some(Boolean)) {
-            setSubmitError('Please wait for the upload to finish before continuing.');
+        const uploadingField = Object.entries(uploading).find(([, isUploading]) => isUploading)?.[0];
+        if (uploadingField) {
+            applyFieldErrors({
+                [uploadingField]: 'Please wait for the upload to finish before continuing.',
+            });
             return;
         }
         const saved = await saveDraft();
@@ -1775,8 +1914,11 @@ export default function ProfileCompletionForm({
         // Going forward requires current-step validation and auto-save.
         if (targetStep > step) {
             if (!validateStep(step)) return;
-            if (Object.values(uploading).some(Boolean)) {
-                setSubmitError('Please wait for the upload to finish before continuing.');
+            const uploadingField = Object.entries(uploading).find(([, isUploading]) => isUploading)?.[0];
+            if (uploadingField) {
+                applyFieldErrors({
+                    [uploadingField]: 'Please wait for the upload to finish before continuing.',
+                });
                 return;
             }
             const saved = await saveDraft();
@@ -1791,8 +1933,12 @@ export default function ProfileCompletionForm({
         if (loading) return;
 
         // Check if uploads are pending
-        if (Object.values(uploading).some(Boolean)) {
-            setSubmitError('Please wait for images to finish uploading.');
+        const uploadingField = Object.entries(uploading).find(([, isUploading]) => isUploading)?.[0];
+        if (uploadingField) {
+            applyFieldErrors({
+                [uploadingField]: 'Please wait for images to finish uploading.',
+            });
+            setStep(6);
             return;
         }
 
@@ -1804,70 +1950,34 @@ export default function ProfileCompletionForm({
             return;
         }
 
-        if (managedCreate) {
-            const fn = managedBasic.firstName.trim();
-            const ln = managedBasic.lastName.trim();
-            if (!fn || !ln) {
-                setSubmitError('First and last name are required.');
-                return;
-            }
-            if (!managedBasic.nic.trim()) {
-                setSubmitError('NIC or passport number is required.');
-                return;
-            }
-            const nicErr = nicOrPassportFormatError(managedBasic.nic);
-            if (nicErr) {
-                setSubmitError(nicErr);
-                return;
-            }
-            if (!managedBasic.dob) {
-                setSubmitError('Date of birth is required.');
-                return;
-            }
-            if (!managedBasic.gender) {
-                setSubmitError('Gender is required.');
-                return;
-            }
-            const phoneErr = sriLankanPhoneFormatErrorIfInvalid(managedBasic.phone, 'Phone number');
-            if (phoneErr) {
-                setSubmitError(phoneErr);
-                return;
-            }
-            const whatsappErr = sriLankanPhoneFormatErrorIfInvalid(
-                managedBasic.whatsapp || managedBasic.phone,
-                'WhatsApp number',
-            );
-            if (whatsappErr) {
-                setSubmitError(whatsappErr);
-                return;
-            }
+        if (managedCreate || managedEdit) {
+            if (!validateManagedBasicFields()) return;
 
             setLoading(true);
             setSubmitError('');
+            setFieldErrors({});
             try {
-                const profilePayload = buildProfilePayload();
-                const { userId: _uid, ...profileFields } = profilePayload as Record<string, unknown>;
-                const data = await matrimonialService.createManagedSubProfile({
-                    parentUserId: managedCreate.parentUserId,
-                    firstName: fn,
-                    lastName: ln,
-                    nic: managedBasic.nic.trim(),
-                    dateOfBirth: managedBasic.dob.length === 10 ? `${managedBasic.dob}T00:00:00` : managedBasic.dob,
-                    gender: managedBasic.gender,
-                    phone: managedBasic.phone,
-                    whatsApp: managedBasic.whatsapp || managedBasic.phone,
-                    profilePhotoBase64: managedBasic.profilePhotoBase64 || undefined,
-                    profile: profileFields,
-                });
-                if (isManagedProfileCreateResponseSuccess(data)) {
-                    markManagedProfileDraftCompleted(managedCreate.parentUserId);
-                    managedSkipDraftPersistRef.current = true;
-                    setManagedDraftNotice(null);
-                    setSubmitError('');
-                    if (onComplete) onComplete();
-                    if (onClose) onClose();
-                } else {
-                    setSubmitError(data.message || data.Message || 'Failed to create managed profile');
+                if (managedCreate) {
+                    const data = await matrimonialService.createManagedSubProfile(buildManagedSubProfilePayload());
+                    if (isManagedProfileCreateResponseSuccess(data)) {
+                        markManagedProfileDraftCompleted(managedCreate.parentUserId);
+                        managedSkipDraftPersistRef.current = true;
+                        setManagedDraftNotice(null);
+                        setSubmitError('');
+                        if (onComplete) onComplete();
+                        if (onClose) onClose();
+                    } else {
+                        setSubmitError(data.message || data.Message || 'Failed to create managed profile');
+                    }
+                } else if (managedEdit) {
+                    const data = await matrimonialService.updateManagedSubProfile(buildManagedSubProfilePayload());
+                    if (isManagedProfileCreateResponseSuccess(data)) {
+                        setSubmitError('');
+                        if (onComplete) onComplete();
+                        if (onClose) onClose();
+                    } else {
+                        setSubmitError(data.message || data.Message || 'Failed to update managed profile');
+                    }
                 }
             } catch (error: unknown) {
                 setSubmitError(error instanceof Error ? error.message : 'An error occurred');
@@ -1980,29 +2090,58 @@ export default function ProfileCompletionForm({
                     {managedDraftNotice}
                 </div>
             )}
-            {managedCreate && (
+            {isManagedFlow && (
                 <div style={{ marginBottom: '2rem', padding: '1.25rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                     <h3 style={{ marginTop: 0, marginBottom: '1rem', color: 'var(--primary)' }}>Basic details</h3>
                     <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                        Enter the profile holder&apos;s basic details, then complete all profile sections below. No separate login is needed — you manage everything from your account.
+                        {managedEdit
+                            ? 'Update the profile holder\u2019s basic details, then change any detailed sections below.'
+                            : 'Enter the profile holder\u2019s basic details, then complete all profile sections below. No separate login is needed — you manage everything from your account.'}
                     </p>
                     <div className="form-grid">
                         <div className="form-group">
                             <label>First name *</label>
-                            <input type="text" maxLength={AUTH_FIELD_MAX_LENGTH} value={managedBasic.firstName} onChange={(e) => setManagedBasic(p => ({ ...p, firstName: sanitizeNameInput(e.target.value) }))} />
+                            <input
+                                type="text"
+                                maxLength={AUTH_FIELD_MAX_LENGTH}
+                                value={managedBasic.firstName}
+                                onChange={(e) => {
+                                    clearFieldError('managedFirstName');
+                                    setManagedBasic(p => ({ ...p, firstName: sanitizeNameInput(e.target.value) }));
+                                }}
+                                style={fieldInputStyle('managedFirstName')}
+                            />
+                            <FieldErrorMessage message={fieldErrors.managedFirstName} />
                         </div>
                         <div className="form-group">
                             <label>Last name *</label>
-                            <input type="text" maxLength={AUTH_FIELD_MAX_LENGTH} value={managedBasic.lastName} onChange={(e) => setManagedBasic(p => ({ ...p, lastName: sanitizeNameInput(e.target.value) }))} />
+                            <input
+                                type="text"
+                                maxLength={AUTH_FIELD_MAX_LENGTH}
+                                value={managedBasic.lastName}
+                                onChange={(e) => {
+                                    clearFieldError('managedLastName');
+                                    setManagedBasic(p => ({ ...p, lastName: sanitizeNameInput(e.target.value) }));
+                                }}
+                                style={fieldInputStyle('managedLastName')}
+                            />
+                            <FieldErrorMessage message={fieldErrors.managedLastName} />
                         </div>
                         <div className="form-group">
                             <label>NIC / Passport *</label>
-                            <input type="text" value={managedBasic.nic} onChange={handleManagedNicChange} placeholder="e.g. 901234567V or N1234567" />
-                            {managedBasic.nic.trim() && nicOrPassportFormatError(managedBasic.nic) && (
-                                <span style={{ color: '#dc2626', fontSize: '0.8rem', display: 'block', marginTop: '0.35rem' }}>
-                                    {nicOrPassportFormatError(managedBasic.nic)}
-                                </span>
-                            )}
+                            <input
+                                type="text"
+                                value={managedBasic.nic}
+                                onChange={handleManagedNicChange}
+                                placeholder="e.g. 901234567V or N1234567"
+                                style={fieldInputStyle('managedNic')}
+                            />
+                            <FieldErrorMessage
+                                message={
+                                    fieldErrors.managedNic
+                                    || (managedBasic.nic.trim() ? nicOrPassportFormatError(managedBasic.nic) || undefined : undefined)
+                                }
+                            />
                         </div>
                         <div className="form-group">
                             <label>Date of birth *</label>
@@ -2012,12 +2151,17 @@ export default function ProfileCompletionForm({
                                 disabled={managedDobGenderDisabled}
                                 title={managedDobGenderTitle}
                                 onChange={(e) => {
+                                    clearFieldError('managedDob');
                                     const dob = e.target.value;
                                     setManagedBasic(p => ({ ...p, dob }));
                                     setFormData(prev => ({ ...prev, dob }));
                                 }}
-                                style={managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : undefined}
+                                style={{
+                                    ...(managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                    ...fieldInputStyle('managedDob'),
+                                }}
                             />
+                            <FieldErrorMessage message={fieldErrors.managedDob} />
                         </div>
                         <div className="form-group">
                             <label>Gender *</label>
@@ -2026,24 +2170,48 @@ export default function ProfileCompletionForm({
                                 disabled={managedDobGenderDisabled}
                                 title={managedDobGenderTitle}
                                 onChange={(e) => {
+                                    clearFieldError('managedGender');
                                     const gender = e.target.value;
                                     setManagedBasic(p => ({ ...p, gender }));
                                     setFormData(prev => ({ ...prev, gender }));
                                 }}
-                                style={managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : undefined}
+                                style={{
+                                    ...(managedDobGenderDisabled ? { backgroundColor: '#f8fafc', cursor: 'not-allowed' } : {}),
+                                    ...fieldInputStyle('managedGender'),
+                                }}
                             >
                                 <option value="">Select</option>
                                 <option value="Male">Male</option>
                                 <option value="Female">Female</option>
                             </select>
+                            <FieldErrorMessage message={fieldErrors.managedGender} />
                         </div>
                         <div className="form-group">
                             <label>Phone *</label>
-                            <input type="tel" value={managedBasic.phone} onChange={(e) => setManagedBasic(p => ({ ...p, phone: sanitizeSriLankanPhoneInput(e.target.value) }))} />
+                            <input
+                                type="tel"
+                                value={managedBasic.phone}
+                                onChange={(e) => {
+                                    clearFieldError('managedPhone');
+                                    setManagedBasic(p => ({ ...p, phone: sanitizeSriLankanPhoneInput(e.target.value) }));
+                                }}
+                                style={fieldInputStyle('managedPhone')}
+                            />
+                            <FieldErrorMessage message={fieldErrors.managedPhone} />
                         </div>
                         <div className="form-group">
                             <label>WhatsApp</label>
-                            <input type="tel" value={managedBasic.whatsapp} onChange={(e) => setManagedBasic(p => ({ ...p, whatsapp: sanitizeSriLankanPhoneInput(e.target.value) }))} placeholder="Same as phone if blank" />
+                            <input
+                                type="tel"
+                                value={managedBasic.whatsapp}
+                                onChange={(e) => {
+                                    clearFieldError('managedWhatsapp');
+                                    setManagedBasic(p => ({ ...p, whatsapp: sanitizeSriLankanPhoneInput(e.target.value) }));
+                                }}
+                                placeholder="Same as phone if blank"
+                                style={fieldInputStyle('managedWhatsapp')}
+                            />
+                            <FieldErrorMessage message={fieldErrors.managedWhatsapp} />
                         </div>
                     </div>
                     {managedHasNicInput && (
@@ -2089,7 +2257,9 @@ export default function ProfileCompletionForm({
 
             <form onSubmit={(e) => e.preventDefault()}>
                 {successMessage && <div style={{ color: '#2e7d32', marginBottom: '1rem', padding: '12px 16px', background: '#e8f5e9', borderRadius: '8px', fontWeight: 600, textAlign: 'center', fontSize: '1rem' }}>{successMessage}</div>}
-                {submitError && <div style={{ color: 'red', marginBottom: '1rem', padding: '10px', background: '#ffebee', borderRadius: '4px' }}>{submitError}</div>}
+                {submitError && Object.keys(fieldErrors).length === 0 && (
+                    <div style={{ color: 'red', marginBottom: '1rem', padding: '10px', background: '#ffebee', borderRadius: '4px' }}>{submitError}</div>
+                )}
 
                 {step === 1 && (
                     <div className="step-content" ref={activeStepContentRef}>
@@ -2097,16 +2267,18 @@ export default function ProfileCompletionForm({
                         <div className="form-grid">
                             <div className="form-group">
                                 <label>Gender*</label>
-                                <select name="gender" value={formData.gender} onChange={handleChange} required>
+                                <select name="gender" value={formData.gender} onChange={handleChange} required style={fieldInputStyle('gender')}>
                                     <option value="">Select Gender</option>
                                     <option value="Male">Male</option>
                                     <option value="Female">Female</option>
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.gender} />
                             </div>
                             {/* DOB Removed */}
                             <div className="form-group">
                                 <label>Height (cm)*</label>
-                                <input type="number" name="height" value={formData.height} onChange={handleChange} required placeholder="e.g. 175" />
+                                <input type="number" name="height" value={formData.height} onChange={handleChange} required placeholder="e.g. 175" style={fieldInputStyle('height')} />
+                                <FieldErrorMessage message={fieldErrors.height} />
                             </div>
                             <div className="form-group">
                                 <label>Complexion</label>
@@ -2121,22 +2293,24 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Religion*</label>
-                                <select name="religion" value={formData.religion} onChange={handleChange} required>
+                                <select name="religion" value={formData.religion} onChange={handleChange} required style={fieldInputStyle('religion')}>
                                     <option value="">Select Religion</option>
                                     {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.religion} />
                             </div>
                             <div className="form-group">
                                 <label>Marital Status*</label>
-                                <select name="maritalStatus" value={formData.maritalStatus} onChange={handleChange} required>
+                                <select name="maritalStatus" value={formData.maritalStatus} onChange={handleChange} required style={fieldInputStyle('maritalStatus')}>
                                     <option value="">Select Status</option>
                                     <option value="Never Married">Never Married</option>
                                     <option value="Divorced">Divorced</option>
                                     <option value="Widowed">Widowed</option>
                                     <option value="Separated">Separated</option>
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.maritalStatus} />
                             </div>
                         </div>
                     </div>
@@ -2148,12 +2322,13 @@ export default function ProfileCompletionForm({
                         <div className="form-grid">
                             <div className="form-group">
                                 <label>Highest Qualification*</label>
-                                <select name="qualificationLevel" value={formData.qualificationLevel} onChange={handleChange} required>
+                                <select name="qualificationLevel" value={formData.qualificationLevel} onChange={handleChange} required style={fieldInputStyle('qualificationLevel')}>
                                     <option value="">Select Qualification</option>
                                     {qualificationOptions.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.qualificationLevel} />
                             </div>
                             <div className="form-group">
                                 <label>Occupation</label>
@@ -2182,12 +2357,13 @@ export default function ProfileCompletionForm({
                         <div className="form-grid">
                             <div className="form-group">
                                 <label>Country of Origin*</label>
-                                <select name="countryOfOrigin" value={formData.countryOfOrigin} onChange={handleChange} required>
+                                <select name="countryOfOrigin" value={formData.countryOfOrigin} onChange={handleChange} required style={fieldInputStyle('countryOfOrigin')}>
                                     <option value="">Select Country</option>
                                     {countryOptions.map((country) => (
                                         <option key={country.isoCode} value={country.name}>{country.name}</option>
                                     ))}
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.countryOfOrigin} />
                             </div>
                             <div className="form-group">
                                 <CountryMultiSelect
@@ -2195,25 +2371,33 @@ export default function ProfileCompletionForm({
                                     label={<>Country of Residence*</>}
                                     hint="(select one or more)"
                                     value={formData.countryOfResidence}
-                                    onChange={(v) => setFormData((prev) => ({ ...prev, countryOfResidence: v }))}
+                                    onChange={(v) => {
+                                        clearFieldError('countryOfResidence');
+                                        setFormData((prev) => ({ ...prev, countryOfResidence: v }));
+                                    }}
                                     countries={countryOptions}
                                 />
+                                <FieldErrorMessage message={fieldErrors.countryOfResidence} />
                             </div>
                             <div className="form-group">
                                 <label>City of Residence*</label>
                                 <CityAutocomplete
                                     name="cityOfResidence"
                                     value={formData.cityOfResidence}
-                                    onChange={(next) => setFormData((prev) => ({ ...prev, cityOfResidence: next }))}
+                                    onChange={(next) => {
+                                        clearFieldError('cityOfResidence');
+                                        setFormData((prev) => ({ ...prev, cityOfResidence: next }));
+                                    }}
                                     cityGroups={residenceCityGroups}
                                     placeholder={selectedResidenceCountries.length > 0 ? 'Select or type city' : 'Select country first'}
                                     required
                                     disabled={selectedResidenceCountries.length === 0}
                                 />
+                                <FieldErrorMessage message={fieldErrors.cityOfResidence} />
                             </div>
                             <div className="form-group">
                                 <label>Residency Status*</label>
-                                <select name="residencyStatus" value={formData.residencyStatus} onChange={handleChange} required>
+                                <select name="residencyStatus" value={formData.residencyStatus} onChange={handleChange} required style={fieldInputStyle('residencyStatus')}>
                                     <option value="">Select Status</option>
                                     <option value="Citizen">Citizen</option>
                                     <option value="Student">Student</option>
@@ -2221,6 +2405,7 @@ export default function ProfileCompletionForm({
                                     <option value="Work Permit">Work Permit</option>
                                     <option value="Refugee">Refugee</option>
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.residencyStatus} />
                             </div>
                         </div>
                     </div>
@@ -2263,11 +2448,12 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Horoscope Matching*</label>
-                                <select name="horoscope" value={formData.horoscope} onChange={handleChange} required>
+                                <select name="horoscope" value={formData.horoscope} onChange={handleChange} required style={fieldInputStyle('horoscope')}>
                                     <option value="">Select</option>
                                     <option value="Required">Required</option>
                                     <option value="Not Required">Not Required</option>
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.horoscope} />
                             </div>
                             {formData.horoscope === 'Required' && (
                                 <>
@@ -2282,6 +2468,7 @@ export default function ProfileCompletionForm({
                                         style={formData.horoscopeDocument ? { display: 'none' } : undefined}
                                     />
                                     {uploading['horoscopeDocument'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                    <FieldErrorMessage message={fieldErrors.horoscopeDocument} />
                                     {formData.horoscopeDocument && (
                                         <div style={{ marginTop: '0.5rem' }}>
                                             <img
@@ -2343,6 +2530,7 @@ export default function ProfileCompletionForm({
                                     {uploading['horoscopeDocument2'] && (
                                         <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>
                                     )}
+                                    <FieldErrorMessage message={fieldErrors.horoscopeDocument2} />
                                     {formData.horoscopeDocument2 ? (
                                         <div style={{ marginTop: '0.5rem' }}>
                                             {!/\.pdf($|\?)/i.test(formData.horoscopeDocument2) &&
@@ -2406,6 +2594,7 @@ export default function ProfileCompletionForm({
                                     {uploading['horoscopeDocument3'] && (
                                         <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>
                                     )}
+                                    <FieldErrorMessage message={fieldErrors.horoscopeDocument3} />
                                     {formData.horoscopeDocument3 ? (
                                         <div style={{ marginTop: '0.5rem' }}>
                                             {!/\.pdf($|\?)/i.test(formData.horoscopeDocument3) &&
@@ -2503,12 +2692,13 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Religion*</label>
-                                <select name="fatherReligion" value={formData.fatherReligion} onChange={handleChange} required>
+                                <select name="fatherReligion" value={formData.fatherReligion} onChange={handleChange} required style={fieldInputStyle('fatherReligion')}>
                                     <option value="">Select</option>
                                     {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.fatherReligion} />
                             </div>
                             <div className="form-group">
                                 <label>Caste</label>
@@ -2571,12 +2761,13 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Religion*</label>
-                                <select name="motherReligion" value={formData.motherReligion} onChange={handleChange} required>
+                                <select name="motherReligion" value={formData.motherReligion} onChange={handleChange} required style={fieldInputStyle('motherReligion')}>
                                     <option value="">Select</option>
                                     {MATRIMONIAL_RELIGION_OPTIONS.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
+                                <FieldErrorMessage message={fieldErrors.motherReligion} />
                             </div>
                             <div className="form-group">
                                 <label>Caste</label>
@@ -2611,7 +2802,7 @@ export default function ProfileCompletionForm({
                                         placeholder="Min (18+)"
                                         maxLength={3}
                                         required
-                                        style={{ width: '50%' }}
+                                        style={{ width: '50%', ...fieldInputStyle('partnerMinAge') }}
                                     />
                                     <input
                                         type="text"
@@ -2622,9 +2813,11 @@ export default function ProfileCompletionForm({
                                         placeholder="Max (greater than Min)"
                                         maxLength={3}
                                         required
-                                        style={{ width: '50%' }}
+                                        style={{ width: '50%', ...fieldInputStyle('partnerMaxAge') }}
                                     />
                                 </div>
+                                <FieldErrorMessage message={fieldErrors.partnerMinAge} />
+                                <FieldErrorMessage message={fieldErrors.partnerMaxAge} />
                                 <small style={{ color: '#888', fontSize: '0.78rem' }}>
                                     Minimum and maximum partner age must be at least 18. Maximum must be greater than minimum.
                                 </small>
@@ -2748,6 +2941,7 @@ export default function ProfileCompletionForm({
                                     style={formData.profilePhoto ? { display: 'none' } : undefined}
                                 />
                                 {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                <FieldErrorMessage message={fieldErrors.profilePhoto} />
                                 {formData.profilePhoto && (
                                     <div style={{ marginTop: '0.5rem' }}>
                                         <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
@@ -2790,6 +2984,7 @@ export default function ProfileCompletionForm({
                                     </small>
                                 )}
                                 {uploading['upload1'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                <FieldErrorMessage message={fieldErrors.upload1} />
                                 {formData.upload1 && (
                                     <div style={{ marginTop: '0.5rem' }}>
                                         <img src={previewSrc('upload1', formData.upload1)} alt="Gallery 1" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
@@ -2832,6 +3027,7 @@ export default function ProfileCompletionForm({
                                     </small>
                                 )}
                                 {uploading['upload2'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                <FieldErrorMessage message={fieldErrors.upload2} />
                                 {formData.upload2 && (
                                     <div style={{ marginTop: '0.5rem' }}>
                                         <img src={previewSrc('upload2', formData.upload2)} alt="Gallery 2" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
@@ -2874,6 +3070,7 @@ export default function ProfileCompletionForm({
                                     </small>
                                 )}
                                 {uploading['upload3'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
+                                <FieldErrorMessage message={fieldErrors.upload3} />
                                 {formData.upload3 && (
                                     <div style={{ marginTop: '0.5rem' }}>
                                         <img src={previewSrc('upload3', formData.upload3)} alt="Gallery 3" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
@@ -2915,7 +3112,7 @@ export default function ProfileCompletionForm({
                         <button type="button" className="btn btn-primary" onClick={handleNext}>Next</button>
                     ) : (
                         <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
-                            {loading ? 'Saving...' : (managedCreate ? 'Create profile' : 'Save Profile')}
+                            {loading ? 'Saving...' : (managedCreate ? 'Create profile' : managedEdit ? 'Save changes' : 'Save Profile')}
                         </button>
                     )}
                 </div>

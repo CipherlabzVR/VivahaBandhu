@@ -1,8 +1,14 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
+import {
+    footerLinkLeavesPage,
+    markFooterNavDeparture,
+    tryRestoreFooterScroll,
+} from '../utils/footerScrollRestore';
 
 const COLUMN_DELAY_MS = 90;
 const HIDDEN_LENGTH = 500;
@@ -17,6 +23,7 @@ const HEART_PATH =
 
 export default function Footer() {
     const { t } = useLanguage();
+    const pathname = usePathname();
     const ref = useRef<HTMLElement>(null);
     const pathRef = useRef<SVGPathElement>(null);
     const [inView, setInView] = useState(false);
@@ -42,6 +49,36 @@ export default function Footer() {
         if (path) setPathLength(path.getTotalLength());
     }, []);
 
+    useEffect(() => {
+        tryRestoreFooterScroll();
+        const onRestore = () => tryRestoreFooterScroll();
+        window.addEventListener('pageshow', onRestore);
+        window.addEventListener('popstate', onRestore);
+        return () => {
+            window.removeEventListener('pageshow', onRestore);
+            window.removeEventListener('popstate', onRestore);
+        };
+    }, [pathname]);
+
+    const handleFooterLinkClick = useCallback(
+        (href: string) => {
+            if (footerLinkLeavesPage(href, pathname)) {
+                markFooterNavDeparture();
+            }
+        },
+        [pathname],
+    );
+
+    const footerLink = (href: string, label: string) => (
+        <Link
+            href={href}
+            className="text-gray-300 hover:text-primary transition-colors"
+            onClick={() => handleFooterLinkClick(href)}
+        >
+            {label}
+        </Link>
+    );
+
     const colClass = (index: number) =>
         `transition-all duration-500 ease-out ${
             inView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
@@ -53,7 +90,7 @@ export default function Footer() {
     const drawReady = pathLength !== null && inView;
 
     return (
-        <footer ref={ref} className="relative bg-text-dark text-white py-16 px-4 overflow-hidden">
+        <footer id="site-footer" ref={ref} className="relative bg-text-dark text-white py-16 px-4 overflow-hidden">
             {/* Background: line-drawn hearts with same drawing animation as loading screen */}
             <div className="absolute inset-0 z-0 pointer-events-none flex items-center justify-center overflow-hidden">
                 {/* Heart 1 - left, large */}
@@ -147,28 +184,27 @@ export default function Footer() {
                 <div className={colClass(1)} style={colStyle(1)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('quickLinks')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="/profiles" className="text-gray-300 hover:text-primary transition-colors">{t('browseProfiles')}</Link></li>
-                        <li><Link href="/#how-it-works" className="text-gray-300 hover:text-primary transition-colors">{t('howItWorks')}</Link></li>
-                        <li><Link href="/#matchmaker" className="text-gray-300 hover:text-primary transition-colors">{t('forMatchmakers')}</Link></li>
-                        <li><Link href="/#pricing" className="text-gray-300 hover:text-primary transition-colors">{t('pricingPlans')}</Link></li>
+                        <li>{footerLink('/profiles', t('browseProfiles'))}</li>
+                        <li>{footerLink('/#how-it-works', t('howItWorks'))}</li>
+                        <li>{footerLink('/#matchmaker', t('forMatchmakers'))}</li>
+                        <li>{footerLink('/#pricing', t('pricingPlans'))}</li>
                     </ul>
                 </div>
                 <div className={colClass(2)} style={colStyle(2)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('support')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="/#faq" className="text-gray-300 hover:text-primary transition-colors">{t('helpCenter')}</Link></li>
-                        <li><Link href="/contact" className="text-gray-300 hover:text-primary transition-colors">{t('contactUs')}</Link></li>
-                        <li><Link href="/#blog" className="text-gray-300 hover:text-primary transition-colors">{t('safetyTips')}</Link></li>
-                        <li><Link href="#" className="text-gray-300 hover:text-primary transition-colors">{t('reportMisuse')}</Link></li>
+                        <li>{footerLink('/#faq', t('helpCenter'))}</li>
+                        <li>{footerLink('/contact', t('contactUs'))}</li>
+                        <li>{footerLink('/#blog', t('safetyTips'))}</li>
                     </ul>
                 </div>
                 <div className={colClass(3)} style={colStyle(3)}>
                     <h4 className="text-lg font-playfair font-semibold mb-4">{t('legal')}</h4>
                     <ul className="space-y-2">
-                        <li><Link href="/privacy-policy" className="text-gray-300 hover:text-primary transition-colors">{t('privacyPolicy')}</Link></li>
-                        <li><Link href="/terms-of-service" className="text-gray-300 hover:text-primary transition-colors">{t('termsOfService')}</Link></li>
-                        <li><Link href="/cookie-policy" className="text-gray-300 hover:text-primary transition-colors">{t('cookiePolicy')}</Link></li>
-                        <li><Link href="/refund-policy" className="text-gray-300 hover:text-primary transition-colors">{t('refundPolicy')}</Link></li>
+                        <li>{footerLink('/privacy-policy', t('privacyPolicy'))}</li>
+                        <li>{footerLink('/terms-of-service', t('termsOfService'))}</li>
+                        <li>{footerLink('/cookie-policy', t('cookiePolicy'))}</li>
+                        <li>{footerLink('/refund-policy', t('refundPolicy'))}</li>
                     </ul>
                 </div>
             </div>

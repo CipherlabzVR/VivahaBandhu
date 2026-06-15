@@ -54,8 +54,6 @@ export default function Home() {
     return () => window.removeEventListener('open-verify-modal', handleOpenVerify);
   }, []);
 
-  const showHomePricing = !user || user.isSubscribed !== true;
-
   return (
     <main>
       <Header
@@ -96,13 +94,11 @@ export default function Home() {
       <AnimateIn delay={150}>
         <FAQ />
       </AnimateIn>
-      {showHomePricing && (
       <AnimateIn delay={100}>
         <Pricing
           onOpenSubscription={() => openModal('subscription')}
         />
       </AnimateIn>
-      )}
       <AnimateIn delay={50}>
         <Footer />
       </AnimateIn>

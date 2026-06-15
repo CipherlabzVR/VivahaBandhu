@@ -7,6 +7,9 @@ export type ManagedSubAccount = {
     lastName: string;
     profilePhoto: string | null;
     gender?: string;
+    isSubscribed?: boolean;
+    subscriptionIsLifetime?: boolean;
+    subscriptionExpiresAt?: string;
 };
 
 export function canManageSubAccounts(accountType?: string | null): boolean {
@@ -16,12 +19,27 @@ export function canManageSubAccounts(accountType?: string | null): boolean {
 export function normalizeSubAccount(row: Record<string, unknown>): ManagedSubAccount | null {
     const id = Number((row as any).id ?? (row as any).Id ?? 0);
     if (!Number.isFinite(id) || id <= 0) return null;
+    const rawUntil =
+        (row as any).subscriptionExpiresAt ??
+        (row as any).SubscriptionExpiresAt ??
+        (row as any).subscriptionUntilUtc ??
+        (row as any).SubscriptionUntilUtc;
+    let subscriptionExpiresAt: string | undefined;
+    if (rawUntil != null && String(rawUntil).trim() !== '') {
+        const d = new Date(String(rawUntil));
+        if (!Number.isNaN(d.getTime())) subscriptionExpiresAt = d.toISOString();
+    }
+    const isSubscribedRaw = (row as any).isSubscribed ?? (row as any).IsSubscribed;
+    const lifetimeRaw = (row as any).subscriptionIsLifetime ?? (row as any).SubscriptionIsLifetime;
     return {
         id,
         firstName: String((row as any).firstName ?? (row as any).FirstName ?? '').trim(),
         lastName: String((row as any).lastName ?? (row as any).LastName ?? '').trim(),
         profilePhoto: (row as any).profilePhoto ?? (row as any).ProfilePhoto ?? null,
         gender: String((row as any).gender ?? (row as any).Gender ?? '').trim() || undefined,
+        isSubscribed: isSubscribedRaw === true || isSubscribedRaw === 'true',
+        subscriptionIsLifetime: lifetimeRaw === true || lifetimeRaw === 'true',
+        subscriptionExpiresAt,
     };
 }
 

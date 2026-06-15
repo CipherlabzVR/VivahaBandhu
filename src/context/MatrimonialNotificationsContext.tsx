@@ -30,6 +30,7 @@ export type MatrimonialInterestNotification = Record<string, unknown> & {
     description?: string;
     isRead?: boolean;
     referenceId?: number;
+    referenceType?: string;
     managedProfileUserId?: number | null;
     createdOn?: string;
 };
@@ -59,6 +60,7 @@ function normalizeNotification(n: MatrimonialInterestNotification): MatrimonialI
         description: (n as any)?.description ?? (n as any)?.Description ?? '',
         isRead: (n as any)?.isRead ?? (n as any)?.IsRead ?? false,
         referenceId: (n as any)?.referenceId ?? (n as any)?.ReferenceId,
+        referenceType: (n as any)?.referenceType ?? (n as any)?.ReferenceType,
         managedProfileUserId: managedProfileUserIdFromNotification(asRecord),
         createdOn: (n as any)?.createdOn ?? (n as any)?.CreatedOn,
     };

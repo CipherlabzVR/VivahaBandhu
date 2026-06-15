@@ -33,6 +33,8 @@ interface User {
     subscriptionExpiresAt?: string;
     /** Paid membership with no expiry (from package validity = Lifetime). */
     subscriptionIsLifetime?: boolean;
+    /** True when the user cancelled but premium stays usable until subscriptionExpiresAt (can reactivate before then). */
+    subscriptionCancelled?: boolean;
     /** Whether the user wants an email when someone shows interest. Server-authoritative. */
     emailOnInterest?: boolean;
     /**
