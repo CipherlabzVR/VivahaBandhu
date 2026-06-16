@@ -43,10 +43,11 @@ import {
 } from '../../utils/matrimonialInterestNotifications';
 import {
     canManageSubAccounts,
-    normalizeSubAccount,
+    parseSubAccountsApiResult,
     shouldShowManagedProfileTabs,
     subAccountDisplayName,
     type ManagedSubAccount,
+    type ManagedSubAccountDetail,
 } from '../../utils/managedSubAccounts';
 import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
@@ -508,42 +509,33 @@ function ProfilePageContent() {
                     }
 
                     const subscribed = r.isSubscribed ?? r.IsSubscribed ?? false;
-                    const acctForSub = profileUpdates.accountType || user?.accountType || accountType;
-                    const familyParentProfile = isFamilyParentAccountType(acctForSub);
-                    if (!familyParentProfile) {
-                        profileUpdates.isSubscribed = subscribed;
+                    profileUpdates.isSubscribed = subscribed;
 
-                        const subUntil =
-                            r.subscriptionUntilUtc ??
-                            r.SubscriptionUntilUtc ??
-                            r.selfPremiumSubscriptionUntilUtc ??
-                            r.SelfPremiumSubscriptionUntilUtc ??
-                            r.matchmakerSubscriptionUntilUtc ??
-                            r.MatchmakerSubscriptionUntilUtc;
-                        const subLifetime =
-                            r.subscriptionIsLifetime ?? r.SubscriptionIsLifetime ?? false;
-                        profileUpdates.subscriptionIsLifetime = !!subLifetime;
-                        const subCancelled =
-                            r.subscriptionCancelled ?? r.SubscriptionCancelled;
-                        if (subCancelled !== undefined && subCancelled !== null) {
-                            profileUpdates.subscriptionCancelled = !!subCancelled;
+                    const subUntil =
+                        r.subscriptionUntilUtc ??
+                        r.SubscriptionUntilUtc ??
+                        r.selfPremiumSubscriptionUntilUtc ??
+                        r.SelfPremiumSubscriptionUntilUtc ??
+                        r.matchmakerSubscriptionUntilUtc ??
+                        r.MatchmakerSubscriptionUntilUtc;
+                    const subLifetime =
+                        r.subscriptionIsLifetime ?? r.SubscriptionIsLifetime ?? false;
+                    profileUpdates.subscriptionIsLifetime = !!subLifetime;
+                    const subCancelled =
+                        r.subscriptionCancelled ?? r.SubscriptionCancelled;
+                    if (subCancelled !== undefined && subCancelled !== null) {
+                        profileUpdates.subscriptionCancelled = !!subCancelled;
+                    }
+                    if (subLifetime) {
+                        profileUpdates.subscriptionExpiresAt = undefined;
+                    } else if (subUntil != null && String(subUntil).trim() !== '') {
+                        const exp = new Date(String(subUntil));
+                        if (!Number.isNaN(exp.getTime())) {
+                            profileUpdates.subscriptionExpiresAt = exp.toISOString();
                         }
-                        if (subLifetime) {
-                            profileUpdates.subscriptionExpiresAt = undefined;
-                        } else if (subUntil != null && String(subUntil).trim() !== '') {
-                            const exp = new Date(String(subUntil));
-                            if (!Number.isNaN(exp.getTime())) {
-                                profileUpdates.subscriptionExpiresAt = exp.toISOString();
-                            }
-                        } else if (!subscribed) {
-                            profileUpdates.subscriptionExpiresAt = undefined;
-                            profileUpdates.subscriptionIsLifetime = false;
-                        }
-                    } else {
-                        profileUpdates.isSubscribed = false;
+                    } else if (!subscribed) {
                         profileUpdates.subscriptionExpiresAt = undefined;
                         profileUpdates.subscriptionIsLifetime = false;
-                        profileUpdates.subscriptionCancelled = false;
                     }
 
                     const vwTier = r.viewerMatchmakerTier ?? r.ViewerMatchmakerTier;
@@ -710,7 +702,7 @@ function ProfilePageContent() {
     const managedProfileEditModalScrollRef = useRef<HTMLDivElement>(null);
     const interestedInYouSectionRef = useRef<HTMLDivElement>(null);
 
-    const [subAccounts, setSubAccounts] = useState<any[]>([]);
+    const [subAccounts, setSubAccounts] = useState<ManagedSubAccountDetail[]>([]);
     const [managedSubActivity, setManagedSubActivity] = useState<any[]>([]);
     const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
     const [interestProfiles, setInterestProfiles] = useState<any[]>([]);
@@ -760,6 +752,20 @@ function ProfilePageContent() {
     const [subAccountSendCodeBusy, setSubAccountSendCodeBusy] = useState(false);
     const [subAccountVerificationHint, setSubAccountVerificationHint] = useState<string | null>(null);
 
+    const fetchSubAccounts = useCallback(async () => {
+        if (!user?.id) return;
+        try {
+            const data = await matrimonialService.getSubAccounts(Number(user.id));
+            setSubAccounts(parseSubAccountsApiResult(data));
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('sub-accounts-changed'));
+            }
+        } catch (error) {
+            console.error('Failed to fetch sub-accounts', error);
+            setSubAccounts([]);
+        }
+    }, [user?.id]);
+
     useEffect(() => {
         if (isFamilyParentAccountType(user?.accountType) || user?.accountType === 'Matchmaker') {
             if (user?.id) {
@@ -767,13 +773,10 @@ function ProfilePageContent() {
                 fetchManagedSubActivity();
             }
         }
-    }, [user]);
+    }, [user, fetchSubAccounts]);
 
     const managedSubAccountTabs = useMemo(
-        () =>
-            subAccounts
-                .map((row) => normalizeSubAccount(row as Record<string, unknown>))
-                .filter(Boolean) as ManagedSubAccount[],
+        () => subAccounts as ManagedSubAccount[],
         [subAccounts]
     );
 
@@ -1304,24 +1307,6 @@ function ProfilePageContent() {
         }
     };
 
-    const fetchSubAccounts = async () => {
-        try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api'}/Matrimonial/GetSubAccounts?parentUserId=${user?.id}`, {
-                headers: {
-                    'Authorization': `Bearer ${getStoredToken() || ''}`
-                }
-            });
-            if (response.ok) {
-                const data = await response.json();
-                if (data.result) {
-                    setSubAccounts(data.result);
-                }
-            }
-        } catch (error) {
-            console.error("Failed to fetch sub-accounts", error);
-        }
-    };
-
     const handleSubAccountSendCode = async (method: string) => {
         if (!subAccountRegistrationSessionId) return;
         setSubAccountSendCodeBusy(true);
@@ -1595,6 +1580,34 @@ function ProfilePageContent() {
             if (consumedRaw != null && consumedRaw !== '') updates.familySubAccountSlotsConsumed = Number(consumedRaw);
             if (priceRaw != null && priceRaw !== '') updates.familySubAccountAdditionalAmountLkr = Number(priceRaw);
             if (validityRaw != null && validityRaw !== '') updates.familySubAccountPackageValidityMonths = Number(validityRaw);
+
+            const subscribed = r.isSubscribed ?? r.IsSubscribed;
+            if (subscribed !== undefined && subscribed !== null) {
+                updates.isSubscribed = subscribed === true || subscribed === 'true';
+            }
+            const subUntil =
+                r.subscriptionUntilUtc ??
+                r.SubscriptionUntilUtc ??
+                r.selfPremiumSubscriptionUntilUtc ??
+                r.SelfPremiumSubscriptionUntilUtc;
+            const subLifetime = r.subscriptionIsLifetime ?? r.SubscriptionIsLifetime;
+            if (subLifetime === true || subLifetime === 'true') {
+                updates.subscriptionIsLifetime = true;
+                updates.subscriptionExpiresAt = undefined;
+            } else if (subUntil != null && String(subUntil).trim() !== '') {
+                const exp = new Date(String(subUntil));
+                if (!Number.isNaN(exp.getTime())) {
+                    updates.subscriptionExpiresAt = exp.toISOString();
+                    updates.subscriptionIsLifetime = false;
+                }
+            } else if (subscribed === false || subscribed === 'false') {
+                updates.subscriptionIsLifetime = false;
+                updates.subscriptionExpiresAt = undefined;
+            }
+            const subCancelled = r.subscriptionCancelled ?? r.SubscriptionCancelled;
+            if (subCancelled !== undefined && subCancelled !== null) {
+                updates.subscriptionCancelled = subCancelled === true || subCancelled === 'true';
+            }
 
             if (Object.keys(updates).length > 0) {
                 updateUser(updates);
@@ -3036,14 +3049,30 @@ function ProfilePageContent() {
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
                             {isFamilyParentAccount ? (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
                                     <div>
-                                        <div style={{ fontWeight: 600, color: '#374151' }}>
-                                            Managed profile subscriptions
+                                        <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : '#374151' }}>
+                                            {user.isSubscribed ? 'Premium — active' : 'Free plan'}
                                         </div>
                                         <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
-                                            You do not need a separate premium plan. Pay for a sub-account slot, then create a managed profile — premium activates on that profile with its own expiry date.
+                                            Pay for a sub-account slot to activate premium on your account. Create a managed profile when ready — premium also applies to each managed profile.
                                         </div>
+                                        {user.isSubscribed && subscriptionRemainingDisplay ? (
+                                            <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8, lineHeight: 1.45 }}>
+                                                <strong style={{ fontSize: '0.95rem' }}>
+                                                    {subscriptionRemainingDisplay.primary}
+                                                </strong>
+                                                {subscriptionRemainingDisplay.secondary ? (
+                                                    <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
+                                                        {subscriptionRemainingDisplay.secondary}
+                                                        {' · '}
+                                                        {subscriptionPeriodLabel}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ marginLeft: 6 }}>({subscriptionPeriodLabel})</span>
+                                                )}
+                                            </div>
+                                        ) : null}
                                         <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8 }}>
                                             {subSlotsRemaining > 0
                                                 ? `${subSlotsRemaining} slot(s) ready to create · ${subSlotsConsumed}/${subSlotsPurchased} used`
@@ -3412,7 +3441,7 @@ function ProfilePageContent() {
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem' }}>
                             {usesSubAccountSlots
-                                ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Pay first, then create — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. Premium activates on each profile when created; expiry is shown per account below.`
+                                ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Pay first to activate premium on your account — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. Premium also applies to each managed profile when created; expiry is shown per account below.`
                                 : null}
                         </p>
                         {usesSubAccountSlots && !canCreateManagedSubAccount && (

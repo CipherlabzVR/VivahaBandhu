@@ -18,7 +18,7 @@ import {
 } from '@/utils/managedMessageContent';
 import {
     canManageSubAccounts,
-    normalizeSubAccount,
+    parseSubAccountsApiResult,
     subAccountDisplayName,
     type ManagedSubAccount,
 } from '@/utils/managedSubAccounts';
@@ -386,26 +386,28 @@ function MessagesContent() {
             return;
         }
         let cancelled = false;
-        (async () => {
+        const loadSubAccounts = async () => {
             try {
                 const res = await matrimonialService.getSubAccounts(Number(user.id));
                 if (cancelled) return;
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    const rows = (Array.isArray(res.result) ? res.result : [])
-                        .map((row: Record<string, unknown>) => normalizeSubAccount(row))
-                        .filter(Boolean) as ManagedSubAccount[];
-                    setSubAccounts(rows);
-                } else {
-                    setSubAccounts([]);
-                }
+                setSubAccounts(parseSubAccountsApiResult(res));
             } catch {
                 if (!cancelled) setSubAccounts([]);
             } finally {
                 if (!cancelled) setSubAccountsLoaded(true);
             }
-        })();
+        };
+
+        void loadSubAccounts();
+
+        const onSubAccountsChanged = () => {
+            void loadSubAccounts();
+        };
+        window.addEventListener('sub-accounts-changed', onSubAccountsChanged);
+
         return () => {
             cancelled = true;
+            window.removeEventListener('sub-accounts-changed', onSubAccountsChanged);
         };
     }, [user?.id, user?.accountType]);
 

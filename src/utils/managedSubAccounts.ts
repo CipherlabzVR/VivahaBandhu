@@ -12,6 +12,85 @@ export type ManagedSubAccount = {
     subscriptionExpiresAt?: string;
 };
 
+/** Full sub-account row for profile dashboard cards (camelCase-normalized). */
+export type ManagedSubAccountDetail = ManagedSubAccount & {
+    phoneNumber?: string;
+    email?: string;
+    age?: number;
+    cityOfResidence?: string;
+    religion?: string;
+    maritalStatus?: string;
+    profileComplete?: boolean;
+    subscriptionUntilUtc?: string;
+};
+
+function readString(row: Record<string, unknown>, ...keys: string[]): string {
+    for (const key of keys) {
+        const value = row[key];
+        if (value != null && String(value).trim() !== '') return String(value).trim();
+    }
+    return '';
+}
+
+function readOptionalString(row: Record<string, unknown>, ...keys: string[]): string | undefined {
+    const value = readString(row, ...keys);
+    return value || undefined;
+}
+
+function readNumber(row: Record<string, unknown>, ...keys: string[]): number | undefined {
+    for (const key of keys) {
+        const raw = row[key];
+        if (raw == null || raw === '') continue;
+        const n = Number(raw);
+        if (Number.isFinite(n)) return n;
+    }
+    return undefined;
+}
+
+function readBool(row: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+    for (const key of keys) {
+        const raw = row[key];
+        if (raw === true || raw === 'true') return true;
+        if (raw === false || raw === 'false') return false;
+    }
+    return undefined;
+}
+
+export function parseSubAccountsApiResult(data: unknown): ManagedSubAccountDetail[] {
+    if (!data || typeof data !== 'object') return [];
+    const record = data as Record<string, unknown>;
+    const code = record.statusCode ?? record.StatusCode;
+    if (code !== 200 && code !== 1 && code !== '200' && code !== 'SUCCESS' && code !== 'Success') {
+        return [];
+    }
+    const raw = record.result ?? record.Result;
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((row) => normalizeSubAccountDetailRow(row as Record<string, unknown>))
+        .filter(Boolean) as ManagedSubAccountDetail[];
+}
+
+export function normalizeSubAccountDetailRow(row: Record<string, unknown>): ManagedSubAccountDetail | null {
+    const base = normalizeSubAccount(row);
+    if (!base) return null;
+    const subscriptionUntilUtc = readOptionalString(
+        row,
+        'subscriptionUntilUtc',
+        'SubscriptionUntilUtc',
+    );
+    return {
+        ...base,
+        phoneNumber: readOptionalString(row, 'phoneNumber', 'PhoneNumber'),
+        email: readOptionalString(row, 'email', 'Email', 'userName', 'UserName'),
+        age: readNumber(row, 'age', 'Age'),
+        cityOfResidence: readOptionalString(row, 'cityOfResidence', 'CityOfResidence'),
+        religion: readOptionalString(row, 'religion', 'Religion'),
+        maritalStatus: readOptionalString(row, 'maritalStatus', 'MaritalStatus'),
+        profileComplete: readBool(row, 'profileComplete', 'ProfileComplete'),
+        subscriptionUntilUtc: subscriptionUntilUtc ?? base.subscriptionExpiresAt,
+    };
+}
+
 export function canManageSubAccounts(accountType?: string | null): boolean {
     return isFamilyParentAccountType(accountType) || accountType === 'Matchmaker';
 }
