@@ -184,13 +184,30 @@ export default function SubscriptionCheckoutPage() {
         }
     };
 
-    const applySubAccountSlotPatch = (purchased?: number) => {
+    const applySubAccountSlotPatch = (r?: Record<string, unknown>, purchased?: number) => {
         const nextPurchased =
             purchased ??
-            Math.max(0, (user?.familySubAccountSlotsPurchased ?? 0) + 1);
-        updateUser({
+            (r
+                ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? (user?.familySubAccountSlotsPurchased ?? 0) + 1)
+                : (user?.familySubAccountSlotsPurchased ?? 0) + 1);
+        const subscribed = r?.isSubscribed ?? r?.IsSubscribed;
+        const subLifetime = r?.subscriptionIsLifetime ?? r?.SubscriptionIsLifetime;
+        const subUntil = r?.subscriptionUntilUtc ?? r?.SubscriptionUntilUtc;
+        const patch: Record<string, unknown> = {
             familySubAccountSlotsPurchased: nextPurchased,
-        });
+            isSubscribed: subscribed === true || subscribed === 'true' || subscribed === undefined,
+        };
+        if (subLifetime === true || subLifetime === 'true') {
+            patch.subscriptionIsLifetime = true;
+            patch.subscriptionExpiresAt = undefined;
+        } else if (subUntil != null && String(subUntil).trim() !== '') {
+            const d = new Date(String(subUntil));
+            if (!Number.isNaN(d.getTime())) {
+                patch.subscriptionExpiresAt = d.toISOString();
+                patch.subscriptionIsLifetime = false;
+            }
+        }
+        updateUser(patch);
     };
 
     const handleMockPayment = async () => {
@@ -241,11 +258,8 @@ export default function SubscriptionCheckoutPage() {
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
                     const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
-                    const newPurchased = r
-                        ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? (user?.familySubAccountSlotsPurchased ?? 0) + 1)
-                        : (user?.familySubAccountSlotsPurchased ?? 0) + 1;
-                    applySubAccountSlotPatch(newPurchased);
-                    setSuccess('Payment successful. You can create a managed profile from your profile — premium activates on that profile when you create it.');
+                    applySubAccountSlotPatch(r);
+                    setSuccess('Payment successful. Premium is now active on your account. You can create a managed profile from your profile page.');
                     showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
                     void refreshInterestNotifications();
                     window.setTimeout(() => router.replace('/profile'), 800);

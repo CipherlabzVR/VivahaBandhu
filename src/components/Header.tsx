@@ -10,8 +10,8 @@ import { getStoredToken } from '../utils/authStorage';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
 import {
     canManageSubAccounts,
-    normalizeSubAccount,
     notificationMatchesManagedProfile,
+    parseSubAccountsApiResult,
     shouldShowManagedProfileTabs,
     subAccountDisplayName,
     subAccountNotificationUnreadMap,
@@ -135,25 +135,28 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             setActiveNotificationSubAccountId(null);
             return;
         }
+
         let cancelled = false;
-        (async () => {
+        const loadSubAccounts = async () => {
             try {
                 const res = await matrimonialService.getSubAccounts(Number(user.id));
                 if (cancelled) return;
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    const rows = (Array.isArray(res.result) ? res.result : [])
-                        .map((row: Record<string, unknown>) => normalizeSubAccount(row))
-                        .filter(Boolean) as ManagedSubAccount[];
-                    setSubAccounts(rows);
-                } else {
-                    setSubAccounts([]);
-                }
+                setSubAccounts(parseSubAccountsApiResult(res));
             } catch {
                 if (!cancelled) setSubAccounts([]);
             }
-        })();
+        };
+
+        void loadSubAccounts();
+
+        const onSubAccountsChanged = () => {
+            void loadSubAccounts();
+        };
+        window.addEventListener('sub-accounts-changed', onSubAccountsChanged);
+
         return () => {
             cancelled = true;
+            window.removeEventListener('sub-accounts-changed', onSubAccountsChanged);
         };
     }, [user?.id, user?.accountType]);
 
