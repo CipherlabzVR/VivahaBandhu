@@ -9,7 +9,6 @@ import { sanitizeNameInput } from '../../utils/nameInput';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
-import { isRelationAccountType } from '../../utils/matrimonialAccountTypes';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, parseNicToDobAndGender } from '../../utils/nicInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
@@ -747,15 +746,7 @@ export default function ProfileCompletionForm({
     const router = useRouter();
     const isManagedFlow = !!(managedCreate || managedEdit);
     const managedParentUserId = managedCreate?.parentUserId ?? managedEdit?.parentUserId;
-    /**
-     * Relation accounts only need to fill the Partner Preferences section in the
-     * detailed profile editor. Parents and Self complete the full wizard.
-     */
-    const isPartnerPrefsOnly = !isManagedFlow && isRelationAccountType(user?.accountType);
-    const [step, setStep] = useState(isPartnerPrefsOnly ? 5 : 1);
-    useEffect(() => {
-        if (isPartnerPrefsOnly && step !== 5) setStep(5);
-    }, [isPartnerPrefsOnly, step]);
+    const [step, setStep] = useState(1);
     const [managedBasic, setManagedBasic] = useState({
         firstName: '',
         lastName: '',
@@ -2223,7 +2214,6 @@ export default function ProfileCompletionForm({
                     )}
                 </div>
             )}
-            {!isPartnerPrefsOnly && (
             <div
                 ref={wizardStepsAnchorRef}
                 className="steps-indicator"
@@ -2253,7 +2243,6 @@ export default function ProfileCompletionForm({
                     </button>
                 ))}
             </div>
-            )}
 
             <form onSubmit={(e) => e.preventDefault()}>
                 {successMessage && <div style={{ color: '#2e7d32', marginBottom: '1rem', padding: '12px 16px', background: '#e8f5e9', borderRadius: '8px', fontWeight: 600, textAlign: 'center', fontSize: '1rem' }}>{successMessage}</div>}
@@ -3099,16 +3088,12 @@ export default function ProfileCompletionForm({
                     </div>
                 )}
 
-                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: isPartnerPrefsOnly ? 'flex-end' : 'space-between' }}>
-                    {!isPartnerPrefsOnly && (step > 1 ? (
+                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
+                    {step > 1 ? (
                         <button type="button" className="btn btn-outline" onClick={handlePrev}>Previous</button>
-                    ) : <div></div>)}
+                    ) : <div></div>}
 
-                    {isPartnerPrefsOnly ? (
-                        <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
-                            {loading ? 'Saving...' : 'Save Partner Preferences'}
-                        </button>
-                    ) : step < 6 ? (
+                    {step < 6 ? (
                         <button type="button" className="btn btn-primary" onClick={handleNext}>Next</button>
                     ) : (
                         <button type="button" className="btn btn-primary" disabled={loading} onClick={saveProfile}>
