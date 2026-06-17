@@ -47,13 +47,15 @@ import {
     managedProfileUserIdForApi,
     useManagedSubAccountActionPicker,
 } from '../hooks/useManagedSubAccountActionPicker';
+import {
+    matrimonialProfileUserId,
+    isOwnMatrimonialProfile,
+    profileVisitorActionsBlockedHint,
+} from '../utils/profileVisitorActions';
 
-/** Matrimonial profile card / modal may expose viewer id as userId, UserId, or numeric id */
+/** @deprecated use matrimonialProfileUserId */
 function viewerProfileUserId(p: Record<string, unknown> | null | undefined): number | null {
-    if (!p || typeof p !== 'object') return null;
-    const raw = (p as any).userId ?? (p as any).UserId ?? (p as any).id ?? (p as any).Id;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return matrimonialProfileUserId(p);
 }
 
 /** Eating / drinking / smoking preference from API; blank or placeholder "-" → em dash */
@@ -648,91 +650,9 @@ function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNod
     );
 }
 
-function profileCanViewContact(profile: Record<string, unknown> | null | undefined): boolean {
-    if (!profile) return false;
-    return Boolean(profile.canViewContact ?? profile.CanViewContact);
-}
-
-function profileOwnerShowsContact(profile: Record<string, unknown> | null | undefined): boolean {
-    if (!profile) return true;
-    const raw = profile.showContactInformation ?? profile.ShowContactInformation;
-    return raw !== false;
-}
-
-function profileContactFields(profile: Record<string, unknown> | null | undefined) {
-    if (!profile) {
-        return { phone: '', whatsapp: '', email: '' };
-    }
-    return {
-        phone: String(profile.phoneNumber ?? profile.PhoneNumber ?? profile.phone ?? '').trim(),
-        whatsapp: String(profile.whatsApp ?? profile.WhatsApp ?? profile.whatsapp ?? '').trim(),
-        email: String(profile.email ?? profile.Email ?? '').trim(),
-    };
-}
-
-function ProfileContactSection({
-    profile,
-    viewerIsSubscribed,
-    onUpgrade,
-}: {
-    profile: Record<string, unknown>;
-    viewerIsSubscribed: boolean;
-    onUpgrade: () => void;
-}) {
-    const canView = profileCanViewContact(profile);
-    const ownerShows = profileOwnerShowsContact(profile);
-    const { phone, whatsapp, email } = profileContactFields(profile);
-    const displayValue = (value: string) => (canView && value ? value : '••••••••••');
-
-    return (
-        <div className={`contact-section${canView ? '' : ' blurred-section'}`}>
-            {!canView && (
-                <div className="contact-blur-overlay">
-                    <span>🔒</span>
-                    <h4>Contact details locked</h4>
-                    <p>
-                        {!ownerShows
-                            ? 'This member has turned off contact sharing in their settings.'
-                            : 'Premium members can view phone, WhatsApp, and email when the member allows it.'}
-                    </p>
-                    {!viewerIsSubscribed && ownerShows && (
-                        <button type="button" className="btn btn-primary btn-sm" onClick={onUpgrade}>
-                            Upgrade to Premium
-                        </button>
-                    )}
-                </div>
-            )}
-            <div className={canView ? undefined : 'contact-info-hidden'}>
-                <div className="profile-section" style={{ marginTop: 0, padding: 0, background: 'transparent' }}>
-                    <h3>Contact details</h3>
-                    <div className="info-grid">
-                        <div className="info-item">
-                            <label>Mobile</label>
-                            <span>{displayValue(phone) || 'Not provided'}</span>
-                        </div>
-                        <div className="info-item">
-                            <label>WhatsApp</label>
-                            <span>{displayValue(whatsapp) || 'Not provided'}</span>
-                        </div>
-                        <div className="info-item">
-                            <label>Email</label>
-                            <span>{displayValue(email) || 'Not provided'}</span>
-                        </div>
-                    </div>
-                    {canView && ownerShows && (
-                        <p style={{ margin: '1rem 0 0', fontSize: '0.85rem', color: 'var(--text-light)' }}>
-                            Use contact details respectfully. In-app messaging is also available.
-                        </p>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
-
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user } = useAuth();
-    const { subAccounts } = useOwnedSubAccountsForBrowse();
+    const { subAccounts, ownedIds } = useOwnedSubAccountsForBrowse();
     const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
     const router = useRouter();
     const pathname = usePathname();
@@ -817,7 +737,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     try {
                         const viewAsOthers = Boolean(initialSelectedProfile.viewAsOthers);
                         const isOwnProfile =
-                            user?.id && String(initialSelectedProfile.userId) === String(user.id);
+                            isOwnMatrimonialProfile(user, initialSelectedProfile);
                         // Owner preview: omit requester so the API applies visitor masking (no daily-view charge).
                         const requesterForFetch =
                             viewAsOthers && isOwnProfile
@@ -837,7 +757,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             setSelectedProfile((prev: any) => ({
                                 ...prev,
                                 ...res.result,
+                                userId:
+                                    prev?.userId ??
+                                    res.result.userId ??
+                                    res.result.UserId ??
+                                    viewerProfileUserId(res.result),
                                 viewAsOthers: prev?.viewAsOthers,
+                                disableVisitorActions: prev?.disableVisitorActions,
                                 firstName: prev?.firstName || res.result.firstName,
                                 lastName: prev?.lastName || res.result.lastName,
                                 profilePhoto: prev?.profilePhoto || res.result.profilePhoto,
@@ -887,7 +813,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             return;
         }
         const targetId = viewerProfileUserId(selectedProfile);
-        if (!user?.id || !targetId || String(user.id) === String(targetId)) {
+        if (!user?.id || !targetId || ownedIds.has(targetId)) {
             setInteractionFavoriteIds([]);
             setInteractionShortlistIds([]);
             return;
@@ -921,7 +847,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         return () => {
             cancelled = true;
         };
-    }, [activeModal, user?.id, selectedProfile]);
+    }, [activeModal, user?.id, selectedProfile, ownedIds]);
 
     const interestTargetUserId = useMemo(
         () => viewerProfileUserId(selectedProfile),
@@ -1989,8 +1915,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleExpressInterest = () => {
+        const blockedHint = profileVisitorActionsBlockedHint(user, selectedProfile, ownedIds);
+        if (blockedHint) {
+            showToast(blockedHint, 'info');
+            return;
+        }
         if (selectedProfile?.viewAsOthers) return;
-        const targetProfileUserId = viewerProfileUserId(selectedProfile);
+        const targetProfileUserId = matrimonialProfileUserId(selectedProfile);
         if (!targetProfileUserId) return;
 
         if (!user) {
@@ -2028,6 +1959,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleToggleShortlist = () => {
+        const blockedHint = profileVisitorActionsBlockedHint(user, selectedProfile, ownedIds);
+        if (blockedHint) {
+            showToast(blockedHint, 'info');
+            return;
+        }
         if (selectedProfile?.viewAsOthers || isProfileLockedByDailyLimit) return;
         const targetProfileUserId = viewerProfileUserId(selectedProfile);
         if (!targetProfileUserId) return;
@@ -2067,6 +2003,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     };
 
     const handleOpenMessage = () => {
+        const blockedHint = profileVisitorActionsBlockedHint(user, selectedProfile, ownedIds);
+        if (blockedHint) {
+            showToast(blockedHint, 'info');
+            return;
+        }
         if (selectedProfile?.viewAsOthers || isProfileLockedByDailyLimit) return;
         if (!user) {
             onSwitch('login');
@@ -2077,7 +2018,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setProfileAccessMessage('Messaging needs an active subscription.');
             return;
         }
-        const targetUserId = selectedProfile.userId || selectedProfile.id;
+        const targetUserId = matrimonialProfileUserId(selectedProfile);
+        if (!targetUserId) return;
         managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
             onClose();
             const managedQuery = managedProfileUserIdForApi(managedProfileUserId);
@@ -3945,8 +3887,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 >
                                     <strong>Public preview</strong>
                                     {' — '}
-                                    This is how your profile looks to other members: contact details follow the same rules as for a
-                                    signed-in visitor without an active subscription (your edit screens are unchanged).
+                                    This is how your profile looks to other members on browse and search (your edit screens are unchanged).
                                 </div>
                             )}
                             {(selectedProfile.usesMatchmakerPeekMode || selectedProfile.UsesMatchmakerPeekMode) && (
@@ -4055,83 +3996,68 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <span>{selectedProfile.cityOfResidence || 'Location Not Specified'}</span>
                                     </div>
                                     <div className="profile-actions-row">
-                                        {user &&
-                                        (selectedProfile.userId ? String(user.id) === String(selectedProfile.userId) : false) &&
-                                        !selectedProfile.viewAsOthers ? (
-                                            <div style={{ color: 'var(--primary)', fontWeight: 500, padding: '0.75rem', backgroundColor: '#fdf8f3', borderRadius: '8px', textAlign: 'center', width: '100%', border: '1px solid var(--primary-light)' }}>
-                                                ✨ This is your profile
-                                            </div>
-                                        ) : (
-                                            <>
-                                                {selectedProfile.viewAsOthers && (
-                                                    <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: '0 0 0.5rem 0', width: '100%' }}>
-                                                        Preview only — visitor actions are disabled here.
-                                                    </p>
-                                                )}
-                                                {isProfileLockedByDailyLimit && (
-                                                    <p style={{ fontSize: '0.85rem', color: '#92400e', margin: '0 0 0.5rem 0', width: '100%' }}>
-                                                        Upgrade to keep browsing full profiles today.
-                                                    </p>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-primary"
-                                                    disabled={!!selectedProfile.viewAsOthers || expressInterestLoading || isProfileLockedByDailyLimit}
-                                                    style={
-                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
-                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
-                                                            : undefined
-                                                    }
-                                                    onClick={() => {
-                                                        void handleExpressInterest();
-                                                    }}
-                                                >
-                                                    <HeartIcon filled={isInterestExpressed} size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} />{' '}
-                                                    {expressInterestLoading
-                                                        ? 'Please wait…'
-                                                        : isInterestExpressed
-                                                          ? 'Interest expressed'
-                                                          : 'Express Interest'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline"
-                                                    disabled={!!selectedProfile.viewAsOthers || isProfileLockedByDailyLimit}
-                                                    style={
-                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
-                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
-                                                            : undefined
-                                                    }
-                                                    onClick={handleOpenMessage}
-                                                >
-                                                    <span>💬</span> Message
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="btn btn-outline"
-                                                    disabled={!!selectedProfile.viewAsOthers || shortlistLoading || isProfileLockedByDailyLimit}
-                                                    style={
-                                                        selectedProfile.viewAsOthers || isProfileLockedByDailyLimit
-                                                            ? { opacity: 0.65, cursor: 'not-allowed' }
-                                                            : undefined
-                                                    }
-                                                    onClick={() => {
-                                                        void handleToggleShortlist();
-                                                    }}
-                                                >
-                                                    <BookmarkIcon
-                                                        filled={isShortlisted}
-                                                        size={16}
-                                                        style={{ marginRight: '0.4rem', verticalAlign: '-3px' }}
-                                                    />{' '}
-                                                    {shortlistLoading
-                                                        ? 'Please wait…'
-                                                        : isShortlisted
-                                                          ? 'Shortlisted'
-                                                          : 'Shortlist'}
-                                                </button>
-                                            </>
+                                        {isProfileLockedByDailyLimit && (
+                                            <p style={{ fontSize: '0.85rem', color: '#92400e', margin: '0 0 0.5rem 0', width: '100%' }}>
+                                                Upgrade to keep browsing full profiles today.
+                                            </p>
                                         )}
+                                        <button
+                                            type="button"
+                                            className="btn btn-primary"
+                                            disabled={isProfileLockedByDailyLimit || expressInterestLoading}
+                                            style={
+                                                isProfileLockedByDailyLimit
+                                                    ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                    : undefined
+                                            }
+                                            onClick={() => {
+                                                void handleExpressInterest();
+                                            }}
+                                        >
+                                            <HeartIcon filled={isInterestExpressed} size={16} style={{ marginRight: '0.4rem', verticalAlign: '-3px' }} />{' '}
+                                            {expressInterestLoading
+                                                ? 'Please wait…'
+                                                : isInterestExpressed
+                                                  ? 'Interest expressed'
+                                                  : 'Express Interest'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            disabled={isProfileLockedByDailyLimit}
+                                            style={
+                                                isProfileLockedByDailyLimit
+                                                    ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                    : undefined
+                                            }
+                                            onClick={handleOpenMessage}
+                                        >
+                                            <span>💬</span> Message
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            disabled={isProfileLockedByDailyLimit || shortlistLoading}
+                                            style={
+                                                isProfileLockedByDailyLimit
+                                                    ? { opacity: 0.65, cursor: 'not-allowed' }
+                                                    : undefined
+                                            }
+                                            onClick={() => {
+                                                void handleToggleShortlist();
+                                            }}
+                                        >
+                                            <BookmarkIcon
+                                                filled={isShortlisted}
+                                                size={16}
+                                                style={{ marginRight: '0.4rem', verticalAlign: '-3px' }}
+                                            />{' '}
+                                            {shortlistLoading
+                                                ? 'Please wait…'
+                                                : isShortlisted
+                                                  ? 'Shortlisted'
+                                                  : 'Shortlist'}
+                                        </button>
                                     </div>
                                     {profileAccessMessage && !isProfileLockedByDailyLimit && (
                                         <div style={{ marginTop: '0.75rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.6rem 0.8rem', fontSize: '0.9rem', fontWeight: 500 }}>
@@ -4200,7 +4126,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <button className={`profile-tab ${profileTab === 'family' ? 'active' : ''}`} onClick={() => setProfileTab('family')}>Family</button>
                                         <button className={`profile-tab ${profileTab === 'lifestyle' ? 'active' : ''}`} onClick={() => setProfileTab('lifestyle')}>Lifestyle</button>
                                         <button className={`profile-tab ${profileTab === 'partner' ? 'active' : ''}`} onClick={() => setProfileTab('partner')}>Partner Preferences</button>
-                                        <button className={`profile-tab ${profileTab === 'contact' ? 'active' : ''}`} onClick={() => setProfileTab('contact')}>Contact</button>
                                     </div>
 
                                     {/* About Tab */}
@@ -4307,15 +4232,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             )}
 
-                                    {profileTab === 'contact' && (
-                                        <div className="profile-tab-content active">
-                                            <ProfileContactSection
-                                                profile={selectedProfile}
-                                                viewerIsSubscribed={user?.isSubscribed === true}
-                                                onUpgrade={() => onSwitch('subscription')}
-                                            />
-                                        </div>
-                                    )}
                                 </>
                             )}
                         </div>

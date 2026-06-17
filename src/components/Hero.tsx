@@ -309,13 +309,10 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                             )}
                             <button
                                 type="button"
-                                className="flex items-center gap-2 rounded-full border-2 border-white/90 px-8 py-4 font-semibold text-white transition-colors hover:bg-white/15"
+                                className="rounded-full border-2 border-white/90 px-8 py-4 font-semibold text-white transition-colors hover:bg-white/15"
                                 onClick={scrollToHowItWorks}
                             >
-                                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-                                    <path d="M8 5v14l11-7L8 5zm0 0V5H6v14h2V5z" />
-                                </svg>
-                                {t('heroHowItWorksVideo')}
+                                {t('howItWorks')}
                             </button>
                         </div>
 

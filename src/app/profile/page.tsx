@@ -53,6 +53,8 @@ import { useMatrimonialNotifications } from '../../context/MatrimonialNotificati
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
 import { formatSubscriptionTimeRemaining, parseSubscriptionRemaining } from '../../utils/subscriptionExpiry';
 import { packagePrice, resolveCheckoutPlan, type PublicMatrimonialPackage } from '../../utils/matrimonialPackages';
+import { ownedBrowseUserIds } from '../../utils/browseProfileFilters';
+import { prepareProfileModalPayload } from '../../utils/profileVisitorActions';
 import {
     paidMatchmakerPackages,
     platformMaxMatchmakerClients,
@@ -679,7 +681,11 @@ function ProfilePageContent() {
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
-        if (modal === 'profile' && profile) setSelectedProfile(profile);
+        if (modal === 'profile' && profile) {
+            setSelectedProfile(
+                prepareProfileModalPayload(user, profile as Record<string, unknown>, ownedProfileIds)
+            );
+        }
     };
 
     const closeModal = () => {
@@ -703,6 +709,10 @@ function ProfilePageContent() {
     const interestedInYouSectionRef = useRef<HTMLDivElement>(null);
 
     const [subAccounts, setSubAccounts] = useState<ManagedSubAccountDetail[]>([]);
+    const ownedProfileIds = useMemo(
+        () => ownedBrowseUserIds(user?.id != null ? Number(user.id) : undefined, subAccounts),
+        [user?.id, subAccounts]
+    );
     const [managedSubActivity, setManagedSubActivity] = useState<any[]>([]);
     const [savedProfiles, setSavedProfiles] = useState<any[]>([]);
     const [interestProfiles, setInterestProfiles] = useState<any[]>([]);
@@ -907,6 +917,7 @@ function ProfilePageContent() {
                 firstName: subAccount.firstName,
                 lastName: subAccount.lastName,
                 profilePhoto: subAccount.profilePhoto,
+                disableVisitorActions: true,
             };
             if (user?.accountType === 'Matchmaker') {
                 profilePayload.isMatchmakerManaged = true;
@@ -920,7 +931,7 @@ function ProfilePageContent() {
             }
             openModal('profile', undefined, profilePayload);
         },
-        [openModal, user?.accountType, user?.firstName, user?.lastName]
+        [openModal, user, user?.accountType, user?.firstName, user?.lastName]
     );
 
     const openEditManagedSubProfile = useCallback(
@@ -2836,7 +2847,7 @@ function ProfilePageContent() {
                                 setIsCompletionModalOpen(true);
                             }}>Edit Detailed Profile</button>
                         )}
-                        {user.accountType !== 'Matchmaker' && user?.id && (
+                        {user?.id && (
                             <button
                                 type="button"
                                 className="btn btn-outline"
@@ -2848,6 +2859,7 @@ function ProfilePageContent() {
                                         profilePhoto: user.profilePhoto,
                                         gender: user.gender,
                                         viewAsOthers: true,
+                                        disableVisitorActions: true,
                                     })
                                 }
                             >
@@ -2986,7 +2998,7 @@ function ProfilePageContent() {
                                             <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
                                                 {isSavingContactVisibilityPref
                                                     ? 'Saving…'
-                                                    : 'Phone, WhatsApp, and email stay masked when this is off — even for premium members who could normally view contacts.'}
+                                                    : 'Contact details are not shown on browse or profile previews — use in-app messaging to connect.'}
                                             </span>
                                         </span>
                                         <input

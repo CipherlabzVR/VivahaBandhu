@@ -30,7 +30,7 @@ export function isFamilyParentAccountType(accountType?: string | null): boolean 
 /** Accounts that only need basic signup details — no detailed matrimonial profile wizard. */
 export function isBasicProfileOnlyAccountType(accountType?: string | null): boolean {
     const t = normalizedAccountType(accountType);
-    return isParentsAccountType(t) || t === 'Matchmaker';
+    return isFamilyParentAccountType(t) || t === 'Matchmaker';
 }
 
 /** Display label for account type (maps legacy Father/Mother → Parents). */
