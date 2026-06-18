@@ -10,6 +10,11 @@ export type ManagedSubAccount = {
     isSubscribed?: boolean;
     subscriptionIsLifetime?: boolean;
     subscriptionExpiresAt?: string;
+    /** 1 = ACTIVE, 2 = INACTIVE (suspended when manager is on free plan). */
+    status?: number | string;
+    horoscopeDocument?: string;
+    horoscopeDocument2?: string;
+    horoscopeDocument3?: string;
 };
 
 /** Full sub-account row for profile dashboard cards (camelCase-normalized). */
@@ -22,6 +27,9 @@ export type ManagedSubAccountDetail = ManagedSubAccount & {
     maritalStatus?: string;
     profileComplete?: boolean;
     subscriptionUntilUtc?: string;
+    horoscopeDocument?: string;
+    horoscopeDocument2?: string;
+    horoscopeDocument3?: string;
 };
 
 function readString(row: Record<string, unknown>, ...keys: string[]): string {
@@ -88,6 +96,21 @@ export function normalizeSubAccountDetailRow(row: Record<string, unknown>): Mana
         maritalStatus: readOptionalString(row, 'maritalStatus', 'MaritalStatus'),
         profileComplete: readBool(row, 'profileComplete', 'ProfileComplete'),
         subscriptionUntilUtc: subscriptionUntilUtc ?? base.subscriptionExpiresAt,
+        horoscopeDocument: readOptionalString(
+            row,
+            'horoscopeDocument',
+            'HoroscopeDocument',
+        ),
+        horoscopeDocument2: readOptionalString(
+            row,
+            'horoscopeDocument2',
+            'HoroscopeDocument2',
+        ),
+        horoscopeDocument3: readOptionalString(
+            row,
+            'horoscopeDocument3',
+            'HoroscopeDocument3',
+        ),
     };
 }
 
@@ -110,6 +133,7 @@ export function normalizeSubAccount(row: Record<string, unknown>): ManagedSubAcc
     }
     const isSubscribedRaw = (row as any).isSubscribed ?? (row as any).IsSubscribed;
     const lifetimeRaw = (row as any).subscriptionIsLifetime ?? (row as any).SubscriptionIsLifetime;
+    const statusRaw = (row as any).status ?? (row as any).Status;
     return {
         id,
         firstName: String((row as any).firstName ?? (row as any).FirstName ?? '').trim(),
@@ -119,7 +143,19 @@ export function normalizeSubAccount(row: Record<string, unknown>): ManagedSubAcc
         isSubscribed: isSubscribedRaw === true || isSubscribedRaw === 'true',
         subscriptionIsLifetime: lifetimeRaw === true || lifetimeRaw === 'true',
         subscriptionExpiresAt,
+        status: statusRaw != null && statusRaw !== '' ? statusRaw : undefined,
+        horoscopeDocument: readOptionalString(row, 'horoscopeDocument', 'HoroscopeDocument'),
+        horoscopeDocument2: readOptionalString(row, 'horoscopeDocument2', 'HoroscopeDocument2'),
+        horoscopeDocument3: readOptionalString(row, 'horoscopeDocument3', 'HoroscopeDocument3'),
     };
+}
+
+export function isManagedSubAccountActive(sub: Pick<ManagedSubAccount, 'status'>): boolean {
+    const status = sub.status;
+    if (status == null || status === '') return true;
+    if (typeof status === 'number') return status === 1;
+    const normalized = String(status).trim().toUpperCase();
+    return normalized !== 'INACTIVE' && normalized !== '2';
 }
 
 export function subAccountDisplayName(sub: ManagedSubAccount): string {

@@ -3,6 +3,7 @@
 import {
     type PublicMatrimonialPackage,
     buildFeatureComparisonRows,
+    canUserSelectSubscriptionPackage,
     isFreePackage,
     isUserCurrentPackage,
     packageFeatureLabels,
@@ -45,6 +46,7 @@ export default function SubscriptionPlanPicker({
                     const popular = !!(pkg.isPopular ?? pkg.IsPopular);
                     const isCurrent = isUserCurrentPackage(pkg, packages, user);
                     const free = isFreePackage(pkg);
+                    const selectable = canUserSelectSubscriptionPackage(pkg, packages, user);
                     const period = packagePeriodLabel(pkg);
                     const desc = pkg.description ?? pkg.Description;
                     const validityLabel = packageValidityLabel(pkg);
@@ -53,11 +55,17 @@ export default function SubscriptionPlanPicker({
                     return (
                         <div
                             key={id || packageName(pkg)}
-                            className={`sub-option sub-option--detailed ${selected ? 'selected' : ''} ${isCurrent ? 'current-plan' : ''} ${popular && !isCurrent ? 'recommended' : ''}`}
-                            onClick={() => onSelectPackage(id)}
+                            className={`sub-option sub-option--detailed ${selected ? 'selected' : ''} ${isCurrent ? 'current-plan' : ''} ${popular && !isCurrent ? 'recommended' : ''} ${!selectable ? 'sub-option--locked' : ''}`}
+                            onClick={() => {
+                                if (!selectable) return;
+                                onSelectPackage(id);
+                            }}
                             role="button"
-                            tabIndex={0}
+                            tabIndex={selectable ? 0 : -1}
+                            aria-disabled={!selectable}
+                            style={!selectable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                             onKeyDown={(e) => {
+                                if (!selectable) return;
                                 if (e.key === 'Enter' || e.key === ' ') {
                                     e.preventDefault();
                                     onSelectPackage(id);

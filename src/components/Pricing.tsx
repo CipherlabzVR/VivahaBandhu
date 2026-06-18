@@ -20,9 +20,11 @@ import {
     publicPackagesAudienceParam,
     resolveCheckoutPlan,
     resolveUserCurrentPackage,
+    userHasActivePremiumPlan,
 } from '../utils/matrimonialPackages';
 import PackageFeatureList from './PackageFeatureList';
 import { notifyFooterLayoutSettled } from '../utils/footerScrollRestore';
+import { notifyPricingLayoutSettled, preparePricingHashNavigation } from '../utils/siteHashScroll';
 
 interface PricingProps {
     onOpenSubscription: () => void;
@@ -56,24 +58,29 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
         };
     }, [audience]);
 
-    useEffect(() => {
-        if (!loading) {
-            notifyFooterLayoutSettled();
-        }
-    }, [loading]);
+    const currentPackage = resolveUserCurrentPackage(packages, user);
+    const userHasPlan = !!user && !!currentPackage;
 
     useEffect(() => {
-        notifyFooterLayoutSettled();
+        preparePricingHashNavigation();
     }, []);
 
+    useEffect(() => {
+        if (!loading) {
+            notifyPricingLayoutSettled();
+            notifyFooterLayoutSettled();
+        }
+    }, [loading, packages.length, userHasPlan]);
+
     const goCheckout = (pkg: PublicMatrimonialPackage) => {
+        if (userHasActivePremiumPlan(user)) {
+            onOpenSubscription();
+            return;
+        }
         const plan = resolveCheckoutPlan(pkg);
         const amount = packagePrice(pkg);
         router.push(`/subscription/checkout?plan=${encodeURIComponent(plan)}&amount=${amount}`);
     };
-
-    const currentPackage = resolveUserCurrentPackage(packages, user);
-    const userHasPlan = !!user && !!currentPackage;
 
     return (
         <section className="relative py-24 px-4 overflow-hidden" id="pricing">
@@ -113,13 +120,29 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                 </div>
 
                 {loading ? (
-                    <p className="text-center text-white/90 text-sm py-8">Loading plans…</p>
+                    <div
+                        id="pricing-plans"
+                        className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto min-h-[520px]"
+                        aria-busy="true"
+                        aria-label="Loading pricing plans"
+                    >
+                        {[0, 1, 2].map((slot) => (
+                            <div
+                                key={slot}
+                                className="w-full max-w-[360px] rounded-3xl p-8 bg-white/40 border border-white/30 min-h-[420px] animate-pulse"
+                            />
+                        ))}
+                        <p className="w-full text-center text-white/90 text-sm -mt-2">Loading plans…</p>
+                    </div>
                 ) : packages.length === 0 ? (
                     <p className="text-center text-white/90 text-sm py-8 max-w-md mx-auto">
                         No plans are available right now. Please check back later or contact support.
                     </p>
                 ) : (
-                    <div className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto">
+                    <div
+                        id="pricing-plans"
+                        className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto"
+                    >
                         {packages.map((pkg) => {
                             const id = packageId(pkg);
                             const name = packageName(pkg);
@@ -131,6 +154,8 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                             const isCurrent = isUserCurrentPackage(pkg, packages, user);
                             const featureLabels = packageFeatureLabels(pkg);
                             const validityLabel = packageValidityLabel(pkg);
+                            const premiumLocked = userHasActivePremiumPlan(user);
+                            const canUpgradeToPackage = !premiumLocked && !free && !isCurrent;
 
                             return (
                                 <div
@@ -179,20 +204,38 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                                             {t('currentPlan')}
                                         </button>
                                     ) : free ? (
-                                        <button
-                                            type="button"
-                                            className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                                            onClick={onOpenSubscription}
-                                        >
-                                            {t('getStarted')}
-                                        </button>
-                                    ) : (
+                                        premiumLocked ? (
+                                            <button
+                                                type="button"
+                                                className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                                onClick={onOpenSubscription}
+                                            >
+                                                Switch to free plan
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                                onClick={onOpenSubscription}
+                                            >
+                                                {t('getStarted')}
+                                            </button>
+                                        )
+                                    ) : canUpgradeToPackage ? (
                                         <button
                                             type="button"
                                             className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
                                             onClick={() => goCheckout(pkg)}
                                         >
                                             {t('upgradeNow')}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            className="w-full px-6 py-3 border-2 border-gray-300 text-gray-500 rounded-full font-semibold bg-gray-50 cursor-not-allowed"
+                                            disabled
+                                        >
+                                            {premiumLocked ? 'Included in your plan' : t('currentPlan')}
                                         </button>
                                     )}
                                 </div>

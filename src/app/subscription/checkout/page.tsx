@@ -224,6 +224,9 @@ export default function SubscriptionCheckoutPage() {
                 setError('Sub-account checkout is only for Parents and Relation accounts.');
                 return;
             }
+        } else if (user.isSubscribed) {
+            setError('You already have an active premium plan. Switch to the free plan first to change packages.');
+            return;
         }
 
         if (subscriptionPlan.startsWith('matchmaker_') && user.accountType !== 'Matchmaker') {
@@ -310,6 +313,11 @@ export default function SubscriptionCheckoutPage() {
 
         if (!bankSlipFile) {
             setError('Please upload your bank transfer slip.');
+            return;
+        }
+
+        if (user.isSubscribed && !isSubAccountCheckout) {
+            setError('You already have an active premium plan. Switch to the free plan first to change packages.');
             return;
         }
 

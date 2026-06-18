@@ -15,6 +15,7 @@ import Footer from '../components/Footer';
 import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
 import { useAuth } from '../context/AuthContext';
+import { endHashScrollGuard, getSiteHashId, preparePricingHashNavigation } from '../utils/siteHashScroll';
 
 export default function Home() {
   const { user } = useAuth();
@@ -52,6 +53,21 @@ export default function Home() {
     const handleOpenVerify = () => openModal('verify');
     window.addEventListener('open-verify-modal', handleOpenVerify);
     return () => window.removeEventListener('open-verify-modal', handleOpenVerify);
+  }, []);
+
+  useEffect(() => {
+    const syncPricingHashScroll = () => {
+      if (getSiteHashId() === 'pricing') {
+        preparePricingHashNavigation();
+      }
+    };
+
+    syncPricingHashScroll();
+    window.addEventListener('hashchange', syncPricingHashScroll);
+    return () => {
+      window.removeEventListener('hashchange', syncPricingHashScroll);
+      endHashScrollGuard();
+    };
   }, []);
 
   return (

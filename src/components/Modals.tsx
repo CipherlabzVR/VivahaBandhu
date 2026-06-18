@@ -18,6 +18,7 @@ import {
 } from '../utils/sriLankanPhone';
 import {
     type PublicMatrimonialPackage,
+    canUserCheckoutSubscriptionPackage,
     isFreePackage,
     isUserCurrentPackage,
     normalizePublicPackages,
@@ -27,6 +28,7 @@ import {
     publicPackagesAudienceParam,
     resolveCheckoutPlan,
     resolveUserCurrentPackage,
+    userHasActivePremiumPlan,
 } from '../utils/matrimonialPackages';
 import SubscriptionPlanPicker from './SubscriptionPlanPicker';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
@@ -47,6 +49,7 @@ import {
     managedProfileUserIdForApi,
     useManagedSubAccountActionPicker,
 } from '../hooks/useManagedSubAccountActionPicker';
+import { canManageSubAccounts } from '../utils/managedSubAccounts';
 import {
     matrimonialProfileUserId,
     isOwnMatrimonialProfile,
@@ -651,7 +654,7 @@ function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNod
 }
 
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
-    const { login, user } = useAuth();
+    const { login, user, updateUser } = useAuth();
     const { subAccounts, ownedIds } = useOwnedSubAccountsForBrowse();
     const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
     const router = useRouter();
@@ -663,6 +666,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [subscriptionPackages, setSubscriptionPackages] = useState<PublicMatrimonialPackage[]>([]);
     const [subscriptionPackagesLoading, setSubscriptionPackagesLoading] = useState(false);
     const [selectedSubscriptionPackageId, setSelectedSubscriptionPackageId] = useState<number | null>(null);
+    const [showFreePlanConfirmModal, setShowFreePlanConfirmModal] = useState(false);
+    const [isSwitchingToFreePlan, setIsSwitchingToFreePlan] = useState(false);
 
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -681,11 +686,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 const list = normalizePublicPackages(res?.result ?? res?.Result);
                 setSubscriptionPackages(list);
                 const currentPlan = resolveUserCurrentPackage(list, user);
-                const defaultPick =
-                    currentPlan ??
-                    list.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
-                    list.find((p) => !isFreePackage(p)) ??
-                    list[0];
+                const defaultPick = userHasActivePremiumPlan(user)
+                    ? list.find((p) => isFreePackage(p)) ?? currentPlan ?? list[0]
+                    : currentPlan ??
+                      list.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
+                      list.find((p) => !isFreePackage(p)) ??
+                      list[0];
                 setSelectedSubscriptionPackageId(defaultPick ? packageId(defaultPick) : null);
             })
             .catch(() => {
@@ -711,6 +717,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         [subscriptionPackages, selectedSubscriptionPackageId]
     );
 
+    const selectedCanCheckout = useMemo(
+        () =>
+            selectedSubscriptionPackage
+                ? canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user)
+                : false,
+        [selectedSubscriptionPackage, subscriptionPackages, user]
+    );
+
     const selectedIsCurrentPlan = useMemo(
         () =>
             selectedSubscriptionPackage
@@ -718,6 +732,81 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 : false,
         [selectedSubscriptionPackage, subscriptionPackages, user]
     );
+
+    const switchManagerAccountToFreePlan = async (): Promise<boolean> => {
+        if (!user?.id || !user.isSubscribed) {
+            return true;
+        }
+        try {
+            const res = await matrimonialService.cancelSubscription(Number(user.id));
+            if (res?.statusCode !== 200 && res?.statusCode !== 1) {
+                showToast(res?.message || 'Could not switch to the free plan.', 'error');
+                return false;
+            }
+            const r = (res?.result ?? {}) as Record<string, unknown>;
+            updateUser?.({
+                isSubscribed: false,
+                subscriptionCancelled: false,
+                subscriptionExpiresAt: undefined,
+                subscriptionIsLifetime: false,
+                ...(canManageSubAccounts(user.accountType)
+                    ? { matchmakerTier: undefined, matchmakerCanAddClients: false }
+                    : {}),
+            });
+            showToast(
+                res?.message ||
+                    (canManageSubAccounts(user.accountType)
+                        ? 'You are on the free plan. Premium features and managed profiles are disabled until you pay again.'
+                        : 'You are on the free plan. Premium features are disabled until you pay again.'),
+                'success'
+            );
+            if (canManageSubAccounts(user.accountType)) {
+                window.dispatchEvent(new CustomEvent('sub-accounts-changed'));
+            }
+            return true;
+        } catch (err: unknown) {
+            showToast(err instanceof Error ? err.message : 'Could not switch to the free plan.', 'error');
+            return false;
+        }
+    };
+
+    const PREMIUM_PLAN_LOCK_NOTICE =
+        'You are on a premium plan. To change packages, switch to the free plan first. Paid plan changes are not available while your subscription is active.';
+
+    const freePlanSwitchNeedsWarning = userHasActivePremiumPlan(user);
+
+    const freePlanWarningMessage = useMemo(() => {
+        const manager = canManageSubAccounts(user?.accountType);
+        return manager
+            ? 'Continuing on the free plan will disable all premium features immediately. Your managed profiles will be disabled. You will need to pay again to re-enable premium and restore them.'
+            : 'Continuing on the free plan will disable all premium features immediately. You will need to pay again to re-enable premium.';
+    }, [user?.accountType]);
+
+    const completeFreePlanSwitch = async (): Promise<boolean> => {
+        const ok = await switchManagerAccountToFreePlan();
+        if (!ok) return false;
+        setShowFreePlanConfirmModal(false);
+        onClose();
+        router.push('/search');
+        return true;
+    };
+
+    const requestFreePlanSwitch = () => {
+        if (freePlanSwitchNeedsWarning) {
+            setShowFreePlanConfirmModal(true);
+            return;
+        }
+        void completeFreePlanSwitch();
+    };
+
+    const handleConfirmFreePlanSwitch = async () => {
+        try {
+            setIsSwitchingToFreePlan(true);
+            await completeFreePlanSwitch();
+        } finally {
+            setIsSwitchingToFreePlan(false);
+        }
+    };
 
     const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
     const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
@@ -1906,6 +1995,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setVerificationResumeHint(null);
             setVerifyResendUnlockAtMs(null);
             setVerifyResendTick(0);
+            setShowFreePlanConfirmModal(false);
+            setIsSwitchingToFreePlan(false);
         }
         onClose();
     };
@@ -3811,36 +3902,27 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 />
 
                                 <div style={{ marginTop: '1.5rem' }}>
-                                    {user?.accountType === 'Matchmaker' &&
-                                    subscriptionPackages.some((p) => isFreePackage(p)) ? (
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline"
-                                            style={{
-                                                width: '100%',
-                                                justifyContent: 'center',
-                                                padding: '0.85rem',
-                                                marginBottom: '0.65rem',
-                                            }}
-                                            onClick={() => {
-                                                onClose();
-                                                router.push('/search');
-                                            }}
-                                        >
-                                            Continue on Free plan
-                                        </button>
-                                    ) : null}
                                     <button
                                         className="btn btn-primary"
                                         style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
-                                        disabled={!selectedSubscriptionPackage || selectedIsCurrentPlan}
-                                        onClick={() => {
+                                        disabled={
+                                            !selectedSubscriptionPackage ||
+                                            selectedIsCurrentPlan ||
+                                            (!!selectedSubscriptionPackage &&
+                                                !isFreePackage(selectedSubscriptionPackage) &&
+                                                !selectedCanCheckout)
+                                        }
+                                        onClick={async () => {
                                             if (!selectedSubscriptionPackage || selectedIsCurrentPlan) return;
-                                            onClose();
                                             if (isFreePackage(selectedSubscriptionPackage)) {
-                                                router.push('/search');
+                                                requestFreePlanSwitch();
                                                 return;
                                             }
+                                            if (!canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user)) {
+                                                showToast('You already have premium. Switch to the free plan first to change packages.', 'info');
+                                                return;
+                                            }
+                                            onClose();
                                             const plan = resolveCheckoutPlan(selectedSubscriptionPackage);
                                             const amt = packagePrice(selectedSubscriptionPackage);
                                             router.push(
@@ -3851,8 +3933,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {selectedIsCurrentPlan
                                             ? 'Current plan'
                                             : selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage)
-                                              ? 'Continue with Free Plan'
-                                              : 'Continue to Payment'}
+                                              ? 'Continue on Free plan'
+                                              : userHasActivePremiumPlan(user)
+                                                ? 'Switch to free plan to change'
+                                                : 'Continue to Payment'}
                                     </button>
                                     <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-light)' }}>
                                         🔒 Secure payment • Plans and prices are managed in backoffice
@@ -3863,6 +3947,82 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     </div>
                 </div>
             </div>
+
+            {showFreePlanConfirmModal ? (
+                <div
+                    className="modal-overlay modal-overlay--stacked active"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="free-plan-confirm-title"
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !isSwitchingToFreePlan) {
+                            setShowFreePlanConfirmModal(false);
+                        }
+                    }}
+                >
+                    <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                        <button
+                            type="button"
+                            className="modal-close"
+                            onClick={() => !isSwitchingToFreePlan && setShowFreePlanConfirmModal(false)}
+                            aria-label="Close"
+                            disabled={isSwitchingToFreePlan}
+                        >
+                            ✕
+                        </button>
+                        <div className="modal-header">
+                            <h2 id="free-plan-confirm-title" style={{ color: '#92400e' }}>
+                                Continue on the free plan?
+                            </h2>
+                        </div>
+                        <div className="modal-body">
+                            <p
+                                style={{
+                                    marginBottom: '1rem',
+                                    fontSize: '0.88rem',
+                                    color: '#92400e',
+                                    background: '#fffbeb',
+                                    padding: '0.75rem 0.9rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #fcd34d',
+                                    lineHeight: 1.5,
+                                }}
+                            >
+                                {PREMIUM_PLAN_LOCK_NOTICE}
+                            </p>
+                            <p style={{ marginBottom: '1rem', color: '#374151', lineHeight: 1.55 }}>
+                                {freePlanWarningMessage}
+                            </p>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => setShowFreePlanConfirmModal(false)}
+                                    disabled={isSwitchingToFreePlan}
+                                >
+                                    Keep premium
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleConfirmFreePlanSwitch()}
+                                    disabled={isSwitchingToFreePlan}
+                                    style={{
+                                        padding: '0.6rem 1.1rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #b45309',
+                                        background: isSwitchingToFreePlan ? '#fde68a' : 'white',
+                                        color: '#92400e',
+                                        fontWeight: 600,
+                                        cursor: isSwitchingToFreePlan ? 'not-allowed' : 'pointer',
+                                    }}
+                                >
+                                    {isSwitchingToFreePlan ? 'Switching…' : 'Yes, continue on free plan'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
             {/* Profile Detail Modal */}
             <div className={`modal-overlay profile-detail-modal ${activeModal === 'profile' ? 'active' : ''}`} id="profileDetailModal" onClick={handleOverlayClick}>

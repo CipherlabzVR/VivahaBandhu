@@ -12,7 +12,7 @@ import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions'
 import { religionFilterMatches } from '../utils/religionMatch';
 
 import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
-import { excludeOwnedProfilesFromBrowse } from '../utils/browseProfileFilters';
+import { excludeOwnedProfilesFromBrowse, normalizeBrowseProfiles, readProfileMatchScore, matchScoreBadgeColors } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import PreferredSearchProfilePicker from './PreferredSearchProfilePicker';
 import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
@@ -511,7 +511,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             const ok = (res.statusCode === 200 || res.statusCode === 1) && res.result;
             if (ok) {
                 const raw = res.result.profiles || res.result.Profiles || [];
-                const filtered = excludeOwnedProfilesFromBrowse(raw, ownedIds);
+                const filtered = excludeOwnedProfilesFromBrowse(normalizeBrowseProfiles(raw), ownedIds);
                 setProfiles(filtered);
                 setTotalCount(
                     ownedIds.size > 0 && filtered.length !== raw.length
@@ -963,6 +963,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                             const isPremium = !!(profile.isPremium || profile.IsPremium);
                             const isManaged = profileHasManagedBadge(profile);
+                            const matchScore = preferredSearch ? readProfileMatchScore(profile) : null;
+                            const matchColors = matchScore != null ? matchScoreBadgeColors(matchScore) : null;
                             const cardStyle: React.CSSProperties = {
                                 borderRadius: '20px',
                                 overflow: 'hidden',
@@ -980,6 +982,25 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                     onOpenProfileDetail(profile);
                                 }} className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-xl transition-shadow relative" style={cardStyle}>
                                     <span style={{ position: 'absolute', top: '15px', right: '15px', backgroundColor: 'var(--primary)', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, zIndex: 10 }}>Verified</span>
+                                    {matchScore != null && matchColors ? (
+                                        <span
+                                            style={{
+                                                position: 'absolute',
+                                                top: '48px',
+                                                right: '15px',
+                                                backgroundColor: matchColors.background,
+                                                color: matchColors.color,
+                                                padding: '4px 12px',
+                                                borderRadius: '20px',
+                                                fontSize: '12px',
+                                                fontWeight: 700,
+                                                zIndex: 10,
+                                                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                                            }}
+                                        >
+                                            {matchScore}% Match
+                                        </span>
+                                    ) : null}
                                     {(isManaged || isPremium) && (
                                         <span style={{ position: 'absolute', top: '15px', left: '15px', zIndex: 10, display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                                             {isPremium && <PremiumBadge variant="compact" />}
@@ -1010,7 +1031,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '15px', borderTop: '1px solid #eee' }}>
                                             <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
-                                                {preferredSearch && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
+                                                {matchScore != null ? `${matchScore}% Match` : 'New Match!'}
                                             </span>
                                             <div style={{ display: 'flex', gap: '10px' }}>
                                                 {(() => {

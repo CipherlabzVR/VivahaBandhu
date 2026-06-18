@@ -32,6 +32,7 @@ import { markManagedProfileDraftCompleted } from '../../utils/managedProfileDraf
 import {
     isBasicProfileOnlyAccountType,
     isFamilyParentAccountType,
+    hideMainAccountSubscriptionDaysRemaining,
     isRelationAccountType,
     displayMatrimonialAccountType,
 } from '../../utils/matrimonialAccountTypes';
@@ -1744,33 +1745,21 @@ function ProfilePageContent() {
             setIsCancellingSubscription(true);
             const res = await matrimonialService.cancelSubscription(Number(user.id));
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                const r = (res?.result ?? {}) as Record<string, any>;
-                const stillSubscribed = (r.isSubscribed ?? r.IsSubscribed) === true;
-                const cancelled =
-                    (r.subscriptionCancelled ?? r.SubscriptionCancelled) === true;
-                const subscribedUntil =
-                    r.subscribedUntil ?? r.SubscribedUntil ?? r.subscriptionUntilUtc ?? r.SubscriptionUntilUtc;
-                if (stillSubscribed) {
-                    updateUser?.({
-                        isSubscribed: true,
-                        subscriptionCancelled: cancelled,
-                        ...(subscribedUntil
-                            ? {
-                                  subscriptionExpiresAt: new Date(String(subscribedUntil)).toISOString(),
-                                  subscriptionIsLifetime: false,
-                              }
-                            : {}),
-                    });
-                } else {
-                    updateUser?.({
-                        isSubscribed: false,
-                        subscriptionCancelled: false,
-                        subscriptionExpiresAt: undefined,
-                        subscriptionIsLifetime: false,
-                        showContactInformation: true,
-                    });
-                }
+                updateUser?.({
+                    isSubscribed: false,
+                    subscriptionCancelled: false,
+                    subscriptionExpiresAt: undefined,
+                    subscriptionIsLifetime: false,
+                    showContactInformation: true,
+                    ...(canManageSubAccounts(user.accountType)
+                        ? { matchmakerTier: undefined, matchmakerCanAddClients: false }
+                        : {}),
+                });
                 setShowCancelSubscriptionModal(false);
+                if (canManageSubAccounts(user.accountType)) {
+                    window.dispatchEvent(new CustomEvent('sub-accounts-changed'));
+                    fetchSubAccounts();
+                }
                 showToast(res?.message || 'Subscription cancelled.', 'success');
             } else {
                 showToast(res?.message || 'Failed to cancel subscription.', 'error');
@@ -1864,6 +1853,20 @@ function ProfilePageContent() {
                         matchmakerCanAddClients: isMatchmakerPaidTier(user.matchmakerTier)
                             && nextCount < (user.matchmakerMaxClientProfiles ?? 0),
                     });
+                } else if (isFamilyParentAccountType(user.accountType)) {
+                    const r = (res?.result ?? {}) as Record<string, unknown>;
+                    const purchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
+                    const consumed = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
+                    if (purchased != null || consumed != null) {
+                        updateUser?.({
+                            familySubAccountSlotsPurchased:
+                                purchased != null ? Number(purchased) : user.familySubAccountSlotsPurchased,
+                            familySubAccountSlotsConsumed:
+                                consumed != null ? Number(consumed) : user.familySubAccountSlotsConsumed,
+                        });
+                    } else {
+                        void refreshFamilySubAccountSlots();
+                    }
                 }
                 showToast(`${fullName} has been removed.`, 'success');
             } else {
@@ -2680,7 +2683,7 @@ function ProfilePageContent() {
                                         })}
                                     </span>
                                 )}
-                                {user.isSubscribed && subscriptionRemainingDisplay ? (
+                                {user.isSubscribed && subscriptionRemainingDisplay && !hideMainAccountSubscriptionDaysRemaining(user.accountType) ? (
                                     <span
                                         className="badge"
                                         style={{
@@ -2847,7 +2850,7 @@ function ProfilePageContent() {
                                 setIsCompletionModalOpen(true);
                             }}>Edit Detailed Profile</button>
                         )}
-                        {user?.id && (
+                        {user?.id && !isBasicProfileOnlyAccountType(user.accountType) && (
                             <button
                                 type="button"
                                 className="btn btn-outline"
@@ -3069,22 +3072,6 @@ function ProfilePageContent() {
                                         <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
                                             Pay for a sub-account slot to activate premium on your account. Create a managed profile when ready — premium also applies to each managed profile.
                                         </div>
-                                        {user.isSubscribed && subscriptionRemainingDisplay ? (
-                                            <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8, lineHeight: 1.45 }}>
-                                                <strong style={{ fontSize: '0.95rem' }}>
-                                                    {subscriptionRemainingDisplay.primary}
-                                                </strong>
-                                                {subscriptionRemainingDisplay.secondary ? (
-                                                    <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
-                                                        {subscriptionRemainingDisplay.secondary}
-                                                        {' · '}
-                                                        {subscriptionPeriodLabel}
-                                                    </span>
-                                                ) : (
-                                                    <span style={{ marginLeft: 6 }}>({subscriptionPeriodLabel})</span>
-                                                )}
-                                            </div>
-                                        ) : null}
                                         <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8 }}>
                                             {subSlotsRemaining > 0
                                                 ? `${subSlotsRemaining} slot(s) ready to create · ${subSlotsConsumed}/${subSlotsPurchased} used`
@@ -3301,9 +3288,9 @@ function ProfilePageContent() {
                             </div>
                             <div className="modal-body">
                                 <p style={{ marginBottom: '1rem', color: '#374151', lineHeight: 1.55 }}>
-                                    {user?.subscriptionIsLifetime
-                                        ? 'You will lose premium benefits immediately. You can subscribe again whenever you like.'
-                                        : 'You will keep your premium benefits until the end of your current paid period, and you can reactivate any time before then. After the period ends, premium features turn off until you subscribe again.'}
+                                    {canManageSubAccounts(user?.accountType)
+                                        ? 'Premium features and managed profiles will be disabled immediately. You can subscribe again whenever you like.'
+                                        : 'Premium features will be disabled immediately. You can subscribe again whenever you like.'}
                                 </p>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
                                     <button
@@ -3490,6 +3477,7 @@ function ProfilePageContent() {
                                         detailLine={`${subAccount.age ? `${subAccount.age} yrs` : '—'} • ${subAccount.cityOfResidence || subAccount.gender || 'Profile'} • ${subAccount.phoneNumber || '—'}`}
                                         subscriptionLine={formatSubAccountSubscription(subAccount)}
                                         footerLine="Listed in browse · Managed by you · No separate login"
+                                        onViewHoroscope={(src) => setHoroscopeViewSrc(src)}
                                     />
                                 ))
                             ) : (
@@ -3614,7 +3602,6 @@ function ProfilePageContent() {
                                     }
                                     if (
                                         matchmakerClientLimitState === 'needs_plan'
-                                        || matchmakerClientLimitState === 'upgrade_for_more'
                                     ) {
                                         openMatchmakerUpgradeModal();
                                         return;
@@ -3623,10 +3610,8 @@ function ProfilePageContent() {
                             >
                                 {matchmakerClientLimitState === 'can_create'
                                     ? '+ Add New Profile'
-                                    : matchmakerClientLimitState === 'absolute_max'
-                                        ? "Can't add more accounts"
-                                        : matchmakerClientLimitState === 'upgrade_for_more'
-                                            ? 'Upgrade for more profiles'
+                                        : matchmakerClientLimitState === 'absolute_max'
+                                            ? "Can't add more accounts"
                                             : 'Upgrade to add clients'}
                             </button>
                         </div>
@@ -3640,16 +3625,16 @@ function ProfilePageContent() {
                                 Choose a Matchmaker plan to unlock client profile slots.
                             </p>
                         )}
-                        {matchmakerClientLimitState === 'upgrade_for_more' && (
+                        {matchmakerClientLimitState === 'absolute_max' && matchmakerClientsUsed >= matchmakerClientsMax && user.isSubscribed ? (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                You have used all {matchmakerClientsMax} client profile slot(s). Upgrade your plan to add more (up to {matchmakerPlatformMaxClients} profiles).
+                                You have used all {matchmakerClientsMax} client profile slot(s) on your current plan. To change to a different premium plan, switch to the free plan first from Subscription settings.
                             </p>
-                        )}
-                        {matchmakerClientLimitState === 'absolute_max' && (
+                        ) : null}
+                        {matchmakerClientLimitState === 'absolute_max' && !(matchmakerClientsUsed >= matchmakerClientsMax && user.isSubscribed) ? (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have reached the maximum of {matchmakerClientsMax} client profile{matchmakerClientsMax === 1 ? '' : 's'} for your plan. Remove a profile to add another — you cannot add more accounts at this tier.
                             </p>
-                        )}
+                        ) : null}
                         {subAccounts.length > 3 ? (
                             <p className="managed-sub-accounts-scroll-hint">
                                 Showing 3 accounts at a time — scroll to see all {subAccounts.length}.
@@ -3672,6 +3657,7 @@ function ProfilePageContent() {
                                         badgeKind="matchmaker-client"
                                         detailLine={`${subAccount.email || '—'}${subAccount.phoneNumber ? ` • ${subAccount.phoneNumber}` : ''}${subAccount.age ? ` • ${subAccount.age} years` : ''}`}
                                         footerLine="Listed in browse with matchmaker badge · Messages and interest grouped by client"
+                                        onViewHoroscope={(src) => setHoroscopeViewSrc(src)}
                                     />
                                 ))
                             ) : (
