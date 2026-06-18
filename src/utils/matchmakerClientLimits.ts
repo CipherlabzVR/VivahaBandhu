@@ -46,15 +46,12 @@ export function resolveMatchmakerClientLimitState(input: {
     }
 
     if (clientsUsed >= clientsMax) {
-        if (upgradeMatchmakerPackages(matchmakerPackages, clientsMax).length > 0) {
-            return 'upgrade_for_more';
-        }
+        // Paid users cannot upgrade to a higher premium tier — only cancel to free first.
         const platformMax = platformMaxMatchmakerClients(matchmakerPackages);
         if (clientsMax >= platformMax) {
             return 'absolute_max';
         }
-        // At capacity on current tier but platform allows higher — show upgrade (e.g. while packages load).
-        return 'upgrade_for_more';
+        return 'absolute_max';
     }
 
     return 'can_create';

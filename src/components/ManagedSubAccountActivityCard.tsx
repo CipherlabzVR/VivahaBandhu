@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { apiInstantToMs } from '../utils/deviceDateTime';
 import ClientProfileBadge from './ClientProfileBadge';
 import ManagedProfileBadge from './ManagedProfileBadge';
+import { isManagedSubAccountActive } from '../utils/managedSubAccounts';
 
 type ManagedSubAccountBadgeKind = 'matchmaker-client' | 'family-managed' | 'none';
 
@@ -17,6 +18,10 @@ type ManagedSubAccountRow = {
     gender?: string;
     phoneNumber?: string;
     email?: string;
+    status?: number | string;
+    horoscopeDocument?: string;
+    horoscopeDocument2?: string;
+    horoscopeDocument3?: string;
 };
 
 type ManagedSubActivityRow = {
@@ -47,6 +52,7 @@ type ManagedSubAccountActivityCardProps = {
     footerLine?: string;
     /** Premium subscription expiry for this managed profile (family parents). */
     subscriptionLine?: string;
+    onViewHoroscope?: (src: string) => void;
 };
 
 function badgeButtonStyle(bg: string, color: string): CSSProperties {
@@ -78,6 +84,7 @@ export default function ManagedSubAccountActivityCard({
     detailLine,
     footerLine,
     subscriptionLine,
+    onViewHoroscope,
 }: ManagedSubAccountActivityCardProps) {
     const unreadInterest = activity?.unreadInterestCount ?? 0;
     const unreadMessages = activity?.unreadMessageCount ?? 0;
@@ -94,6 +101,12 @@ export default function ManagedSubAccountActivityCard({
     const fullName =
         `${subAccount.firstName || ''} ${subAccount.lastName || ''}`.trim() || 'Profile';
     const isDeleting = deletingSubAccountId === subAccount.id;
+    const isActive = isManagedSubAccountActive(subAccount);
+    const horoscopePages = [
+        { label: 'page 1', url: subAccount.horoscopeDocument },
+        { label: 'page 2', url: subAccount.horoscopeDocument2 },
+        { label: 'page 3', url: subAccount.horoscopeDocument3 },
+    ].filter((p) => p.url && String(p.url).trim().length > 0);
 
     let displayBadge: ReactNode = null;
     if (badgeKind === 'matchmaker-client') {
@@ -112,9 +125,10 @@ export default function ManagedSubAccountActivityCard({
         <div
             style={{
                 padding: '1rem',
-                background: '#FDF8F3',
+                background: isActive ? '#FDF8F3' : '#f3f4f6',
                 borderRadius: '12px',
-                border: '1px solid #f1e8dc',
+                border: isActive ? '1px solid #f1e8dc' : '1px solid #e5e7eb',
+                opacity: isActive ? 1 : 0.92,
             }}
         >
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
@@ -186,11 +200,31 @@ export default function ManagedSubAccountActivityCard({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
                         <h5 style={{ fontWeight: 600, fontSize: '1rem', margin: 0 }}>{fullName}</h5>
                         {displayBadge}
+                        {!isActive ? (
+                            <span
+                                style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    letterSpacing: '0.02em',
+                                    color: '#b91c1c',
+                                    background: '#fee2e2',
+                                    padding: '0.12rem 0.5rem',
+                                    borderRadius: '999px',
+                                }}
+                            >
+                                Disabled
+                            </span>
+                        ) : null}
                     </div>
+                    {!isActive ? (
+                        <p style={{ color: '#b45309', fontSize: '0.82rem', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
+                            Premium ended — pay for a plan again to re-enable this profile in browse.
+                        </p>
+                    ) : null}
                     {detailLine ? (
                         <p style={{ color: '#6B6560', fontSize: '0.875rem', wordBreak: 'break-word' }}>{detailLine}</p>
                     ) : null}
-                    {subscriptionLine ? (
+                    {subscriptionLine && isActive ? (
                         <p style={{ color: '#92400e', fontSize: '0.82rem', marginTop: '0.35rem', fontWeight: 500 }}>
                             {subscriptionLine}
                         </p>
@@ -198,9 +232,32 @@ export default function ManagedSubAccountActivityCard({
                     {footerLine ? (
                         <p style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '0.25rem' }}>{footerLine}</p>
                     ) : null}
+                    {horoscopePages.length > 0 && onViewHoroscope ? (
+                        <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                            {horoscopePages.map((page) => (
+                                <button
+                                    key={page.label}
+                                    type="button"
+                                    onClick={() => onViewHoroscope(page.url!)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        padding: 0,
+                                        color: 'var(--primary)',
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                        fontSize: '0.82rem',
+                                        fontWeight: 600,
+                                    }}
+                                >
+                                    View Horoscope — {page.label}
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {(unreadInterest > 0 || recentInterestActivity.length > 0) && (
+                    {isActive && (unreadInterest > 0 || recentInterestActivity.length > 0) && (
                         <button
                             type="button"
                             onClick={() => onInterestClick(subAccount.id)}
@@ -210,7 +267,7 @@ export default function ManagedSubAccountActivityCard({
                             {unreadInterest > 0 ? `${unreadInterest} interest` : 'Interest'}
                         </button>
                     )}
-                    {unreadMessages > 0 && (
+                    {isActive && unreadMessages > 0 && (
                         <button
                             type="button"
                             onClick={() => onMessagesClick(subAccount.id)}
@@ -220,15 +277,17 @@ export default function ManagedSubAccountActivityCard({
                             {unreadMessages} message{unreadMessages === 1 ? '' : 's'}
                         </button>
                     )}
-                    <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.75rem' }}
-                        onClick={() => onViewProfile(subAccount)}
-                    >
-                        View profile
-                    </button>
-                    {onEdit ? (
+                    {isActive ? (
+                        <button
+                            type="button"
+                            className="btn btn-outline"
+                            style={{ fontSize: '0.85rem', padding: '0.4rem 0.75rem' }}
+                            onClick={() => onViewProfile(subAccount)}
+                        >
+                            View profile
+                        </button>
+                    ) : null}
+                    {isActive && onEdit ? (
                         <button
                             type="button"
                             className="btn btn-outline"

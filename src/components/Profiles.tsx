@@ -12,7 +12,7 @@ import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBad
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
-import { excludeSelfFromFeaturedBrowse } from '../utils/browseProfileFilters';
+import { excludeSelfFromFeaturedBrowse, normalizeBrowseProfiles, readProfileMatchScore } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
 import {
@@ -47,7 +47,8 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 const recentCount = uidNum != null && !Number.isNaN(uidNum) ? 24 : 4;
 
                 const commit = (items: unknown, matchedFlag: boolean) => {
-                    const genderFiltered = filterProfilesForBrowse(items, user, null, subAccounts);
+                    const normalized = normalizeBrowseProfiles(items);
+                    const genderFiltered = filterProfilesForBrowse(normalized, user, null, subAccounts);
                     setProfiles(excludeSelfFromFeaturedBrowse(uidNum, subAccounts, genderFiltered));
                     setIsMatched(matchedFlag);
                 };
@@ -201,6 +202,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 {profiles.map((profile) => {
                     const isPremium = !!(profile.isPremium || profile.IsPremium);
                     const isManaged = profileHasManagedBadge(profile);
+                    const matchScore = isMatched ? readProfileMatchScore(profile) : null;
                     const photoSrc = profile.profilePhoto || getDefaultAvatarDataUri({
                         firstName: profile.firstName,
                         lastName: profile.lastName,
@@ -243,7 +245,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                 </div>
                                 <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                                     <span className="text-primary font-semibold">
-                                        {isMatched && profile.matchScore ? `${profile.matchScore}% Match` : 'New Match!'}
+                                        {matchScore != null ? `${matchScore}% Match` : 'New Match!'}
                                     </span>
                                     <div className="flex gap-2">
                                         {(() => {

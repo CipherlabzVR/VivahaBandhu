@@ -208,3 +208,33 @@ export function isUserCurrentPackage(
     if (!current) return false;
     return packageId(pkg) === packageId(current);
 }
+
+/** True when the signed-in user already has an active paid subscription. */
+export function userHasActivePremiumPlan(user: UserPlanContext): boolean {
+    return user?.isSubscribed === true;
+}
+
+/**
+ * Premium subscribers may only move to the free plan — not switch between paid tiers/packages.
+ * Free users may select any package.
+ */
+export function canUserSelectSubscriptionPackage(
+    pkg: PublicMatrimonialPackage,
+    packages: PublicMatrimonialPackage[],
+    user: UserPlanContext
+): boolean {
+    if (!userHasActivePremiumPlan(user)) return true;
+    return isFreePackage(pkg);
+}
+
+/** Whether checkout / payment should be allowed for this package selection. */
+export function canUserCheckoutSubscriptionPackage(
+    pkg: PublicMatrimonialPackage,
+    packages: PublicMatrimonialPackage[],
+    user: UserPlanContext
+): boolean {
+    if (!userHasActivePremiumPlan(user)) {
+        return !isFreePackage(pkg);
+    }
+    return false;
+}

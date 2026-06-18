@@ -6,6 +6,7 @@ import {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
     type ReactNode,
 } from 'react';
@@ -13,6 +14,9 @@ import * as signalR from '@microsoft/signalr';
 import { useAuth } from './AuthContext';
 import { connectMatrimonialHub } from '../utils/signalrHub';
 import {
+    interestNotificationDismissKey,
+    interestNotificationId,
+    interestNotificationsMatch,
     isInterestBackNotification,
     managedProfileUserIdFromNotification,
     notificationTitleFallback,
@@ -37,6 +41,7 @@ export type MatrimonialInterestNotification = Record<string, unknown> & {
 
 type MatrimonialNotificationsContextValue = {
     interestNotifications: MatrimonialInterestNotification[];
+    unreadNotificationCount: number;
     loadingNotifications: boolean;
     refreshInterestNotifications: () => Promise<void>;
     /**
@@ -71,10 +76,34 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
     const [interestNotifications, setInterestNotifications] = useState<MatrimonialInterestNotification[]>([]);
     const [loadingNotifications, setLoadingNotifications] = useState(false);
     const [liveInterestRevision, setLiveInterestRevision] = useState(0);
+    const dismissedNotificationKeysRef = useRef<Set<string>>(new Set());
 
     const bumpLiveRevision = useCallback(() => {
         setLiveInterestRevision((r) => r + 1);
     }, []);
+
+    const withoutDismissedNotifications = useCallback(
+        (list: MatrimonialInterestNotification[]) => {
+            const dismissed = dismissedNotificationKeysRef.current;
+            if (dismissed.size === 0) return list;
+            return list.filter(
+                (n) => !dismissed.has(interestNotificationDismissKey(n as Record<string, unknown>))
+            );
+        },
+        []
+    );
+
+    const removeNotificationFromList = useCallback(
+        (notification: MatrimonialInterestNotification) => {
+            const dismissKey = interestNotificationDismissKey(notification as Record<string, unknown>);
+            dismissedNotificationKeysRef.current.add(dismissKey);
+            setInterestNotifications((prev) =>
+                prev.filter((n) => !interestNotificationsMatch(n as Record<string, unknown>, notification as Record<string, unknown>))
+            );
+            bumpLiveRevision();
+        },
+        [bumpLiveRevision]
+    );
 
     const refreshInterestNotifications = useCallback(async () => {
         if (!user?.id) return;
@@ -90,16 +119,21 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
             const data = await response.json();
             const all = data?.result || data?.Result || [];
             const list = Array.isArray(all) ? all : [];
-            setInterestNotifications(list.map((n: MatrimonialInterestNotification) => normalizeNotification(n)));
+            setInterestNotifications(
+                withoutDismissedNotifications(
+                    list.map((n: MatrimonialInterestNotification) => normalizeNotification(n))
+                )
+            );
         } catch {
             // keep header lightweight
         } finally {
             setLoadingNotifications(false);
         }
-    }, [user?.id]);
+    }, [user?.id, withoutDismissedNotifications]);
 
     useEffect(() => {
         if (!user?.id) {
+            dismissedNotificationKeysRef.current.clear();
             setInterestNotifications([]);
             setLiveInterestRevision(0);
             return;
@@ -155,27 +189,29 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                 const liveTitle = payload?.title ?? payload?.Title;
                 const liveDesc = payload?.description ?? payload?.Description;
                 const inferred = { title: liveTitle, description: liveDesc } as Record<string, unknown>;
-                setInterestNotifications((prev) => [
-                    {
-                        id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                        title: (liveTitle as string) || notificationTitleFallback(inferred),
-                        description:
-                            (liveDesc as string) ||
-                            (isInterestBackNotification(inferred)
-                                ? 'A member reciprocated — interest back.'
-                                : 'Someone is interested in your profile.'),
-                        referenceId:
-                            (payload.referenceId ??
-                                payload.ReferenceId ??
-                                payload.interestedUserId ??
-                                payload.InterestedUserId) as number | undefined,
-                        managedProfileUserId: managedProfileUserIdFromNotification(payload),
-                        referenceType: 'MatrimonialInterest',
-                        isRead: false,
-                        createdOn: (payload.createdOn as string) || now,
-                    },
-                    ...prev,
-                ]);
+                setInterestNotifications((prev) =>
+                    withoutDismissedNotifications([
+                        {
+                            id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                            title: (liveTitle as string) || notificationTitleFallback(inferred),
+                            description:
+                                (liveDesc as string) ||
+                                (isInterestBackNotification(inferred)
+                                    ? 'A member reciprocated — interest back.'
+                                    : 'Someone is interested in your profile.'),
+                            referenceId:
+                                (payload.referenceId ??
+                                    payload.ReferenceId ??
+                                    payload.interestedUserId ??
+                                    payload.InterestedUserId) as number | undefined,
+                            managedProfileUserId: managedProfileUserIdFromNotification(payload),
+                            referenceType: 'MatrimonialInterest',
+                            isRead: false,
+                            createdOn: (payload.createdOn as string) || now,
+                        },
+                        ...prev,
+                    ])
+                );
                 bumpLiveRevision();
             });
 
@@ -205,11 +241,13 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                 void connection.stop();
             }
         };
-    }, [user?.id, bumpLiveRevision]);
+    }, [user?.id, bumpLiveRevision, withoutDismissedNotifications]);
 
     const markInterestNotificationRead = useCallback(
         async (notification: MatrimonialInterestNotification) => {
-            const notificationId = notification?.id;
+            removeNotificationFromList(notification);
+
+            const notificationId = interestNotificationId(notification as Record<string, unknown>);
             if (user?.id && notificationId != null && !String(notificationId).startsWith('live-')) {
                 try {
                     await fetch(
@@ -220,15 +258,16 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                     // no-op
                 }
             }
-            setInterestNotifications((prev) => prev.filter((n) => n.id !== notificationId));
-            bumpLiveRevision();
         },
-        [user?.id, bumpLiveRevision]
+        [user?.id, removeNotificationFromList]
     );
+
+    const unreadNotificationCount = interestNotifications.length;
 
     const value = useMemo(
         () => ({
             interestNotifications,
+            unreadNotificationCount,
             loadingNotifications,
             refreshInterestNotifications,
             liveInterestRevision,
@@ -236,6 +275,7 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
         }),
         [
             interestNotifications,
+            unreadNotificationCount,
             loadingNotifications,
             refreshInterestNotifications,
             liveInterestRevision,

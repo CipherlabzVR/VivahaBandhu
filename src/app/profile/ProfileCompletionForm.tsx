@@ -1171,8 +1171,14 @@ export default function ProfileCompletionForm({
                 motherReligion: v('motherReligion') || prev.motherReligion,
                 motherCaste: vOpt('motherCaste') || prev.motherCaste,
                 motherRemarks: vOpt('motherRemarks') || prev.motherRemarks,
-                partnerMinAge: String(p.partnerMinAge ?? p.PartnerMinAge ?? prev.partnerMinAge),
-                partnerMaxAge: String(p.partnerMaxAge ?? p.PartnerMaxAge ?? prev.partnerMaxAge),
+                partnerMinAge: (() => {
+                    const n = Number(p.partnerMinAge ?? p.PartnerMinAge ?? 0);
+                    return n > 0 ? String(n) : '';
+                })(),
+                partnerMaxAge: (() => {
+                    const n = Number(p.partnerMaxAge ?? p.PartnerMaxAge ?? 0);
+                    return n > 0 ? String(n) : '';
+                })(),
                 partnerEatingHabits: vOpt('partnerEatingHabits') || prev.partnerEatingHabits,
                 partnerDrinkingHabits: vOpt('partnerDrinkingHabits') || prev.partnerDrinkingHabits,
                 partnerSmokingHabits: vOpt('partnerSmokingHabits') || prev.partnerSmokingHabits,
@@ -1505,19 +1511,27 @@ export default function ProfileCompletionForm({
         } else if (currentStep === 5) {
             const minRaw = formData.partnerMinAge.toString().trim();
             const maxRaw = formData.partnerMaxAge.toString().trim();
-            if (!minRaw) errors.partnerMinAge = 'Please enter the minimum partner age.';
-            if (!maxRaw) errors.partnerMaxAge = 'Please enter the maximum partner age.';
-            if (!errors.partnerMinAge && !errors.partnerMaxAge) {
-                const minAge = parseInt(minRaw, 10);
-                const maxAge = parseInt(maxRaw, 10);
-                if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
-                    errors.partnerMinAge = 'Partner age must be a valid number.';
-                    errors.partnerMaxAge = 'Partner age must be a valid number.';
-                } else {
-                    if (minAge < 18) errors.partnerMinAge = 'Minimum partner age must be at least 18.';
-                    if (maxAge < 18) errors.partnerMaxAge = 'Maximum partner age must be at least 18.';
-                    if (!errors.partnerMinAge && !errors.partnerMaxAge && maxAge <= minAge) {
-                        errors.partnerMaxAge = 'Maximum partner age must be greater than minimum age.';
+            const minUnset = !minRaw || minRaw === '0';
+            const maxUnset = !maxRaw || maxRaw === '0';
+            const partnerAgesOptional = isManagedFlow;
+
+            if (partnerAgesOptional && minUnset && maxUnset) {
+                // Backend treats 0 as "not specified" for managed profiles.
+            } else {
+                if (minUnset) errors.partnerMinAge = 'Please enter the minimum partner age.';
+                if (maxUnset) errors.partnerMaxAge = 'Please enter the maximum partner age.';
+                if (!errors.partnerMinAge && !errors.partnerMaxAge) {
+                    const minAge = parseInt(minRaw, 10);
+                    const maxAge = parseInt(maxRaw, 10);
+                    if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
+                        errors.partnerMinAge = 'Partner age must be a valid number.';
+                        errors.partnerMaxAge = 'Partner age must be a valid number.';
+                    } else {
+                        if (minAge < 18) errors.partnerMinAge = 'Minimum partner age must be at least 18.';
+                        if (maxAge < 18) errors.partnerMaxAge = 'Maximum partner age must be at least 18.';
+                        if (!errors.partnerMinAge && !errors.partnerMaxAge && maxAge <= minAge) {
+                            errors.partnerMaxAge = 'Maximum partner age must be greater than minimum age.';
+                        }
                     }
                 }
             }
@@ -1933,16 +1947,14 @@ export default function ProfileCompletionForm({
             return;
         }
 
-        // Defence-in-depth: re-run the partner age check on final submit so a
-        // user who jumped backwards and re-entered step 5 from a sidebar /
-        // stepper click can't bypass the rule.
-        if (!validateStep(5)) {
-            setStep(5);
-            return;
-        }
-
         if (managedCreate || managedEdit) {
             if (!validateManagedBasicFields()) return;
+            for (let profileStep = 1; profileStep <= 5; profileStep += 1) {
+                if (!validateStep(profileStep)) {
+                    setStep(profileStep);
+                    return;
+                }
+            }
 
             setLoading(true);
             setSubmitError('');
@@ -1975,6 +1987,14 @@ export default function ProfileCompletionForm({
             } finally {
                 setLoading(false);
             }
+            return;
+        }
+
+        // Defence-in-depth: re-run the partner age check on final submit so a
+        // user who jumped backwards and re-entered step 5 from a sidebar /
+        // stepper click can't bypass the rule.
+        if (!validateStep(5)) {
+            setStep(5);
             return;
         }
 

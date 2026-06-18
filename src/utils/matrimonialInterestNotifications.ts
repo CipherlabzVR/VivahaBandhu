@@ -45,3 +45,35 @@ export function managedProfileUserIdFromNotification(
             notification.ReservationId
     );
 }
+
+export function interestNotificationId(
+    notification: Record<string, unknown> | undefined | null
+): string | number | null | undefined {
+    if (!notification) return undefined;
+    return (notification.id ?? notification.Id) as string | number | null | undefined;
+}
+
+/** Stable key for deduping / tracking dismissed notifications (handles id type mismatches). */
+export function interestNotificationDismissKey(
+    notification: Record<string, unknown> | undefined | null
+): string {
+    if (!notification) return '';
+    const id = interestNotificationId(notification);
+    if (id != null && String(id).trim() !== '') return `id:${String(id)}`;
+    const ref = referenceIdFromNotification(notification);
+    const sub = managedProfileUserIdFromNotification(notification);
+    const created = String(notification.createdOn ?? notification.CreatedOn ?? '');
+    const title = String(notification.title ?? notification.Title ?? '');
+    return `ref:${sub ?? 'none'}:${ref}:${created}:${title}`;
+}
+
+export function interestNotificationsMatch(
+    a: Record<string, unknown> | undefined | null,
+    b: Record<string, unknown> | undefined | null
+): boolean {
+    if (!a || !b) return false;
+    const idA = interestNotificationId(a);
+    const idB = interestNotificationId(b);
+    if (idA != null && idB != null && String(idA) === String(idB)) return true;
+    return interestNotificationDismissKey(a) === interestNotificationDismissKey(b);
+}

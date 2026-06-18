@@ -40,3 +40,8 @@ export function displayMatrimonialAccountType(accountType?: string | null): stri
     }
     return normalizedAccountType(accountType) || 'Self';
 }
+
+/** Parents/Relation manage sub-profiles — subscription days remaining belongs on those profiles, not the manager account. */
+export function hideMainAccountSubscriptionDaysRemaining(accountType?: string | null): boolean {
+    return isFamilyParentAccountType(accountType);
+}

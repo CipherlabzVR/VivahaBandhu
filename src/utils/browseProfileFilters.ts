@@ -39,3 +39,30 @@ export function excludeSelfFromFeaturedBrowse(
     const owned = ownedBrowseUserIds(viewerUserId, subAccounts);
     return excludeOwnedProfilesFromBrowse(items, owned).slice(0, limit);
 }
+
+/** Preferred-search compatibility score from API (camelCase or PascalCase). */
+export function readProfileMatchScore(profile: Record<string, unknown> | null | undefined): number | null {
+    if (!profile) return null;
+    const raw = (profile as { matchScore?: unknown; MatchScore?: unknown }).matchScore
+        ?? (profile as { MatchScore?: unknown }).MatchScore;
+    if (raw == null || raw === '') return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(Math.min(100, Math.max(0, n)));
+}
+
+export function normalizeBrowseProfileRow<T extends Record<string, unknown>>(row: T): T & { matchScore?: number } {
+    const matchScore = readProfileMatchScore(row);
+    return matchScore != null ? { ...row, matchScore } : row;
+}
+
+export function normalizeBrowseProfiles<T extends Record<string, unknown>>(items: unknown): (T & { matchScore?: number })[] {
+    const arr = Array.isArray(items) ? (items as T[]) : [];
+    return arr.map((row) => normalizeBrowseProfileRow(row));
+}
+
+export function matchScoreBadgeColors(score: number): { background: string; color: string } {
+    if (score >= 75) return { background: '#15803d', color: '#ffffff' };
+    if (score >= 50) return { background: '#b45309', color: '#ffffff' };
+    return { background: '#475569', color: '#ffffff' };
+}

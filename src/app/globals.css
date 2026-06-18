@@ -1308,6 +1308,10 @@
             visibility: visible;
         }
 
+        .modal-overlay.modal-overlay--stacked {
+            z-index: 2500;
+        }
+
         .modal {
             background: var(--white);
             border-radius: 20px;
