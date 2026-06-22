@@ -15,13 +15,22 @@ import {
 
     BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY,
 
+    BANK_TRANSFER_REJECTED_MESSAGE,
+
+    BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY,
+
     PENDING_BANK_PREMIUM_STORAGE_KEY,
+
+    PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
+
+    PENDING_BANK_TRANSFER_CHANGED_EVENT,
 
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
 
 } from '../constants/premiumActivation';
 
 import { isMatchmakerPaidTier } from '../constants/subscription';
+import { isMatrimonialSubscriptionNotification } from '../utils/matrimonialInterestNotifications';
 
 
 
@@ -83,6 +92,10 @@ async function fetchMatrimonialSubscriptionSnapshot(
 
         r.matchmakerManagedClientCount ?? r.MatchmakerManagedClientCount;
 
+    const selectionPending =
+
+        (r.matchmakerClientSelectionPending ?? r.MatchmakerClientSelectionPending) === true;
+
     const maxNum = maxC != null && maxC !== '' ? Number(maxC) : undefined;
 
     const usedNum = usedC != null && usedC !== '' ? Number(usedC) : undefined;
@@ -93,7 +106,7 @@ async function fetchMatrimonialSubscriptionSnapshot(
 
     if (typeof maxNum === 'number' && Number.isFinite(maxNum) && maxNum > 0 && typeof usedNum === 'number' && Number.isFinite(usedNum)) {
 
-        canAdd = isMatchmakerPaidTier(tier) && usedNum < maxNum;
+        canAdd = !selectionPending && isMatchmakerPaidTier(tier) && usedNum < maxNum;
 
     }
 
@@ -133,9 +146,79 @@ async function fetchMatrimonialSubscriptionSnapshot(
 
         ...(typeof canAdd === 'boolean' ? { matchmakerCanAddClients: canAdd } : {}),
 
+        ...(selectionPending ? { matchmakerClientSelectionPending: true } : {}),
+
         ...(subscriptionExpiresAt ? { subscriptionExpiresAt } : {}),
 
     };
+
+}
+
+
+
+function hasPendingBankTransferFlag(): boolean {
+
+    return (
+
+        localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1' ||
+
+        localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1'
+
+    );
+
+}
+
+
+
+function clearPendingBankTransferFlags(): void {
+
+    localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
+
+    localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+
+    window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
+
+}
+
+
+
+function isBankTransferRejectedNotification(n: Record<string, unknown>): boolean {
+    if (isMatrimonialSubscriptionNotification(n)) {
+        const title = String(n.title ?? n.Title ?? '').toLowerCase();
+        return title.includes('not approved') || title.includes('rejected');
+    }
+    return false;
+}
+
+
+
+async function fetchUnreadBankTransferNotifications(
+
+    userId: number,
+
+    token: string
+
+): Promise<Record<string, unknown>[]> {
+
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
+
+    const res = await fetch(
+
+        `${apiBase}/Matrimonial/GetInterestNotifications?userId=${userId}&unreadOnly=true`,
+
+        { headers: { Authorization: `Bearer ${token}` } }
+
+    );
+
+    if (!res.ok) return [];
+
+    const body = await res.json();
+
+    const all = body?.result ?? body?.Result ?? [];
+
+    const list = Array.isArray(all) ? all : [];
+
+    return list.filter((n) => isBankTransferRejectedNotification(n as Record<string, unknown>));
 
 }
 
@@ -154,7 +237,7 @@ async function fetchMatrimonialSubscriptionSnapshot(
 export default function PremiumActivationListener() {
 
     const { user, updateUser } = useAuth();
-    const { refreshInterestNotifications } = useMatrimonialNotifications();
+    const { refreshInterestNotifications, interestNotifications } = useMatrimonialNotifications();
 
 
 
@@ -162,7 +245,7 @@ export default function PremiumActivationListener() {
 
         if (typeof window === 'undefined') return;
 
-        if (localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) !== '1') return;
+        if (!hasPendingBankTransferFlag()) return;
 
         const token = getStoredToken();
 
@@ -178,13 +261,35 @@ export default function PremiumActivationListener() {
 
         try {
 
+            const rejected = await fetchUnreadBankTransferNotifications(Number(uid), token);
+
+            if (rejected.length > 0) {
+
+                clearPendingBankTransferFlags();
+
+                void refreshInterestNotifications();
+
+                if (sessionStorage.getItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY) !== '1') {
+
+                    sessionStorage.setItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY, '1');
+
+                    showToast(BANK_TRANSFER_REJECTED_MESSAGE, 'error', 6500);
+
+                }
+
+                return;
+
+            }
+
+
+
             const snap = await fetchMatrimonialSubscriptionSnapshot(Number(uid), token);
 
             if (!snap?.isSubscribed) return;
 
 
 
-            localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
+            clearPendingBankTransferFlags();
 
 
 
@@ -266,6 +371,36 @@ export default function PremiumActivationListener() {
 
     useEffect(() => {
 
+        if (typeof window === 'undefined') return;
+
+        if (!hasPendingBankTransferFlag()) return;
+
+        const rejected = interestNotifications.filter((n) =>
+
+            isBankTransferRejectedNotification(n as Record<string, unknown>)
+
+        );
+
+        if (rejected.length === 0) return;
+
+
+
+        clearPendingBankTransferFlags();
+
+        if (sessionStorage.getItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY) !== '1') {
+
+            sessionStorage.setItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY, '1');
+
+            showToast(BANK_TRANSFER_REJECTED_MESSAGE, 'error', 6500);
+
+        }
+
+    }, [interestNotifications]);
+
+
+
+    useEffect(() => {
+
         const onVisible = () => {
 
             if (document.visibilityState === 'visible') void checkBankApproval();
@@ -292,7 +427,7 @@ export default function PremiumActivationListener() {
 
         if (typeof window === 'undefined') return;
 
-        if (localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) !== '1') return;
+        if (!hasPendingBankTransferFlag()) return;
 
 
 

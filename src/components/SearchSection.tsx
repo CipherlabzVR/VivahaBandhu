@@ -184,7 +184,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
     const { user, loading: authLoading } = useAuth();
     const { ownedIds, subAccounts } = useOwnedSubAccountsForBrowse();
     const isManagedParent = canManageSubAccounts(user?.accountType);
-    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
+        onBlocked: (msg) => showToast(msg, 'info'),
+    });
     
     const [preferredSearch, setPreferredSearch] = useState(false);
     const [preferredSearchProfileId, setPreferredSearchProfileId] = useState<number | null>(null);
@@ -1153,7 +1155,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
             <PreferredSearchProfilePicker
                 open={showPreferredProfilePicker}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 selectedId={pickerDraftProfileId}
                 onSelect={setPickerDraftProfileId}
@@ -1163,7 +1165,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
             <ManagedSubAccountActionPicker
                 open={managedActionPicker.open}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 action={managedActionPicker.action}
                 selectedId={managedActionPicker.selectedId}

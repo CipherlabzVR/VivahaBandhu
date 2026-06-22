@@ -120,7 +120,7 @@ function OptionMultiSelect({
                                 }}
                                 aria-label={`Remove ${c}`}
                             >
-                                Ã—
+                                {'\u00D7'}
                             </button>
                         </span>
                     ))
@@ -560,7 +560,7 @@ function CountryMultiSelect({
                                 }}
                                 aria-label={`Remove ${c}`}
                             >
-                                Ã—
+                                {'\u00D7'}
                             </button>
                         </span>
                     ))

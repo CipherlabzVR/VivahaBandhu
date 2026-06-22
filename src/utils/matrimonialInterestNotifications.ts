@@ -11,6 +11,40 @@ export function referenceIdFromNotification(notification: Record<string, unknown
     return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+export function notificationReferenceType(
+    notification: Record<string, unknown> | undefined | null
+): string {
+    if (!notification) return '';
+    return String(notification.referenceType ?? notification.ReferenceType ?? '').trim();
+}
+
+export function isMatrimonialSubscriptionNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (notificationReferenceType(notification) === 'MatrimonialSubscription') return true;
+    const title = String(notification?.title ?? notification?.Title ?? '').toLowerCase();
+    if (!title) return false;
+    if (title.includes('bank transfer')) return true;
+    if (title.includes('sub-account slot')) return true;
+    if (title.includes('matchmaker plan')) return true;
+    if (title.includes('premium') && (
+        title.includes('activated')
+        || title.includes('ending soon')
+        || title.includes('has ended')
+        || title.includes('purchased')
+    )) {
+        return true;
+    }
+    return false;
+}
+
+export function isMatrimonialInterestNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (isMatrimonialSubscriptionNotification(notification)) return false;
+    return notificationReferenceType(notification) === 'MatrimonialInterest';
+}
+
 /** True when API / live payload indicates reciprocal interest (“interest back”), not a first-time “interested”. */
 export function isInterestBackNotification(notification: Record<string, unknown> | undefined | null): boolean {
     if (!notification) return false;

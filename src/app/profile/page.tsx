@@ -7,6 +7,7 @@ import Footer from '../../components/Footer';
 import ManagedSubAccountActivityCard from '../../components/ManagedSubAccountActivityCard';
 import SubAccountPackagePickerModal from '../../components/SubAccountPackagePickerModal';
 import MatchmakerUpgradePackageModal from '../../components/MatchmakerUpgradePackageModal';
+import { MatchmakerClientSelectionModal } from '../../components/MatchmakerClientSelectionModal';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Modals from '../../components/Modals';
@@ -39,6 +40,7 @@ import {
 import ClientProfileBadge from '../../components/ClientProfileBadge';
 import {
     isInterestBackNotification,
+    isMatrimonialInterestNotification,
     managedProfileUserIdFromNotification,
     referenceIdFromNotification,
 } from '../../utils/matrimonialInterestNotifications';
@@ -51,6 +53,7 @@ import {
     type ManagedSubAccountDetail,
 } from '../../utils/managedSubAccounts';
 import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
+import { respondToIncomingInterest } from '../../utils/respondToIncomingInterest';
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
 import { formatSubscriptionTimeRemaining, parseSubscriptionRemaining } from '../../utils/subscriptionExpiry';
 import { packagePrice, resolveCheckoutPlan, type PublicMatrimonialPackage } from '../../utils/matrimonialPackages';
@@ -310,7 +313,8 @@ function ProfilePageContent() {
         [user?.id],
     );
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
-    const { liveInterestRevision } = useMatrimonialNotifications();
+    const { liveInterestRevision, refreshInterestNotifications, interestNotifications, markInterestNotificationRead } =
+        useMatrimonialNotifications();
     const { language, setLanguage, t } = useLanguage();
 
     const subscriptionRemainingInfo = user?.subscriptionExpiresAt
@@ -553,14 +557,24 @@ function ProfilePageContent() {
                     if (mcc !== undefined && mcc !== null && String(mcc).trim() !== '') {
                         profileUpdates.matchmakerClientProfileCount = Number(mcc);
                     }
+                    const selectionPending =
+                        r.matchmakerClientSelectionPending ?? r.MatchmakerClientSelectionPending;
+                    if (selectionPending !== undefined && selectionPending !== null) {
+                        profileUpdates.matchmakerClientSelectionPending = !!selectionPending;
+                    }
                     const acctMm = ((profileUpdates.accountType || user?.accountType || '') === 'Matchmaker');
                     if (acctMm) {
                         const tierStr = profileUpdates.matchmakerTier ?? user?.matchmakerTier;
                         const maxSlots = Number(profileUpdates.matchmakerMaxClientProfiles ?? user?.matchmakerMaxClientProfiles ?? NaN);
                         const usedSlots = Number(profileUpdates.matchmakerClientProfileCount ?? NaN);
+                        const pendingSelection =
+                            profileUpdates.matchmakerClientSelectionPending
+                            ?? user?.matchmakerClientSelectionPending;
                         if (Number.isFinite(maxSlots) && maxSlots > 0 && Number.isFinite(usedSlots)) {
                             profileUpdates.matchmakerCanAddClients =
-                                isMatchmakerPaidTier(tierStr) && usedSlots < maxSlots;
+                                !pendingSelection
+                                && isMatchmakerPaidTier(tierStr)
+                                && usedSlots < maxSlots;
                         }
                     }
 
@@ -723,6 +737,7 @@ function ProfilePageContent() {
     const [recentActivity, setRecentActivity] = useState<any[]>([]);
     const [loadingSavedProfiles, setLoadingSavedProfiles] = useState(false);
     const [removingInteractionKey, setRemovingInteractionKey] = useState<string | null>(null);
+    const [incomingInterestBackKey, setIncomingInterestBackKey] = useState<string | null>(null);
     const [isCreateSubAccountModalOpen, setIsCreateSubAccountModalOpen] = useState(false);
     const [managedProfileFormSession, setManagedProfileFormSession] = useState(0);
     const [editingSubAccount, setEditingSubAccount] = useState<{ id: number; firstName?: string; lastName?: string } | null>(null);
@@ -838,6 +853,11 @@ function ProfilePageContent() {
             (p) => Number(p.managedProfileUserId) === activeInterestSubAccountId
         );
     }, [interestProfiles, showInterestProfileTabs, activeInterestSubAccountId]);
+
+    const filteredMutualProfiles = useMemo(() => {
+        const mutual = filteredInterestProfiles.filter((p) => p.isMutual);
+        return mutual;
+    }, [filteredInterestProfiles]);
 
     const savedCountBySubAccount = useMemo(() => {
         const map: Record<number, number> = {};
@@ -1072,6 +1092,12 @@ function ProfilePageContent() {
                 const sortedFav = Array.isArray(favAct)
                     ? [...favAct].sort((a, b) => toMs(b.createdAt ?? b.CreatedAt) - toMs(a.createdAt ?? a.CreatedAt))
                     : [];
+                const mutualByTargetUserId = new Map<number, boolean>();
+                for (const row of sortedFav) {
+                    const uid = Number(row.profileUserId ?? row.ProfileUserId);
+                    if (!Number.isFinite(uid)) continue;
+                    mutualByTargetUserId.set(uid, !!(row.isMutual ?? row.IsMutual));
+                }
                 const interestList: any[] = [];
                 for (const row of sortedFav) {
                     const uid = Number(row.profileUserId ?? row.ProfileUserId);
@@ -1093,9 +1119,10 @@ function ProfilePageContent() {
                 const notifListEarly = Array.isArray(rawNotifsEarly) ? rawNotifsEarly : [];
                 const isNotificationUnread = (n: Record<string, unknown>) =>
                     !(n.isRead ?? n.IsRead);
-                const pendingNotifs = notifListEarly.filter((n) =>
-                    isNotificationUnread(n as Record<string, unknown>)
-                );
+                const pendingNotifs = notifListEarly.filter((n) => {
+                    const row = n as Record<string, unknown>;
+                    return isNotificationUnread(row) && isMatrimonialInterestNotification(row);
+                });
                 const incomingRowsMeta: {
                     refId: number;
                     managedProfileUserId: number | null;
@@ -1166,6 +1193,7 @@ function ProfilePageContent() {
                         managedProfileUserId: row.managedProfileUserId,
                         interestedAtLabel: row.atLabel,
                         isInterestBack: row.isInterestBack,
+                        isMutual: mutualByTargetUserId.get(row.refId) ?? false,
                     });
                 }
                 setIncomingInterestProfiles(incomingInterestList);
@@ -1222,7 +1250,9 @@ function ProfilePageContent() {
                     }
                 }
 
-                const notifList = notifListEarly;
+                const notifList = notifListEarly.filter((n) =>
+                    isMatrimonialInterestNotification(n as Record<string, unknown>)
+                );
                 for (const n of notifList) {
                     const at = n.createdOn ?? n.CreatedOn;
                     const refId = n.referenceId ?? n.ReferenceId;
@@ -1292,6 +1322,45 @@ function ProfilePageContent() {
             showToast('Could not remove from shortlist.', 'error');
         } finally {
             setRemovingInteractionKey(null);
+        }
+    };
+
+    const handleIncomingInterestBack = async (
+        e: React.MouseEvent,
+        p: { userId?: number; id?: number; managedProfileUserId?: number | null; isInterestBack?: boolean; isMutual?: boolean }
+    ) => {
+        e.stopPropagation();
+        if (p.isMutual || p.isInterestBack) return;
+        if (user?.isVerified === false) {
+            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+            return;
+        }
+        if (!user?.id) return;
+        const senderUserId = Number(p.userId ?? p.id);
+        if (!Number.isFinite(senderUserId) || senderUserId <= 0) return;
+        const managedRaw = p.managedProfileUserId;
+        const managedId =
+            managedRaw != null && Number.isFinite(Number(managedRaw)) && Number(managedRaw) > 0
+                ? Number(managedRaw)
+                : undefined;
+        const key = `incoming-${managedId ?? 'self'}-${senderUserId}`;
+        setIncomingInterestBackKey(key);
+        try {
+            const result = await respondToIncomingInterest(Number(user.id), senderUserId, managedId);
+            if (result.ok) {
+                const matching = interestNotifications.find(
+                    (n) => referenceIdFromNotification(n as Record<string, unknown>) === senderUserId
+                );
+                if (matching) await markInterestNotificationRead(matching);
+                showToast(result.message, 'success');
+                void refreshInterestNotifications();
+            } else {
+                showToast(result.message, 'error');
+            }
+        } catch {
+            showToast('Could not send interest. Try again.', 'error');
+        } finally {
+            setIncomingInterestBackKey(null);
         }
     };
 
@@ -1761,6 +1830,7 @@ function ProfilePageContent() {
                     fetchSubAccounts();
                 }
                 showToast(res?.message || 'Subscription cancelled.', 'success');
+                router.replace('/');
             } else {
                 showToast(res?.message || 'Failed to cancel subscription.', 'error');
             }
@@ -1799,6 +1869,7 @@ function ProfilePageContent() {
     const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
     const [showSubAccountPackageModal, setShowSubAccountPackageModal] = useState(false);
     const [showMatchmakerUpgradeModal, setShowMatchmakerUpgradeModal] = useState(false);
+    const [showMatchmakerClientSelectionModal, setShowMatchmakerClientSelectionModal] = useState(false);
     const handleDeleteOwnAccount = async () => {
         if (!user?.id) return;
         if (deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') {
@@ -2241,6 +2312,42 @@ function ProfilePageContent() {
         }
         return [];
     }, [matchmakerClientLimitState, matchmakerPackages, matchmakerClientsMax]);
+
+    const matchmakerCanChooseActiveClients =
+        user?.accountType === 'Matchmaker'
+        && user.isSubscribed
+        && matchmakerClientsMax > 0
+        && subAccounts.length > matchmakerClientsMax;
+
+    useEffect(() => {
+        if (user?.matchmakerClientSelectionPending) {
+            setShowMatchmakerClientSelectionModal(true);
+        }
+    }, [user?.matchmakerClientSelectionPending]);
+
+    const handleConfirmMatchmakerClientSelection = async (selectedIds: number[]) => {
+        if (!user?.id) return;
+        const res = await matrimonialService.selectMatchmakerActiveClients(Number(user.id), selectedIds);
+        if (res?.statusCode !== 200 && res?.statusCode !== 1) {
+            throw new Error(res?.message || 'Failed to save client selection.');
+        }
+        const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
+        const activeCount = Number(r?.matchmakerClientProfileCount ?? r?.MatchmakerClientProfileCount ?? selectedIds.length);
+        const maxClients = Number(r?.matchmakerMaxClientProfiles ?? r?.MatchmakerMaxClientProfiles ?? matchmakerClientsMax);
+        const canAdd = r?.matchmakerCanAddClients ?? r?.MatchmakerCanAddClients;
+        updateUser?.({
+            matchmakerClientSelectionPending: false,
+            matchmakerClientProfileCount: activeCount,
+            matchmakerCanAddClients:
+                typeof canAdd === 'boolean'
+                    ? canAdd
+                    : activeCount < maxClients,
+        });
+        setShowMatchmakerClientSelectionModal(false);
+        await fetchSubAccounts();
+        window.dispatchEvent(new CustomEvent('sub-accounts-changed'));
+        showToast(res?.message || 'Client profiles updated.', 'success');
+    };
 
     const matchmakerPlatformMaxClients = useMemo(
         () => platformMaxMatchmakerClients(matchmakerPackages),
@@ -3400,6 +3507,17 @@ function ProfilePageContent() {
                     onSelectPackage={handleSelectMatchmakerUpgradePackage}
                 />
 
+                {user?.accountType === 'Matchmaker' && matchmakerClientsMax > 0 && subAccounts.length > 0 ? (
+                    <MatchmakerClientSelectionModal
+                        open={showMatchmakerClientSelectionModal}
+                        maxSelectable={matchmakerClientsMax}
+                        subAccounts={subAccounts}
+                        requireSelection={!!user.matchmakerClientSelectionPending}
+                        onClose={() => setShowMatchmakerClientSelectionModal(false)}
+                        onConfirm={handleConfirmMatchmakerClientSelection}
+                    />
+                ) : null}
+
                 <SubAccountPackagePickerModal
                     open={showSubAccountPackageModal}
                     onClose={() => setShowSubAccountPackageModal(false)}
@@ -3590,8 +3708,12 @@ function ProfilePageContent() {
                             <button
                                 type="button"
                                 className="btn btn-primary"
-                                disabled={matchmakerClientLimitState === 'absolute_max'}
+                                disabled={matchmakerClientLimitState === 'absolute_max' || !!user.matchmakerClientSelectionPending}
                                 onClick={() => {
+                                    if (user.matchmakerClientSelectionPending) {
+                                        setShowMatchmakerClientSelectionModal(true);
+                                        return;
+                                    }
                                     if (matchmakerClientLimitState === 'can_create') {
                                         if (user?.isVerified === false) {
                                             window.dispatchEvent(new CustomEvent('open-verify-modal'));
@@ -3625,6 +3747,34 @@ function ProfilePageContent() {
                                 Choose a Matchmaker plan to unlock client profile slots.
                             </p>
                         )}
+                        {user.matchmakerClientSelectionPending ? (
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                Your plan includes {matchmakerClientsMax} active client slot{matchmakerClientsMax === 1 ? '' : 's'}, but you have {subAccounts.length} profiles on file.
+                                Choose which profiles should stay active before using matchmaker features.
+                                {' '}
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    style={{ marginTop: '0.5rem', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                                    onClick={() => setShowMatchmakerClientSelectionModal(true)}
+                                >
+                                    Choose active profiles
+                                </button>
+                            </p>
+                        ) : null}
+                        {matchmakerCanChooseActiveClients && !user.matchmakerClientSelectionPending ? (
+                            <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
+                                You have more client profiles than your plan allows. Only {matchmakerClientsMax} can be active at once.{' '}
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem', marginLeft: '0.25rem' }}
+                                    onClick={() => setShowMatchmakerClientSelectionModal(true)}
+                                >
+                                    Change active profiles
+                                </button>
+                            </p>
+                        ) : null}
                         {matchmakerClientLimitState === 'absolute_max' && matchmakerClientsUsed >= matchmakerClientsMax && user.isSubscribed ? (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have used all {matchmakerClientsMax} client profile slot(s) on your current plan. To change to a different premium plan, switch to the free plan first from Subscription settings.
@@ -3789,33 +3939,44 @@ function ProfilePageContent() {
                                         paddingRight: '0.25rem',
                                     }}
                                 >
-                                    {filteredIncomingInterestProfiles.map((p) => (
+                                    {filteredIncomingInterestProfiles.map((p) => {
+                                        const rowKey = `incoming-${p.managedProfileUserId ?? 'self'}-${p.userId ?? p.id}`;
+                                        const interestBackBusy = incomingInterestBackKey === rowKey;
+                                        return (
                                         <div
-                                            key={`incoming-interest-${p.userId ?? p.id}`}
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() => {
-                                                if (user?.isVerified === false) {
-                                                    window.dispatchEvent(new CustomEvent('open-verify-modal'));
-                                                    return;
-                                                }
-                                                openModal('profile', undefined, p);
+                                            key={rowKey}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.75rem',
+                                                padding: '0.5rem',
+                                                background: '#fdf8f3',
+                                                borderRadius: '10px',
                                             }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                    e.preventDefault();
+                                        >
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => {
                                                     if (user?.isVerified === false) {
                                                         window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                                         return;
                                                     }
                                                     openModal('profile', undefined, p);
-                                                }
-                                            }}
-                                            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
-                                            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
-                                            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
-                                            title={`View ${p.firstName} ${p.lastName}'s profile`}
-                                        >
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                        e.preventDefault();
+                                                        if (user?.isVerified === false) {
+                                                            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                            return;
+                                                        }
+                                                        openModal('profile', undefined, p);
+                                                    }
+                                                }}
+                                                style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0, cursor: 'pointer' }}
+                                                title={`View ${p.firstName} ${p.lastName}'s profile`}
+                                            >
                                             <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
                                                 {p.profilePhoto ? (
                                                     <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -3828,7 +3989,21 @@ function ProfilePageContent() {
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
                                                     <span style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</span>
-                                                    {p.isInterestBack ? (
+                                                    {p.isMutual ? (
+                                                        <span
+                                                            style={{
+                                                                fontSize: '0.7rem',
+                                                                fontWeight: 700,
+                                                                letterSpacing: '0.02em',
+                                                                color: '#047857',
+                                                                background: '#d1fae5',
+                                                                padding: '0.12rem 0.5rem',
+                                                                borderRadius: '999px',
+                                                            }}
+                                                        >
+                                                            Mutual
+                                                        </span>
+                                                    ) : p.isInterestBack ? (
                                                         <span
                                                             style={{
                                                                 fontSize: '0.7rem',
@@ -3852,9 +4027,25 @@ function ProfilePageContent() {
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
+                                            </div>
+                                            {!p.isMutual && !p.isInterestBack ? (
+                                                <button
+                                                    type="button"
+                                                    className="btn btn-primary"
+                                                    style={{
+                                                        flexShrink: 0,
+                                                        fontSize: '0.75rem',
+                                                        padding: '0.35rem 0.75rem',
+                                                        whiteSpace: 'nowrap',
+                                                    }}
+                                                    disabled={interestBackBusy}
+                                                    onClick={(e) => void handleIncomingInterestBack(e, p)}
+                                                >
+                                                    {interestBackBusy ? 'Sending…' : 'Accept interest'}
+                                                </button>
+                                            ) : null}
                                         </div>
-                                    ))}
+                                    );})}
                                 </div>
                                 {!isManagedSubAccount(user) && (
                                     <button
@@ -3912,6 +4103,70 @@ function ProfilePageContent() {
                             <p style={{ color: '#666', marginTop: '1rem' }}>Loading…</p>
                         ) : (
                             <>
+                                {filteredMutualProfiles.length > 0 ? (
+                                    <div style={{ marginTop: '1rem' }}>
+                                        <h4 style={{ fontSize: '1rem', fontWeight: 600, margin: '0 0 0.75rem 0', color: '#374151' }}>
+                                            Mutual connections{filteredMutualProfiles.length > 0 ? ` (${filteredMutualProfiles.length})` : ''}
+                                        </h4>
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: '0.75rem',
+                                                maxHeight: '240px',
+                                                overflowY: 'auto',
+                                                paddingRight: '0.25rem',
+                                                marginBottom: '1rem',
+                                            }}
+                                        >
+                                            {filteredMutualProfiles.map((p) => (
+                                                <div
+                                                    key={`mutual-${p.userId ?? p.id}`}
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    onClick={() => {
+                                                        if (user?.isVerified === false) {
+                                                            window.dispatchEvent(new CustomEvent('open-verify-modal'));
+                                                            return;
+                                                        }
+                                                        openModal('profile', undefined, p);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            openModal('profile', undefined, p);
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.75rem',
+                                                        padding: '0.5rem',
+                                                        background: '#ecfdf5',
+                                                        borderRadius: '10px',
+                                                        cursor: 'pointer',
+                                                        border: '1px solid #a7f3d0',
+                                                    }}
+                                                >
+                                                    <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
+                                                        {p.profilePhoto ? (
+                                                            <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        ) : (
+                                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
+                                                                {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                                        <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
+                                                        <div style={{ fontSize: '0.82rem', color: '#047857' }}>Mutual interest — you can message each other</div>
+                                                    </div>
+                                                    <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
                                 <div
                                     style={{
                                         display: 'flex',

@@ -1732,10 +1732,6 @@
             background: rgba(212, 175, 55, 0.1);
         }
 
-        .sub-option.recommended {
-            border-color: var(--gold);
-        }
-
         .sub-option.current-plan {
             border-color: #059669;
             background: rgba(5, 150, 105, 0.08);

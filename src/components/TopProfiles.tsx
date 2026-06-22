@@ -31,7 +31,9 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
     const { t } = useLanguage();
     const { user } = useAuth();
     const { viewerId, subAccounts } = useOwnedSubAccountsForBrowse();
-    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
+        onBlocked: (msg) => setActionToast(msg),
+    });
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[]; Shortlists: number[] }>({
         Favorites: [],
@@ -316,7 +318,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
 
             <ManagedSubAccountActionPicker
                 open={managedActionPicker.open}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 action={managedActionPicker.action}
                 selectedId={managedActionPicker.selectedId}

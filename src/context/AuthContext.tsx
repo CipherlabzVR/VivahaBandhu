@@ -27,6 +27,8 @@ interface User {
     matchmakerCanAddClients?: boolean;
     /** Gold: full-detail views remaining today (-1 = not applicable). */
     matchmakerDailyFullProfileViewsRemaining?: number;
+    /** True when the matchmaker must pick which client profiles stay active (plan cap exceeded). */
+    matchmakerClientSelectionPending?: boolean;
     /** Whether Self user has classic premium (not used for Matchmaker billing). */
     isPremiumSelfSubscribed?: boolean;
     /** ISO UTC end date of current paid period (Self or Matchmaker), when the API provides it. */
