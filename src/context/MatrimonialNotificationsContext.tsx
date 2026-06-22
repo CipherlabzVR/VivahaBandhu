@@ -18,6 +18,7 @@ import {
     interestNotificationId,
     interestNotificationsMatch,
     isInterestBackNotification,
+    isMatrimonialSubscriptionNotification,
     managedProfileUserIdFromNotification,
     notificationTitleFallback,
     referenceIdFromNotification,
@@ -169,6 +170,7 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
             } catch (error) {
                 if (connection) {
                     connection.off('ReceiveInterestNotification');
+                    connection.off('ReceiveSubscriptionNotification');
                     connection.off('InterestWithdrawn');
                     await connection.stop().catch(() => {});
                     connection = null;
@@ -184,35 +186,83 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
 
             if (!connection) return;
 
-            connection.on('ReceiveInterestNotification', (payload: Record<string, unknown>) => {
+            const appendSubscriptionNotification = (payload: Record<string, unknown>) => {
                 const now = new Date().toISOString();
                 const liveTitle = payload?.title ?? payload?.Title;
                 const liveDesc = payload?.description ?? payload?.Description;
-                const inferred = { title: liveTitle, description: liveDesc } as Record<string, unknown>;
+                const notificationId =
+                    payload?.id ??
+                    payload?.Id ??
+                    `live-sub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
                 setInterestNotifications((prev) =>
                     withoutDismissedNotifications([
                         {
-                            id: `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                            title: (liveTitle as string) || notificationTitleFallback(inferred),
+                            id: notificationId,
+                            title: (liveTitle as string) || 'Subscription update',
                             description:
-                                (liveDesc as string) ||
-                                (isInterestBackNotification(inferred)
-                                    ? 'A member reciprocated — interest back.'
-                                    : 'Someone is interested in your profile.'),
-                            referenceId:
-                                (payload.referenceId ??
-                                    payload.ReferenceId ??
-                                    payload.interestedUserId ??
-                                    payload.InterestedUserId) as number | undefined,
-                            managedProfileUserId: managedProfileUserIdFromNotification(payload),
-                            referenceType: 'MatrimonialInterest',
+                                (liveDesc as string) || 'Your subscription or payment status was updated.',
+                            referenceType: 'MatrimonialSubscription',
                             isRead: false,
-                            createdOn: (payload.createdOn as string) || now,
+                            createdOn: (payload.createdOn as string) || (payload.CreatedOn as string) || now,
                         },
                         ...prev,
                     ])
                 );
-                bumpLiveRevision();
+            };
+
+            connection.on('ReceiveSubscriptionNotification', appendSubscriptionNotification);
+
+            connection.on('ReceiveInterestNotification', (payload: Record<string, unknown>) => {
+                if (isMatrimonialSubscriptionNotification(payload)) {
+                    appendSubscriptionNotification(payload);
+                    return;
+                }
+                const now = new Date().toISOString();
+                const liveTitle = payload?.title ?? payload?.Title;
+                const liveDesc = payload?.description ?? payload?.Description;
+                const refTypeRaw = payload?.referenceType ?? payload?.ReferenceType;
+                const refType = String(refTypeRaw ?? '').trim();
+                const isSubscription =
+                    isMatrimonialSubscriptionNotification(payload)
+                    || refType === 'MatrimonialSubscription';
+                const inferred = { title: liveTitle, description: liveDesc } as Record<string, unknown>;
+                const notificationId =
+                    payload?.id ??
+                    payload?.Id ??
+                    `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+                setInterestNotifications((prev) =>
+                    withoutDismissedNotifications([
+                        {
+                            id: notificationId,
+                            title:
+                                (liveTitle as string) ||
+                                (isSubscription ? 'Subscription update' : notificationTitleFallback(inferred)),
+                            description:
+                                (liveDesc as string) ||
+                                (isSubscription
+                                    ? 'Your subscription or payment status was updated.'
+                                    : isInterestBackNotification(inferred)
+                                      ? 'A member reciprocated — interest back.'
+                                      : 'Someone is interested in your profile.'),
+                            referenceId: isSubscription
+                                ? undefined
+                                : ((payload.referenceId ??
+                                    payload.ReferenceId ??
+                                    payload.interestedUserId ??
+                                    payload.InterestedUserId) as number | undefined),
+                            managedProfileUserId: isSubscription
+                                ? null
+                                : managedProfileUserIdFromNotification(payload),
+                            referenceType: isSubscription ? 'MatrimonialSubscription' : (refType || 'MatrimonialInterest'),
+                            isRead: false,
+                            createdOn: (payload.createdOn as string) || (payload.CreatedOn as string) || now,
+                        },
+                        ...prev,
+                    ])
+                );
+                if (!isSubscription) {
+                    bumpLiveRevision();
+                }
             });
 
             connection.on('InterestWithdrawn', (payload: Record<string, unknown>) => {
@@ -237,6 +287,7 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
             clearTimeout(retryTimeout);
             if (connection) {
                 connection.off('ReceiveInterestNotification');
+                connection.off('ReceiveSubscriptionNotification');
                 connection.off('InterestWithdrawn');
                 void connection.stop();
             }

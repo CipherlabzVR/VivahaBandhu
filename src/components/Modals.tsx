@@ -656,7 +656,9 @@ function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNod
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user, updateUser } = useAuth();
     const { subAccounts, ownedIds } = useOwnedSubAccountsForBrowse();
-    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
+        onBlocked: (msg) => showToast(msg, 'info'),
+    });
     const router = useRouter();
     const pathname = usePathname();
     const [loginTab, setLoginTab] = useState<'login' | 'register'>('login');
@@ -787,7 +789,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         if (!ok) return false;
         setShowFreePlanConfirmModal(false);
         onClose();
-        router.push('/search');
+        const destination = pathname?.startsWith('/profile') ? '/profile' : '/';
+        router.replace(destination);
         return true;
     };
 
@@ -4678,7 +4681,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             <ManagedSubAccountActionPicker
                 open={managedActionPicker.open}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 action={managedActionPicker.action}
                 selectedId={managedActionPicker.selectedId}

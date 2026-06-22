@@ -32,6 +32,73 @@ export function inboxThreadKey(contactId: number, managedProfileUserId?: number 
     return `${contactId}-${managed ?? 0}`;
 }
 
+/** Display name for an inbox row — prefer managed sub/client when the thread is tagged with one. */
+export function inboxContactDisplayName(contact: {
+    managedProfileUserId?: number | null;
+    managedProfileName?: string | null;
+    firstName?: string;
+    lastName?: string;
+    peerFirstName?: string;
+    peerLastName?: string;
+}): string {
+    if (readManagedProfileUserId(contact.managedProfileUserId) != null) {
+        const managedLabel = String(contact.managedProfileName ?? '').trim();
+        if (managedLabel) return managedLabel;
+        const a = String(contact.firstName ?? '').trim();
+        const b = String(contact.lastName ?? '').trim();
+        const managedName = [a, b].filter(Boolean).join(' ').trim();
+        if (managedName) return managedName;
+    }
+
+    const a = String(contact.peerFirstName ?? contact.firstName ?? '').trim();
+    const b = String(contact.peerLastName ?? contact.lastName ?? '').trim();
+    return [a, b].filter(Boolean).join(' ').trim() || 'This member';
+}
+
+/** Profile photo for an inbox row — prefer managed sub/client photo when applicable. */
+export function inboxContactDisplayPhoto(contact: {
+    managedProfileUserId?: number | null;
+    managedProfilePhoto?: string | null;
+    profilePhoto?: string | null;
+    peerProfilePhoto?: string | null;
+}): string | null {
+    if (readManagedProfileUserId(contact.managedProfileUserId) != null) {
+        return (
+            contact.managedProfilePhoto ??
+            contact.profilePhoto ??
+            contact.peerProfilePhoto ??
+            null
+        );
+    }
+    return contact.peerProfilePhoto ?? contact.profilePhoto ?? null;
+}
+
+/** The other member's login identity in a thread (parent account when they manage a sub). */
+export function inboxContactPeerName(contact: {
+    peerFirstName?: string;
+    peerLastName?: string;
+    firstName?: string;
+    lastName?: string;
+}): string {
+    const a = String(contact.peerFirstName ?? '').trim();
+    const b = String(contact.peerLastName ?? '').trim();
+    const peer = [a, b].filter(Boolean).join(' ').trim();
+    if (peer) return peer;
+    const fa = String(contact.firstName ?? '').trim();
+    const fb = String(contact.lastName ?? '').trim();
+    return [fa, fb].filter(Boolean).join(' ').trim() || 'This member';
+}
+
+/** Login account name behind a managed sub/client thread (parent / matchmaker). */
+export function inboxContactManagerName(contact: {
+    peerFirstName?: string;
+    peerLastName?: string;
+    firstName?: string;
+    lastName?: string;
+}): string {
+    return inboxContactPeerName(contact);
+}
+
 export function messageMatchesManagedThread(
     content: string,
     activeManagedProfileUserId?: number | null

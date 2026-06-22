@@ -35,7 +35,9 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const { user } = useAuth();
     const { viewerId, subAccounts } = useOwnedSubAccountsForBrowse();
-    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
+        onBlocked: (msg) => showToast(msg, 'info'),
+    });
     const [actionToast, setActionToast] = useState('');
 
     const [isMatched, setIsMatched] = useState(false);
@@ -301,7 +303,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
 
             <ManagedSubAccountActionPicker
                 open={managedActionPicker.open}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 action={managedActionPicker.action}
                 selectedId={managedActionPicker.selectedId}

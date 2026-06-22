@@ -163,6 +163,11 @@ export function subAccountDisplayName(sub: ManagedSubAccount): string {
     return name || 'Profile';
 }
 
+/** Panel label for managed sub-account / client notification tabs. */
+export function subAccountPanelLabel(accountType?: string | null): string {
+    return accountType === 'Matchmaker' ? 'Clients' : 'Sub-accounts';
+}
+
 /** Show profile tabs when the parent manages two or more sub-profiles (matches Messages). */
 export function shouldShowManagedProfileTabs(subAccounts: ManagedSubAccount[]): boolean {
     return subAccounts.length >= 2;
@@ -197,3 +202,28 @@ export function subAccountNotificationUnreadMap(
     }
     return map;
 }
+
+/** Interest/subscription notification for the manager's own profile (not a managed sub-account). */
+export function isMainAccountNotification(notification: Record<string, unknown>): boolean {
+    return managedProfileUserIdFromRecord(notification) == null;
+}
+
+/** Interest notification tied to a managed client / family sub-profile. */
+export function isSubAccountNotification(notification: Record<string, unknown>): boolean {
+    return managedProfileUserIdFromRecord(notification) != null;
+}
+
+export function mainAccountNotificationUnreadCount(notifications: Record<string, unknown>[]): number {
+    return notifications.filter(isMainAccountNotification).length;
+}
+
+export function subAccountNotificationUnreadCount(notifications: Record<string, unknown>[]): number {
+    return notifications.filter(isSubAccountNotification).length;
+}
+
+export function filterActiveManagedSubAccounts(subAccounts: ManagedSubAccount[]): ManagedSubAccount[] {
+    return subAccounts.filter(isManagedSubAccountActive);
+}
+
+export const MANAGED_ACTIONS_BLOCKED_MESSAGE =
+    'Managed profiles are disabled on the free plan. Upgrade your subscription to send interest, save, or message.';

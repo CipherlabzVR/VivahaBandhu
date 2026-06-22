@@ -15,6 +15,7 @@ import {
 } from '../../../constants/subscription';
 import {
     BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY,
+    BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY,
     BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE,
     BANK_TRANSFER_SUBMITTED_MESSAGE,
     MATCHMAKER_PLAN_ACTIVATED_MESSAGE,
@@ -158,25 +159,34 @@ export default function SubscriptionCheckoutPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const applySuccessUserPatch = (subscriptionExpiresAt?: string) => {
+    const applySuccessUserPatch = (subscriptionExpiresAt?: string, matchmakerClientSelectionPending?: boolean) => {
         const p = checkoutPlan;
         const expPatch = subscriptionExpiresAt ? { subscriptionExpiresAt } : {};
+        const selectionPatch = matchmakerClientSelectionPending
+            ? {
+                matchmakerClientSelectionPending: true,
+                matchmakerCanAddClients: false,
+                matchmakerClientProfileCount: 0,
+            }
+            : {};
         if (isMatchmakerAccount) {
             if (p === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
                 updateUser({
                     isSubscribed: true,
                     matchmakerTier: 'DIAMOND',
                     matchmakerMaxClientProfiles: 10,
-                    matchmakerCanAddClients: true,
+                    matchmakerCanAddClients: !matchmakerClientSelectionPending,
                     ...expPatch,
+                    ...selectionPatch,
                 });
             } else if (p === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
                 updateUser({
                     isSubscribed: true,
                     matchmakerTier: 'GOLD',
                     matchmakerMaxClientProfiles: 5,
-                    matchmakerCanAddClients: true,
+                    matchmakerCanAddClients: !matchmakerClientSelectionPending,
                     ...expPatch,
+                    ...selectionPatch,
                 });
             }
         } else {
@@ -273,27 +283,35 @@ export default function SubscriptionCheckoutPage() {
                         ?.subscribedUntil ??
                     (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
                         ?.SubscribedUntil;
+                const resultObj = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
+                const selectionPending =
+                    resultObj?.matchmakerClientSelectionPending === true
+                    || resultObj?.MatchmakerClientSelectionPending === true;
                 let untilIso: string | undefined;
                 if (rawUntil != null && String(rawUntil).trim() !== '') {
                     const d = new Date(String(rawUntil));
                     if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
                 }
-                applySuccessUserPatch(untilIso);
+                applySuccessUserPatch(untilIso, selectionPending);
                 setSuccess(
                     isMatchmakerAccount
-                        ? 'Payment successful. Your matchmaker subscription is active.'
+                        ? selectionPending
+                            ? 'Payment successful. Choose which client profiles should stay active on your profile page.'
+                            : 'Payment successful. Your matchmaker subscription is active.'
                         : 'Payment successful. Premium membership is now active.'
                 );
                 showToast(
                     isMatchmakerAccount
-                        ? MATCHMAKER_PLAN_ACTIVATED_MESSAGE
+                        ? selectionPending
+                            ? 'Plan activated — choose which client profiles to keep active.'
+                            : MATCHMAKER_PLAN_ACTIVATED_MESSAGE
                         : PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
                     'success',
                     5500,
                 );
                 void refreshInterestNotifications();
                 window.setTimeout(() => {
-                    router.replace('/');
+                    router.replace(isMatchmakerAccount && selectionPending ? '/profile' : '/');
                 }, 800);
             } else {
                 setError(res?.message || 'Failed to activate subscription.');
@@ -346,6 +364,7 @@ export default function SubscriptionCheckoutPage() {
                             } else {
                                 localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
                                 sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+                                sessionStorage.removeItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY);
                             }
                         }
                         setSuccess(

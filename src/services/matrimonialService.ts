@@ -852,10 +852,23 @@ export const matrimonialService = {
     },
 
     /** When the viewer already favourites the sender, call instead of ToggleFavorite so the sender still gets "interest back" notifications. */
-    async notifyInterestBack(actorUserId: number, originalInterestSenderUserId: number): Promise<any> {
+    async notifyInterestBack(
+        actorUserId: number,
+        originalInterestSenderUserId: number,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
         try {
+            const params = new URLSearchParams({
+                actorUserId: String(actorUserId),
+                originalInterestSenderUserId: String(originalInterestSenderUserId),
+            });
+            const managedId =
+                managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                params.set('managedProfileUserId', String(managedId));
+            }
             const response = await fetch(
-                `${API_BASE_URL}/Matrimonial/NotifyInterestBack?actorUserId=${actorUserId}&originalInterestSenderUserId=${originalInterestSenderUserId}`,
+                `${API_BASE_URL}/Matrimonial/NotifyInterestBack?${params.toString()}`,
                 { method: 'POST', headers: { 'Content-Type': 'application/json' } }
             );
             return await response.json();
@@ -1079,6 +1092,30 @@ export const matrimonialService = {
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(errorData.message || 'Failed to reactivate subscription');
+            }
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
+    async selectMatchmakerActiveClients(
+        parentUserId: number,
+        selectedClientUserIds: number[],
+    ): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/SelectMatchmakerActiveClients`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : '',
+                },
+                body: JSON.stringify({ parentUserId, selectedClientUserIds }),
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to save client selection');
             }
             return await response.json();
         } catch (error) {
@@ -1411,6 +1448,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     matchmakerClientProfileCount?: number;
     matchmakerCanAddClients?: boolean;
     matchmakerDailyFullProfileViewsRemaining?: number;
+    matchmakerClientSelectionPending?: boolean;
     subscriptionExpiresAt?: string;
     subscriptionIsLifetime?: boolean;
     subscriptionCancelled?: boolean;
@@ -1462,6 +1500,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     const cntCli = mx.MatchmakerClientProfileCount ?? mx.matchmakerClientProfileCount;
     const canAdd = mx.MatchmakerCanAddClients ?? mx.matchmakerCanAddClients;
     const remViews = mx.MatchmakerDailyFullProfileViewsRemaining ?? mx.matchmakerDailyFullProfileViewsRemaining;
+    const selectionPending = mx.MatchmakerClientSelectionPending ?? mx.matchmakerClientSelectionPending;
 
     const isFamilyParent =
         (mx.IsFamilyParentAccount ?? mx.isFamilyParentAccount) === true ||
@@ -1483,6 +1522,8 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
                 : undefined,
         matchmakerDailyFullProfileViewsRemaining:
             remViews != null && remViews !== '' ? Number(remViews) : undefined,
+        matchmakerClientSelectionPending:
+            selectionPending === true || selectionPending === 'true',
         isSubscribed:
             accountType === 'Matchmaker'
                 ? mmPaid

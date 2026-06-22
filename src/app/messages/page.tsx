@@ -10,6 +10,10 @@ import * as signalR from '@microsoft/signalr';
 import { connectMatrimonialHub } from '@/utils/signalrHub';
 import { formatDeviceDate, formatDeviceTime, parseApiDateForDisplay } from '@/utils/deviceDateTime';
 import {
+    inboxContactDisplayName,
+    inboxContactDisplayPhoto,
+    inboxContactManagerName,
+    inboxContactPeerName,
     inboxThreadKey,
     messageMatchesManagedThread,
     parseManagedProfileFromContent,
@@ -28,6 +32,7 @@ import {
     managedProfileUserIdForApi,
     useManagedSubAccountActionPicker,
 } from '@/hooks/useManagedSubAccountActionPicker';
+import { showToast } from '@/utils/toast';
 import HoroscopeLightbox from '@/components/HoroscopeLightbox';
 import {
     horoscopePagesFromProfile,
@@ -78,53 +83,47 @@ function normalizeInboxContact(row: Record<string, unknown>) {
 
 type InboxContact = ReturnType<typeof normalizeInboxContact>;
 
-function peerNameFromContact(contact: {
-    peerFirstName?: string;
-    peerLastName?: string;
-    firstName?: string;
-    lastName?: string;
-    managedProfileUserId?: number | null;
-}): string {
-    const preferPeer =
-        contact.managedProfileUserId != null && contact.managedProfileUserId > 0;
-    const a = String(
-        (preferPeer ? contact.peerFirstName : contact.peerFirstName ?? contact.firstName) ?? ''
-    ).trim();
-    const b = String(
-        (preferPeer ? contact.peerLastName : contact.peerLastName ?? contact.lastName) ?? ''
-    ).trim();
-    const name = [a, b].filter(Boolean).join(' ').trim();
-    return name || 'This member';
-}
-
 /** Inbox row: show the other member's name/photo; subtitle indicates managed client when applicable. */
 function resolveManagedInboxPresentation(
     contact: InboxContact,
     subAccounts: ManagedSubAccount[],
     isManagedParent: boolean
 ) {
-    const peerName = peerNameFromContact(contact);
-    const peerPhoto = contact.peerProfilePhoto ?? contact.profilePhoto;
+    const hasManagedThread =
+        readManagedProfileUserId(contact.managedProfileUserId) != null;
 
-    if (!isManagedParent || contact.managedProfileUserId == null) {
+    if (isManagedParent) {
+        const peerName = inboxContactPeerName(contact);
+        const listPhoto = contact.peerProfilePhoto ?? contact.profilePhoto;
+
+        if (!hasManagedThread) {
+            return {
+                listName: peerName,
+                listPhoto,
+                listSubtitle: contact.managedProfileName ? `Re: ${contact.managedProfileName}` : null,
+            };
+        }
+
+        const sub = subAccounts.find((s) => s.id === contact.managedProfileUserId);
+        const subName =
+            (sub ? subAccountDisplayName(sub) : null) ||
+            contact.managedProfileName ||
+            `${contact.firstName} ${contact.lastName}`.trim() ||
+            'Profile';
+
         return {
             listName: peerName,
-            listPhoto: peerPhoto,
-            listSubtitle: contact.managedProfileName ? `Re: ${contact.managedProfileName}` : null,
+            listPhoto,
+            listSubtitle: subName ? `For ${subName}` : null,
         };
     }
 
-    const sub = subAccounts.find((s) => s.id === contact.managedProfileUserId);
-    const subName =
-        (sub ? subAccountDisplayName(sub) : null) ||
-        contact.managedProfileName ||
-        `${contact.firstName} ${contact.lastName}`.trim() ||
-        'Profile';
-
+    const managerName = inboxContactManagerName(contact);
     return {
-        listName: peerName,
-        listPhoto: peerPhoto,
-        listSubtitle: subName ? `For ${subName}` : null,
+        listName: inboxContactDisplayName(contact),
+        listPhoto: inboxContactDisplayPhoto(contact),
+        listSubtitle:
+            hasManagedThread && managerName ? `Managed by ${managerName}` : null,
     };
 }
 
@@ -168,6 +167,9 @@ function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
         managedProfileUserId:
             parsedManaged?.managedProfileUserId ??
             readManagedProfileUserId((raw as any).managedProfileUserId ?? (raw as any).ManagedProfileUserId),
+        managedProfileName:
+            parsedManaged?.managedProfileName ??
+            (String((raw as any).managedProfileName ?? (raw as any).ManagedProfileName ?? '').trim() || null),
         horoscopeShare,
     };
 }
@@ -226,9 +228,9 @@ function readMatrimonialChatEnabledFromRow(row: unknown): boolean {
     return true;
 }
 
-function peerDisplayName(contact: { firstName?: string; lastName?: string; peerFirstName?: string; peerLastName?: string } | null): string {
+function peerDisplayName(contact: InboxContact | null): string {
     if (!contact) return 'This member';
-    return peerNameFromContact(contact);
+    return inboxContactDisplayName(contact);
 }
 
 function MessagesContent() {
@@ -279,7 +281,9 @@ function MessagesContent() {
         selectedContactRef.current = selectedContact;
     }, [selectedContact]);
 
-    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts);
+    const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
+        onBlocked: (msg) => showToast(msg, 'info'),
+    });
     const showSubAccountTabs = subAccounts.length >= 2;
     const activeSubAccount = useMemo(
         () => subAccounts.find((s) => s.id === activeSubAccountId) ?? null,
@@ -1364,15 +1368,34 @@ function MessagesContent() {
                                     </button>
                                     <div className="w-[45px] h-[45px] rounded-full overflow-hidden mr-3 border-2 border-white shadow-sm ring-1 ring-black/5">
                                         <img
-                                            src={selectedContact.peerProfilePhoto || selectedContact.profilePhoto || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'}
-                                            alt={peerNameFromContact(selectedContact)}
+                                            src={
+                                                (isManagedParent
+                                                    ? selectedContact.peerProfilePhoto ?? selectedContact.profilePhoto
+                                                    : inboxContactDisplayPhoto(selectedContact)) ||
+                                                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'
+                                            }
+                                            alt={
+                                                isManagedParent
+                                                    ? inboxContactPeerName(selectedContact)
+                                                    : inboxContactDisplayName(selectedContact)
+                                            }
                                             className="w-full h-full object-cover"
                                         />
                                     </div>
                                     <div className="flex flex-col min-w-0">
                                         <h3 className="font-playfair text-xl md:text-2xl font-semibold m-0 leading-tight">
-                                            {peerNameFromContact(selectedContact)}
+                                            {isManagedParent
+                                                ? inboxContactPeerName(selectedContact)
+                                                : inboxContactDisplayName(selectedContact)}
                                         </h3>
+                                        {!isManagedParent &&
+                                            readManagedProfileUserId(selectedContact.managedProfileUserId) !=
+                                                null &&
+                                            inboxContactManagerName(selectedContact) && (
+                                                <span className="text-xs text-text-light font-medium mt-0.5 truncate">
+                                                    Managed by {inboxContactManagerName(selectedContact)}
+                                                </span>
+                                            )}
                                         {actingSubAccount && (
                                             <span className="text-xs text-primary font-medium mt-0.5 truncate flex items-center gap-1.5">
                                                 <img
@@ -1423,6 +1446,13 @@ function MessagesContent() {
                                                         </span>
                                                     </div>
                                                 )}
+                                                {!isMe &&
+                                                    readManagedProfileUserId(msg.managedProfileUserId) != null &&
+                                                    msg.managedProfileName && (
+                                                        <span className="text-[0.65rem] text-text-light font-medium mb-1 pl-1">
+                                                            {msg.managedProfileName}
+                                                        </span>
+                                                    )}
                                                 <div className="relative">
                                                     <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${isMe
                                                         ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl rounded-tr-sm'
@@ -1619,7 +1649,7 @@ function MessagesContent() {
 
             <ManagedSubAccountActionPicker
                 open={managedActionPicker.open}
-                subAccounts={subAccounts}
+                subAccounts={managedActionPicker.activeSubAccounts}
                 accountType={user?.accountType}
                 action={managedActionPicker.action}
                 selectedId={managedActionPicker.selectedId}

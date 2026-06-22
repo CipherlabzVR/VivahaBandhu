@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ManagedSubAccountActionKind } from '../components/ManagedSubAccountActionPicker';
 import {
     canManageSubAccounts,
+    filterActiveManagedSubAccounts,
+    MANAGED_ACTIONS_BLOCKED_MESSAGE,
     type ManagedSubAccount,
 } from '../utils/managedSubAccounts';
 
@@ -12,17 +14,30 @@ type PendingManagedAction = {
     onConfirm: (managedProfileUserId: number) => void | Promise<void>;
 };
 
+type ManagedActionPickerOptions = {
+    onBlocked?: (message: string) => void;
+};
+
 export function useManagedSubAccountActionPicker(
     accountType: string | null | undefined,
-    subAccounts: ManagedSubAccount[]
+    subAccounts: ManagedSubAccount[],
+    options?: ManagedActionPickerOptions
 ) {
     const [open, setOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [action, setAction] = useState<ManagedSubAccountActionKind>('interest');
     const pendingRef = useRef<PendingManagedAction | null>(null);
 
-    const needsManagedPicker =
-        canManageSubAccounts(accountType) && subAccounts.length >= 1;
+    const activeSubAccounts = useMemo(
+        () => filterActiveManagedSubAccounts(subAccounts),
+        [subAccounts]
+    );
+
+    const needsManagedPicker = canManageSubAccounts(accountType);
+
+    const notifyBlocked = useCallback(() => {
+        options?.onBlocked?.(MANAGED_ACTIONS_BLOCKED_MESSAGE);
+    }, [options]);
 
     const runWithManagedAccount = useCallback(
         (
@@ -33,12 +48,18 @@ export function useManagedSubAccountActionPicker(
                 void onConfirm(0);
                 return;
             }
+
+            if (activeSubAccounts.length === 0) {
+                notifyBlocked();
+                return;
+            }
+
             pendingRef.current = { action: nextAction, onConfirm };
             setAction(nextAction);
-            setSelectedId(subAccounts[0]?.id ?? null);
+            setSelectedId(activeSubAccounts[0]?.id ?? null);
             setOpen(true);
         },
-        [needsManagedPicker, subAccounts]
+        [needsManagedPicker, activeSubAccounts, notifyBlocked]
     );
 
     const cancelPicker = useCallback(() => {
@@ -60,6 +81,7 @@ export function useManagedSubAccountActionPicker(
         selectedId,
         setSelectedId,
         needsManagedPicker,
+        activeSubAccounts,
         runWithManagedAccount,
         cancelPicker,
         confirmPicker,

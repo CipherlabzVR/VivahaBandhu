@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PENDING_BANK_PREMIUM_STORAGE_KEY } from '../constants/premiumActivation';
+import { PENDING_BANK_PREMIUM_STORAGE_KEY, PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, PENDING_BANK_TRANSFER_CHANGED_EVENT } from '../constants/premiumActivation';
 
 /**
  * True when the user submitted a bank slip for premium and we are waiting for admin approval
@@ -18,24 +18,34 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
                 setPending(false);
                 return;
             }
-            setPending(localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1');
+            setPending(
+                localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1' ||
+                    localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1'
+            );
         };
 
         read();
 
         const onStorage = (e: StorageEvent) => {
-            if (e.key === PENDING_BANK_PREMIUM_STORAGE_KEY || e.key === null) read();
+            if (
+                e.key === PENDING_BANK_PREMIUM_STORAGE_KEY ||
+                e.key === PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY ||
+                e.key === null
+            )
+                read();
         };
         const onVisible = () => {
             if (document.visibilityState === 'visible') read();
         };
 
         window.addEventListener('storage', onStorage);
+        window.addEventListener(PENDING_BANK_TRANSFER_CHANGED_EVENT, read);
         document.addEventListener('visibilitychange', onVisible);
         window.addEventListener('focus', onVisible);
 
         return () => {
             window.removeEventListener('storage', onStorage);
+            window.removeEventListener(PENDING_BANK_TRANSFER_CHANGED_EVENT, read);
             document.removeEventListener('visibilitychange', onVisible);
             window.removeEventListener('focus', onVisible);
         };
