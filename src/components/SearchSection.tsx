@@ -9,6 +9,11 @@ import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBad
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
+import {
+    MATRIMONIAL_MARITAL_STATUS_OPTIONS,
+    maritalStatusFilterMatches,
+    normalizeMaritalStatus,
+} from '../constants/matrimonialMaritalStatus';
 import { religionFilterMatches } from '../utils/religionMatch';
 
 import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
@@ -91,9 +96,8 @@ function profileMatchesBrowseFilters(
         if (!Number.isNaN(max) && age > 0 && age > max) return false;
     }
     if (f.religion && !religionFilterMatches(profile.religion ?? profile.Religion, f.religion)) return false;
-    if (f.maritalStatus) {
-        const ms = String(profile.maritalStatus ?? profile.MaritalStatus ?? '').trim();
-        if (ms !== f.maritalStatus) return false;
+    if (f.maritalStatus && !maritalStatusFilterMatches(profile.maritalStatus ?? profile.MaritalStatus, f.maritalStatus)) {
+        return false;
     }
     return true;
 }
@@ -121,7 +125,9 @@ function loadSavedBrowseFields(ownerKey: string): BrowseFilterFields | null {
         if (typeof data.minAge === 'string') d.minAge = data.minAge;
         if (typeof data.maxAge === 'string') d.maxAge = data.maxAge;
         if (typeof data.religion === 'string') d.religion = data.religion;
-        if (typeof data.maritalStatus === 'string') d.maritalStatus = data.maritalStatus;
+        if (typeof data.maritalStatus === 'string') {
+            d.maritalStatus = normalizeMaritalStatus(data.maritalStatus);
+        }
         if (typeof data.sortBy === 'string') d.sortBy = data.sortBy;
         return d;
     } catch {
@@ -502,7 +508,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     minAge: activeFilters.minAge ? parseInt(activeFilters.minAge, 10) : null,
                     maxAge: activeFilters.maxAge ? parseInt(activeFilters.maxAge, 10) : null,
                     religion: activeFilters.religion || null,
-                    maritalStatus: activeFilters.maritalStatus || null,
+                    maritalStatus: normalizeMaritalStatus(activeFilters.maritalStatus) || null,
                     sortBy: activeFilters.sortBy,
                     pageNumber: activeFilters.pageNumber,
                     pageSize: activeFilters.pageSize,
@@ -779,12 +785,13 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Marital Status</label>
-                        <select name="maritalStatus" value={draftFilters.maritalStatus} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
+                        <select name="maritalStatus" value={normalizeMaritalStatus(draftFilters.maritalStatus)} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
                             <option value="">Any</option>
-                            <option value="Never Married">Never Married</option>
-                            <option value="Divorced">Divorced</option>
-                            <option value="Widowed">Widowed</option>
-                            <option value="Separated">Separated</option>
+                            {MATRIMONIAL_MARITAL_STATUS_OPTIONS.map((status) => (
+                                <option key={status} value={status}>
+                                    {status}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
@@ -1021,6 +1028,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
                                     <div style={{ padding: '20px' }}>
                                         <div style={{ marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#666', fontSize: '0.95rem' }}>
+                                                <span>👤</span> {profile.gender || 'Not Specified'}
+                                            </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#666', fontSize: '0.95rem' }}>
                                                 <span>🎓</span> {profile.qualificationLevel || 'Not Specified'}
                                             </div>

@@ -68,6 +68,22 @@ export function phonesAreSameSriLankanNumber(a: string, b: string): boolean {
     return ca === cb;
 }
 
+/** Normalize stored/masked API phone values for editable tel inputs. */
+export function formatStoredPhoneForInput(value: string | null | undefined): string {
+    const raw = String(value ?? '').trim();
+    if (!raw || raw.includes('*')) return '';
+
+    const sanitized = sanitizeSriLankanPhoneInput(raw);
+    if (sanitized && isValidSriLankanPhone(sanitized)) return sanitized;
+
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length === 9) return `0${digits}`;
+    if (digits.startsWith('94') && digits.length === 11) return `0${digits.slice(2)}`;
+    if (digits.startsWith('0') && digits.length === 10) return digits;
+    if (digits.length >= 9) return sanitizeSriLankanPhoneInput(digits);
+    return '';
+}
+
 /** Registration: WhatsApp required via checkbox (same as phone) or a separate valid number; duplicate numbers require the checkbox. */
 export const WHATSAPP_SAME_AS_PHONE_MSG =
     'If WhatsApp is the same as your phone number, check "Same as Phone Number".';

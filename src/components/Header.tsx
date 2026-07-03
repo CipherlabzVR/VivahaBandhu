@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { matrimonialService } from '../services/matrimonialService';
 import { getStoredToken } from '../utils/authStorage';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
@@ -24,14 +24,16 @@ import {
 } from '../utils/managedSubAccounts';
 import ClientProfileBadge from './ClientProfileBadge';
 import {
-    isInterestBackNotification,
     isMatrimonialSubscriptionNotification,
     managedProfileUserIdFromNotification,
     notificationDescriptionFallback,
     notificationTitleFallback,
     referenceIdFromNotification,
+    shouldShowMessageFromInterestNotification,
 } from '../utils/matrimonialInterestNotifications';
 import { respondToIncomingInterest } from '../utils/respondToIncomingInterest';
+import { bankTransferRejectPurposeFromDescription } from '../utils/bankTransferResubmit';
+import { type FavoriteActivityRow } from '../utils/messagingMutualInterest';
 
 interface HeaderProps {
     onOpenLogin: () => void;
@@ -80,6 +82,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
     const [profileMenuOpen, setProfileMenuOpen] = useState(false);
     const [openNotificationScope, setOpenNotificationScope] = useState<'main' | 'sub' | null>(null);
     const [interestBackLoadingKey, setInterestBackLoadingKey] = useState<string | null>(null);
+    const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const [actionToast, setActionToast] = useState('');
     const [subAccounts, setSubAccounts] = useState<ManagedSubAccount[]>([]);
     const [activeNotificationSubAccountId, setActiveNotificationSubAccountId] = useState<number | null>(null);
@@ -206,6 +209,27 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         });
     }, [showNotificationProfileTabs, subAccounts]);
 
+    const refreshFavoriteActivity = useCallback(async () => {
+        if (!user?.id) {
+            setFavoriteActivity([]);
+            return;
+        }
+        try {
+            const res = await matrimonialService.getUserInteractions(Number(user.id));
+            const favAct =
+                res?.result?.FavoriteActivity ??
+                res?.result?.favoriteActivity ??
+                [];
+            setFavoriteActivity(Array.isArray(favAct) ? favAct : []);
+        } catch {
+            setFavoriteActivity([]);
+        }
+    }, [user?.id]);
+
+    useEffect(() => {
+        void refreshFavoriteActivity();
+    }, [refreshFavoriteActivity, interestNotifications]);
+
     useEffect(() => {
         if (!user?.id || user.profilePhoto) return;
         const token = getStoredToken();
@@ -258,7 +282,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!otherUserId) return;
         await markInterestNotificationRead(notification);
         setOpenNotificationScope(null);
-        const managedId = managedProfileUserIdFromNotification(notification);
+        let managedId = managedProfileUserIdFromNotification(notification);
+        if (
+            managedId == null &&
+            openNotificationScope === 'sub' &&
+            activeNotificationSubAccountId != null
+        ) {
+            managedId = activeNotificationSubAccountId;
+        }
         const managedQuery =
             managedId != null ? `&managedProfileUserId=${managedId}` : '';
         router.push(`/messages?userId=${otherUserId}${managedQuery}`);
@@ -286,6 +317,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             );
             if (result.ok) {
                 setActionToast(result.message);
+                void refreshFavoriteActivity();
             } else {
                 setActionToast(result.message);
             }
@@ -323,6 +355,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!openNotificationScope) return null;
 
         const isSubPanel = openNotificationScope === 'sub';
+        const mutualContextSubAccountId = isSubPanel ? activeNotificationSubAccountId : null;
         const panelTitle = isSubPanel
             ? `${subAccountPanelLabel(user?.accountType)} notifications`
             : 'My profile notifications';
@@ -486,7 +519,12 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                             onClick={async () => {
                                                                 await markInterestNotificationRead(n);
                                                                 setOpenNotificationScope(null);
-                                                                router.push('/subscription/checkout');
+                                                                const purpose = bankTransferRejectPurposeFromDescription(
+                                                                    n.description,
+                                                                );
+                                                                const params = new URLSearchParams({ resubmit: '1' });
+                                                                if (purpose) params.set('purpose', purpose);
+                                                                router.push(`/subscription/plans?${params.toString()}`);
                                                             }}
                                                             className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
                                                         >
@@ -552,7 +590,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 </div>
                                             </div>
                                             <div className="flex flex-wrap gap-2 mt-3">
-                                                {isInterestBackNotification(n) ? (
+                                                {shouldShowMessageFromInterestNotification(
+                                                    n as Record<string, unknown>,
+                                                    favoriteActivity,
+                                                    mutualContextSubAccountId,
+                                                ) ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleMessageFromInterestNotification(n)}

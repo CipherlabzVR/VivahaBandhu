@@ -65,7 +65,10 @@ export function isSignalRNegotiation404(error: unknown): boolean {
 /**
  * Builds a SignalR connection and tries hub URL candidates until one negotiates successfully.
  */
-export async function connectMatrimonialHub(apiBaseUrl: string): Promise<signalR.HubConnection> {
+export async function connectMatrimonialHub(
+    apiBaseUrl: string,
+    userId?: string
+): Promise<signalR.HubConnection> {
     await ensureCorsOriginRegistered(apiBaseUrl);
 
     const candidates = getMatrimonialSignalRHubCandidates(apiBaseUrl);
@@ -73,8 +76,12 @@ export async function connectMatrimonialHub(apiBaseUrl: string): Promise<signalR
 
     for (let i = 0; i < candidates.length; i++) {
         const hubUrl = candidates[i];
+        const hubUrlWithUser =
+            userId != null && userId !== ''
+                ? `${hubUrl}?userId=${encodeURIComponent(userId)}`
+                : hubUrl;
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl(hubUrl)
+            .withUrl(hubUrlWithUser)
             .configureLogging(signalR.LogLevel.None)
             .withAutomaticReconnect()
             .build();
@@ -93,4 +100,55 @@ export async function connectMatrimonialHub(apiBaseUrl: string): Promise<signalR
     }
 
     throw lastError;
+}
+
+/** De-dupe + stringify user ids, dropping empty/invalid entries. */
+function normalizeUserIds(userId: string, extraUserIds?: Array<string | number>): string[] {
+    const ids = [userId, ...(extraUserIds ?? [])]
+        .map((id) => String(id).trim())
+        .filter((id) => id !== '' && id !== '0');
+    return [...new Set(ids)];
+}
+
+/**
+ * Register the current user (and any managed sub-account ids) with ChatHub so presence
+ * + message routing work. Managed sub-accounts never connect on their own, so the parent
+ * keeps them "online" by joining their groups here.
+ */
+export async function joinMatrimonialUserGroup(
+    connection: signalR.HubConnection,
+    userId: string,
+    extraUserIds?: Array<string | number>
+): Promise<void> {
+    const ids = normalizeUserIds(userId, extraUserIds);
+    if (ids.length <= 1) {
+        await connection.invoke('JoinUserGroup', ids[0] ?? userId);
+        return;
+    }
+    try {
+        await connection.invoke('JoinUserGroups', ids);
+    } catch {
+        // Fallback for older hub without the batch method.
+        await Promise.all(ids.map((id) => connection.invoke('JoinUserGroup', id)));
+    }
+}
+
+/**
+ * Re-join the user group(s) after automatic reconnect. Without this, ChatHub clears
+ * presence on disconnect and users stay "offline" until a full page reload.
+ */
+export function registerMatrimonialHubReconnect(
+    connection: signalR.HubConnection,
+    userId: string,
+    onReconnected?: () => void,
+    getExtraUserIds?: () => Array<string | number>
+): void {
+    connection.onreconnected(async () => {
+        try {
+            await joinMatrimonialUserGroup(connection, userId, getExtraUserIds?.());
+            onReconnected?.();
+        } catch (e) {
+            console.warn('SignalR re-join failed after reconnect:', e);
+        }
+    });
 }

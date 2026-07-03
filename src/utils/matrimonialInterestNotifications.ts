@@ -3,6 +3,10 @@
  */
 
 import { readManagedProfileUserId } from './managedMessageContent';
+import {
+    type FavoriteActivityRow,
+    resolveMutualInterestState,
+} from './messagingMutualInterest';
 
 export function referenceIdFromNotification(notification: Record<string, unknown> | undefined | null): number {
     if (!notification) return 0;
@@ -110,4 +114,45 @@ export function interestNotificationsMatch(
     const idB = interestNotificationId(b);
     if (idA != null && idB != null && String(idA) === String(idB)) return true;
     return interestNotificationDismissKey(a) === interestNotificationDismissKey(b);
+}
+
+/** Sender + managed thread context for an interest notification row. */
+export function notificationMutualInterestContext(
+    notification: Record<string, unknown> | undefined | null,
+    activeSubAccountId?: number | null,
+): { senderUserId: number; managedProfileUserId: number | null } {
+    const senderUserId = referenceIdFromNotification(notification);
+    const fromNotification = managedProfileUserIdFromNotification(notification);
+    const managedProfileUserId =
+        fromNotification ??
+        (activeSubAccountId != null && activeSubAccountId > 0 ? activeSubAccountId : null);
+    return { senderUserId, managedProfileUserId };
+}
+
+export function notificationHasMutualInterest(
+    notification: Record<string, unknown> | undefined | null,
+    favoriteActivity: FavoriteActivityRow[],
+    activeSubAccountId?: number | null,
+): boolean {
+    const { senderUserId, managedProfileUserId } = notificationMutualInterestContext(
+        notification,
+        activeSubAccountId,
+    );
+    if (!senderUserId) return false;
+    return (
+        resolveMutualInterestState(favoriteActivity, senderUserId, managedProfileUserId) ===
+        'mutual'
+    );
+}
+
+/** Show Message (open inbox) when interest is mutual or this is an interest-back notice. */
+export function shouldShowMessageFromInterestNotification(
+    notification: Record<string, unknown> | undefined | null,
+    favoriteActivity: FavoriteActivityRow[],
+    activeSubAccountId?: number | null,
+): boolean {
+    return (
+        isInterestBackNotification(notification) ||
+        notificationHasMutualInterest(notification, favoriteActivity, activeSubAccountId)
+    );
 }
