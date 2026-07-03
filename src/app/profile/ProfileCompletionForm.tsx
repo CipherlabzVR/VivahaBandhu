@@ -8,10 +8,14 @@ import { getStoredToken } from '../../utils/authStorage';
 import { sanitizeNameInput } from '../../utils/nameInput';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../../constants/matrimonialReligions';
+import {
+    MATRIMONIAL_MARITAL_STATUS_OPTIONS,
+    normalizeMaritalStatus,
+} from '../../constants/matrimonialMaritalStatus';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, parseNicToDobAndGender } from '../../utils/nicInput';
-import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
+import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, formatStoredPhoneForInput } from '../../utils/sriLankanPhone';
 import { AUTH_FIELD_MAX_LENGTH } from '../../constants/inputLimits';
 import {
     isManagedProfileCreateResponseSuccess,
@@ -786,6 +790,15 @@ export default function ProfileCompletionForm({
             ? 'Locked — values are taken from the NIC. Clear or change ID to edit manually.'
             : 'Enter manually for passport; a valid NIC auto-fills and locks these fields.';
 
+    /** Gender collected at registration — do not ask again in the detailed profile wizard. */
+    const lockedGenderFromRegistration =
+        !isManagedFlow && (user?.gender === 'Male' || user?.gender === 'Female');
+    const lockedGenderSelectStyle: CSSProperties = {
+        backgroundColor: '#f1f5f9',
+        color: '#475569',
+        cursor: 'not-allowed',
+    };
+
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -1142,7 +1155,7 @@ export default function ProfileCompletionForm({
                 height: String(p.height ?? p.Height ?? prev.height),
                 complexion: v('complexion') || prev.complexion,
                 religion: v('religion') || prev.religion,
-                maritalStatus: v('maritalStatus') || prev.maritalStatus,
+                maritalStatus: normalizeMaritalStatus(v('maritalStatus')) || prev.maritalStatus,
                 qualificationLevel: v('qualificationLevel') || prev.qualificationLevel,
                 occupation: sanitizeNameInput(String(v('occupation') || prev.occupation || '')),
                 countryOfOrigin: v('countryOfOrigin') || prev.countryOfOrigin,
@@ -1217,8 +1230,44 @@ export default function ProfileCompletionForm({
                 if (!p || typeof p !== 'object') return;
 
                 if (managedEdit) {
-                    const phoneDigits = String(p.phoneNumber ?? p.PhoneNumber ?? '').replace(/\D/g, '');
-                    const whatsappDigits = String(p.whatsApp ?? p.WhatsApp ?? phoneDigits).replace(/\D/g, '');
+                    let phoneForForm = formatStoredPhoneForInput(
+                        String(p.phoneNumber ?? p.PhoneNumber ?? ''),
+                    );
+                    let whatsappForForm = formatStoredPhoneForInput(
+                        String(p.whatsApp ?? p.WhatsApp ?? p.phoneNumber ?? p.PhoneNumber ?? ''),
+                    );
+
+                    if (!phoneForForm) {
+                        try {
+                            const subsRes = await matrimonialService.getSubAccounts(managedEdit.parentUserId);
+                            const subs = Array.isArray(subsRes?.result ?? subsRes?.Result)
+                                ? (subsRes?.result ?? subsRes?.Result)
+                                : [];
+                            const subRow = subs.find(
+                                (row: { id?: number; Id?: number }) =>
+                                    Number(row.id ?? row.Id) === managedEdit.subUserId,
+                            );
+                            if (subRow) {
+                                phoneForForm = formatStoredPhoneForInput(
+                                    String(subRow.phoneNumber ?? subRow.PhoneNumber ?? ''),
+                                );
+                                if (!whatsappForForm) {
+                                    whatsappForForm = formatStoredPhoneForInput(
+                                        String(
+                                            subRow.whatsApp ??
+                                                subRow.WhatsApp ??
+                                                subRow.phoneNumber ??
+                                                subRow.PhoneNumber ??
+                                                '',
+                                        ),
+                                    );
+                                }
+                            }
+                        } catch {
+                            /* fall back to empty — user can re-enter if needed */
+                        }
+                    }
+
                     const gender = String(p.gender ?? p.Gender ?? '');
                     const dob = safeDate(String(p.dateOfBirth ?? p.DateOfBirth ?? ''));
                     setManagedBasic({
@@ -1227,8 +1276,8 @@ export default function ProfileCompletionForm({
                         nic: String(p.nic ?? p.Nic ?? '').trim(),
                         dob,
                         gender,
-                        phone: phoneDigits,
-                        whatsapp: whatsappDigits,
+                        phone: phoneForForm,
+                        whatsapp: whatsappForForm || phoneForForm,
                         profilePhotoBase64: '',
                     });
                     const photo = String(p.profilePhoto ?? p.ProfilePhoto ?? '').trim();
@@ -1253,6 +1302,13 @@ export default function ProfileCompletionForm({
         setInitialFetchDone(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, initialFetchDone, managedCreate, managedEdit?.subUserId, managedEdit?.parentUserId]);
+
+    useEffect(() => {
+        if (isManagedFlow || !lockedGenderFromRegistration || !user?.gender) return;
+        setFormData((prev) =>
+            prev.gender === user.gender ? prev : { ...prev, gender: user.gender! },
+        );
+    }, [isManagedFlow, lockedGenderFromRegistration, user?.gender]);
 
     useEffect(() => {
         // If the user removes all residence countries, drop the now-orphaned city.
@@ -1305,6 +1361,7 @@ export default function ProfileCompletionForm({
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
+        if (name === 'gender' && lockedGenderFromRegistration) return;
         clearFieldError(name);
         let nextValue: string = value;
         // Letters-only fields: names + occupations (own / father / mother).
@@ -1492,7 +1549,7 @@ export default function ProfileCompletionForm({
         const errors: Record<string, string> = {};
 
         if (currentStep === 1) {
-            if (!formData.gender) errors.gender = 'Please select your gender.';
+            if (!isManagedFlow && !formData.gender) errors.gender = 'Please select your gender.';
             if (!formData.height?.toString().trim()) errors.height = 'Please enter your height.';
             if (!formData.religion) errors.religion = 'Please select your religion.';
             if (!formData.maritalStatus) errors.maritalStatus = 'Please select your marital status.';
@@ -1607,6 +1664,7 @@ export default function ProfileCompletionForm({
             height: parseFloat(formData.height) || 0,
             partnerMinAge: Number.isFinite(parsedMin) ? parsedMin : 0,
             partnerMaxAge: Number.isFinite(parsedMax) ? parsedMax : 0,
+            maritalStatus: normalizeMaritalStatus(formData.maritalStatus),
             dateOfBirth: formData.dob ? `${formData.dob}T00:00:00` : null
         };
     };
@@ -2274,15 +2332,37 @@ export default function ProfileCompletionForm({
                     <div className="step-content" ref={activeStepContentRef}>
                         <h3>Personal Details</h3>
                         <div className="form-grid">
-                            <div className="form-group">
-                                <label>Gender*</label>
-                                <select name="gender" value={formData.gender} onChange={handleChange} required style={fieldInputStyle('gender')}>
-                                    <option value="">Select Gender</option>
-                                    <option value="Male">Male</option>
-                                    <option value="Female">Female</option>
-                                </select>
-                                <FieldErrorMessage message={fieldErrors.gender} />
-                            </div>
+                            {!isManagedFlow ? (
+                                <div className="form-group">
+                                    <label>Gender*</label>
+                                    <select
+                                        name="gender"
+                                        value={formData.gender}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={lockedGenderFromRegistration}
+                                        title={
+                                            lockedGenderFromRegistration
+                                                ? 'Gender was set during registration and cannot be changed here.'
+                                                : undefined
+                                        }
+                                        style={{
+                                            ...fieldInputStyle('gender'),
+                                            ...(lockedGenderFromRegistration ? lockedGenderSelectStyle : {}),
+                                        }}
+                                    >
+                                        <option value="">Select Gender</option>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                    </select>
+                                    {lockedGenderFromRegistration ? (
+                                        <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0.35rem 0 0' }}>
+                                            Set during registration.
+                                        </p>
+                                    ) : null}
+                                    <FieldErrorMessage message={fieldErrors.gender} />
+                                </div>
+                            ) : null}
                             {/* DOB Removed */}
                             <div className="form-group">
                                 <label>Height (cm)*</label>
@@ -2312,12 +2392,19 @@ export default function ProfileCompletionForm({
                             </div>
                             <div className="form-group">
                                 <label>Marital Status*</label>
-                                <select name="maritalStatus" value={formData.maritalStatus} onChange={handleChange} required style={fieldInputStyle('maritalStatus')}>
+                                <select
+                                    name="maritalStatus"
+                                    value={normalizeMaritalStatus(formData.maritalStatus)}
+                                    onChange={handleChange}
+                                    required
+                                    style={fieldInputStyle('maritalStatus')}
+                                >
                                     <option value="">Select Status</option>
-                                    <option value="Never Married">Never Married</option>
-                                    <option value="Divorced">Divorced</option>
-                                    <option value="Widowed">Widowed</option>
-                                    <option value="Separated">Separated</option>
+                                    {MATRIMONIAL_MARITAL_STATUS_OPTIONS.map((status) => (
+                                        <option key={status} value={status}>
+                                            {status}
+                                        </option>
+                                    ))}
                                 </select>
                                 <FieldErrorMessage message={fieldErrors.maritalStatus} />
                             </div>

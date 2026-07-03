@@ -34,7 +34,7 @@ import SubscriptionPlanPicker from './SubscriptionPlanPicker';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
 import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
-import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
+import { HeartIcon, BookmarkIcon, ShareIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge from './PremiumBadge';
 import { premiumBadgeLabelForProfile } from '../constants/subscription';
@@ -55,6 +55,14 @@ import {
     isOwnMatrimonialProfile,
     profileVisitorActionsBlockedHint,
 } from '../utils/profileVisitorActions';
+import {
+    type FavoriteActivityRow,
+    mutualInterestBlockMessage,
+    resolveMutualInterestState,
+    notifyMatrimonialInteractionsChanged,
+} from '../utils/messagingMutualInterest';
+import { shareProfileLink } from '../utils/shareProfileLink';
+import { formatMaritalStatusDisplay } from '../constants/matrimonialMaritalStatus';
 
 /** @deprecated use matrimonialProfileUserId */
 function viewerProfileUserId(p: Record<string, unknown> | null | undefined): number | null {
@@ -814,9 +822,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     const [profileAccessMessage, setProfileAccessMessage] = useState<string | null>(null);
     const [isProfileLockedByDailyLimit, setIsProfileLockedByDailyLimit] = useState(false);
     const [interactionFavoriteIds, setInteractionFavoriteIds] = useState<number[]>([]);
+    const [interactionFavoriteActivity, setInteractionFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const [interactionShortlistIds, setInteractionShortlistIds] = useState<number[]>([]);
     const [expressInterestLoading, setExpressInterestLoading] = useState(false);
     const [shortlistLoading, setShortlistLoading] = useState(false);
+    const [shareProfileLoading, setShareProfileLoading] = useState(false);
 
     useEffect(() => {
         if (initialSelectedProfile) {
@@ -901,12 +911,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
     useEffect(() => {
         if (activeModal !== 'profile') {
             setInteractionFavoriteIds([]);
+            setInteractionFavoriteActivity([]);
             setInteractionShortlistIds([]);
             return;
         }
         const targetId = viewerProfileUserId(selectedProfile);
         if (!user?.id || !targetId || ownedIds.has(targetId)) {
             setInteractionFavoriteIds([]);
+            setInteractionFavoriteActivity([]);
             setInteractionShortlistIds([]);
             return;
         }
@@ -927,12 +939,18 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             : Number((x as any)?.shortlistedProfileId ?? (x as any)?.profileId ?? (x as any)?.id)
                     )
                     .filter((x: number) => Number.isFinite(x));
+                const favAct =
+                    res?.result?.FavoriteActivity ??
+                    res?.result?.favoriteActivity ??
+                    [];
                 setInteractionFavoriteIds(favoriteIds);
+                setInteractionFavoriteActivity(Array.isArray(favAct) ? favAct : []);
                 setInteractionShortlistIds(shortlistIds);
             })
             .catch(() => {
                 if (!cancelled) {
                     setInteractionFavoriteIds([]);
+                    setInteractionFavoriteActivity([]);
                     setInteractionShortlistIds([]);
                 }
             });
@@ -2040,6 +2058,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         const has = prev.includes(targetProfileUserId);
                         return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
                     });
+                    notifyMatrimonialInteractionsChanged();
                     showToast('Interest updated successfully', 'success');
                 } else {
                     showToast(res?.message || res?.Message || 'Could not update interest. Try again.', 'error');
@@ -2096,6 +2115,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         });
     };
 
+    const handleShareProfile = async () => {
+        const targetUserId = matrimonialProfileUserId(selectedProfile);
+        if (!targetUserId) {
+            showToast('Cannot share this profile.', 'error');
+            return;
+        }
+        const profileName =
+            `${selectedProfile?.firstName ?? ''} ${selectedProfile?.lastName ?? ''}`.trim() || undefined;
+        setShareProfileLoading(true);
+        try {
+            const result = await shareProfileLink(targetUserId, profileName);
+            if (result === 'shared') {
+                showToast('Profile link shared.', 'success');
+            } else if (result === 'copied') {
+                showToast('Profile link copied to clipboard.', 'success');
+            } else if (result === 'failed') {
+                showToast('Could not share profile link.', 'error');
+            }
+        } finally {
+            setShareProfileLoading(false);
+        }
+    };
+
     const handleOpenMessage = () => {
         const blockedHint = profileVisitorActionsBlockedHint(user, selectedProfile, ownedIds);
         if (blockedHint) {
@@ -2115,6 +2157,18 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         const targetUserId = matrimonialProfileUserId(selectedProfile);
         if (!targetUserId) return;
         managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
+            const mutualState = resolveMutualInterestState(
+                interactionFavoriteActivity,
+                targetUserId,
+                managedProfileUserIdForApi(managedProfileUserId),
+            );
+            if (mutualState !== 'mutual') {
+                const peerName =
+                    `${selectedProfile?.firstName ?? ''} ${selectedProfile?.lastName ?? ''}`.trim() || 'This member';
+                const notice = mutualInterestBlockMessage(peerName, mutualState);
+                setProfileAccessMessage(notice.body);
+                return;
+            }
             onClose();
             const managedQuery = managedProfileUserIdForApi(managedProfileUserId);
             router.push(
@@ -4221,6 +4275,20 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                   ? 'Shortlisted'
                                                   : 'Shortlist'}
                                         </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-outline"
+                                            disabled={shareProfileLoading}
+                                            onClick={() => {
+                                                void handleShareProfile();
+                                            }}
+                                        >
+                                            <ShareIcon
+                                                size={16}
+                                                style={{ marginRight: '0.4rem', verticalAlign: '-3px' }}
+                                            />{' '}
+                                            {shareProfileLoading ? 'Please wait…' : 'Share'}
+                                        </button>
                                     </div>
                                     {profileAccessMessage && !isProfileLockedByDailyLimit && (
                                         <div style={{ marginTop: '0.75rem', color: '#b91c1c', background: '#fee2e2', border: '1px solid #fecaca', borderRadius: '8px', padding: '0.6rem 0.8rem', fontSize: '0.9rem', fontWeight: 500 }}>
@@ -4303,7 +4371,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
-                                                    <div className="info-item"><label>Marital Status</label><span>{selectedProfile.maritalStatus || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Marital Status</label><span>{formatMaritalStatusDisplay(selectedProfile.maritalStatus ?? selectedProfile.MaritalStatus)}</span></div>
                                                 </div>
                                             </div>
                                             <div className="profile-section">

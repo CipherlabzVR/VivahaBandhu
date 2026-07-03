@@ -70,6 +70,7 @@ export default function SubscriptionCheckoutPage() {
 
     const isMatchmakerAccount = user?.accountType === 'Matchmaker';
     const isSubAccountCheckout = checkoutPlan === CHECKOUT_PLAN_SUB_ACCOUNT;
+    const [isResubmitCheckout, setIsResubmitCheckout] = useState(false);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -79,9 +80,14 @@ export default function SubscriptionCheckoutPage() {
             url.searchParams.get('plan') ||
             url.searchParams.get('Plan') ||
             CHECKOUT_PLAN_PREMIUM_SELF;
+        const isResubmit = url.searchParams.get('resubmit') === '1';
 
         const normalizedPlan = queryPlan.trim().toLowerCase();
         setCheckoutPlan(normalizedPlan);
+        if (isResubmit) {
+            setPaymentMethod('bank');
+            setIsResubmitCheckout(true);
+        }
 
         if (queryAmount && queryAmount.trim() !== '') {
             setAmount(queryAmount);
@@ -408,6 +414,11 @@ export default function SubscriptionCheckoutPage() {
         <div className="min-h-screen bg-cream pt-28 px-4 pb-10">
             <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8">
                 <h1 className="text-3xl font-playfair font-bold text-text-dark mb-2">Complete Your Payment</h1>
+                {isResubmitCheckout ? (
+                    <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
+                        Upload a new bank transfer slip for the plan below. Our team will review it and activate your subscription after approval.
+                    </p>
+                ) : null}
                 <p className="text-text-light mb-6">
                     Plan: {planTitle} | Amount: LKR {amount}
                 </p>

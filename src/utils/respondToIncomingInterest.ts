@@ -1,4 +1,5 @@
 import { matrimonialService } from '../services/matrimonialService';
+import { notifyMatrimonialInteractionsChanged } from './messagingMutualInterest';
 
 function parseFavoriteTargetIds(raw: unknown): number[] {
     if (!Array.isArray(raw)) return [];
@@ -28,6 +29,7 @@ export async function respondToIncomingInterest(
     if (alreadyFavoursSender) {
         const res = await matrimonialService.notifyInterestBack(userId, senderUserId, managedIdForApi);
         if (res?.statusCode === 200 || res?.StatusCode === 200) {
+            notifyMatrimonialInteractionsChanged();
             return { ok: true, message: 'Interest back sent — they have been notified' };
         }
         return {
@@ -38,6 +40,7 @@ export async function respondToIncomingInterest(
 
     const res = await matrimonialService.toggleFavorite(userId, senderUserId, managedIdForApi);
     if (res?.statusCode === 200 || res?.StatusCode === 200) {
+        notifyMatrimonialInteractionsChanged();
         return { ok: true, message: 'Mutual interest connected — you can message each other' };
     }
     return {

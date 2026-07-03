@@ -12,7 +12,7 @@ import {
 } from 'react';
 import * as signalR from '@microsoft/signalr';
 import { useAuth } from './AuthContext';
-import { connectMatrimonialHub } from '../utils/signalrHub';
+import { connectMatrimonialHub, joinMatrimonialUserGroup, registerMatrimonialHubReconnect } from '../utils/signalrHub';
 import {
     interestNotificationDismissKey,
     interestNotificationId,
@@ -161,12 +161,14 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
         const startConnection = async (attempt = 0) => {
             if (disposed) return;
             try {
-                connection = await connectMatrimonialHub(API_BASE_URL);
+                connection = await connectMatrimonialHub(API_BASE_URL, String(user.id));
                 if (disposed) {
                     await connection.stop();
                     return;
                 }
-                await connection.invoke('JoinUserGroup', String(user.id));
+                const userId = String(user.id);
+                registerMatrimonialHubReconnect(connection, userId);
+                await joinMatrimonialUserGroup(connection, userId);
             } catch (error) {
                 if (connection) {
                     connection.off('ReceiveInterestNotification');
@@ -191,7 +193,8 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                 const liveTitle = payload?.title ?? payload?.Title;
                 const liveDesc = payload?.description ?? payload?.Description;
                 const notificationId =
-                    interestNotificationId(payload) ??
+                    payload?.id ??
+                    payload?.Id ??
                     `live-sub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
                 setInterestNotifications((prev) =>
                     withoutDismissedNotifications([
@@ -226,7 +229,8 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                     || refType === 'MatrimonialSubscription';
                 const inferred = { title: liveTitle, description: liveDesc } as Record<string, unknown>;
                 const notificationId =
-                    interestNotificationId(payload) ??
+                    payload?.id ??
+                    payload?.Id ??
                     `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
                 setInterestNotifications((prev) =>
                     withoutDismissedNotifications([

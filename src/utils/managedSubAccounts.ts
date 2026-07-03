@@ -1,5 +1,6 @@
 import { isFamilyParentAccountType } from './matrimonialAccountTypes';
 import { readManagedProfileUserId } from './managedMessageContent';
+import { normalizeMaritalStatus } from '../constants/matrimonialMaritalStatus';
 
 export type ManagedSubAccount = {
     id: number;
@@ -93,7 +94,10 @@ export function normalizeSubAccountDetailRow(row: Record<string, unknown>): Mana
         age: readNumber(row, 'age', 'Age'),
         cityOfResidence: readOptionalString(row, 'cityOfResidence', 'CityOfResidence'),
         religion: readOptionalString(row, 'religion', 'Religion'),
-        maritalStatus: readOptionalString(row, 'maritalStatus', 'MaritalStatus'),
+        maritalStatus: (() => {
+            const raw = readOptionalString(row, 'maritalStatus', 'MaritalStatus');
+            return raw ? normalizeMaritalStatus(raw) : undefined;
+        })(),
         profileComplete: readBool(row, 'profileComplete', 'ProfileComplete'),
         subscriptionUntilUtc: subscriptionUntilUtc ?? base.subscriptionExpiresAt,
         horoscopeDocument: readOptionalString(

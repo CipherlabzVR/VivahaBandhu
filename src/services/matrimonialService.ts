@@ -826,6 +826,32 @@ export const matrimonialService = {
         }
     },
 
+    /** Mark a conversation's incoming messages as read (drives live read receipts). */
+    async markConversationRead(
+        userId: number,
+        otherUserId: number,
+        managedProfileUserId?: number | null
+    ): Promise<any> {
+        try {
+            const params = new URLSearchParams({
+                userId: String(userId),
+                otherUserId: String(otherUserId),
+            });
+            const managedId = managedProfileUserId != null ? Number(managedProfileUserId) : null;
+            if (managedId != null && Number.isFinite(managedId) && managedId > 0) {
+                params.set('managedProfileUserId', String(managedId));
+            }
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/MarkConversationRead?${params.toString()}`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+            );
+            if (!response.ok) throw new Error('Failed to mark conversation read');
+            return await response.json();
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async toggleFavorite(
         userId: number,
         profileId: number,
