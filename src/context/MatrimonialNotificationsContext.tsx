@@ -192,10 +192,11 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                 const now = new Date().toISOString();
                 const liveTitle = payload?.title ?? payload?.Title;
                 const liveDesc = payload?.description ?? payload?.Description;
-                const notificationId =
-                    payload?.id ??
-                    payload?.Id ??
-                    `live-sub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+                const rawNotificationId = payload?.id ?? payload?.Id;
+                const notificationId: string | number =
+                    typeof rawNotificationId === 'string' || typeof rawNotificationId === 'number'
+                        ? rawNotificationId
+                        : `live-sub-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
                 setInterestNotifications((prev) =>
                     withoutDismissedNotifications([
                         {
@@ -228,10 +229,11 @@ export function MatrimonialNotificationsProvider({ children }: { children: React
                     isMatrimonialSubscriptionNotification(payload)
                     || refType === 'MatrimonialSubscription';
                 const inferred = { title: liveTitle, description: liveDesc } as Record<string, unknown>;
-                const notificationId =
-                    payload?.id ??
-                    payload?.Id ??
-                    `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+                const rawNotificationId = payload?.id ?? payload?.Id;
+                const notificationId: string | number =
+                    typeof rawNotificationId === 'string' || typeof rawNotificationId === 'number'
+                        ? rawNotificationId
+                        : `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
                 setInterestNotifications((prev) =>
                     withoutDismissedNotifications([
                         {
