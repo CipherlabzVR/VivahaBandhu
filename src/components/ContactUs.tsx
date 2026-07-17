@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { sanitizeNameInput } from '../utils/nameInput';
+import { isValidEmailAddress, normalizeEmailInput } from '../utils/emailValidation';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
 
@@ -39,11 +40,20 @@ export default function ContactUs() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const email = formData.email.trim();
+        const email = normalizeEmailInput(formData.email);
         const message = formData.message.trim();
         if (!email || !message) {
             showToast(t('contactFormValidation'), 'error');
             return;
+        }
+        if (!isValidEmailAddress(email)) {
+            showToast(t('contactFormInvalidEmail'), 'error');
+            return;
+        }
+
+        // Keep the cleaned email in the field so the user sees what was submitted.
+        if (email !== formData.email) {
+            setFormData((prev) => ({ ...prev, email }));
         }
 
         setSubmitting(true);
@@ -71,10 +81,21 @@ export default function ContactUs() {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        const nextValue = (name === 'firstName' || name === 'lastName')
-            ? sanitizeNameInput(value)
-            : value;
+        let nextValue = value;
+        if (name === 'firstName' || name === 'lastName') {
+            nextValue = sanitizeNameInput(value);
+        } else if (name === 'email') {
+            // Block spaces while typing; full normalize (mailto:/brackets) runs on submit/blur.
+            nextValue = value.replace(/\s/g, '');
+        }
         setFormData((prev) => ({ ...prev, [name]: nextValue }));
+    };
+
+    const handleEmailBlur = () => {
+        const cleaned = normalizeEmailInput(formData.email);
+        if (cleaned !== formData.email) {
+            setFormData((prev) => ({ ...prev, email: cleaned }));
+        }
     };
 
     return (
@@ -238,8 +259,12 @@ export default function ContactUs() {
                                     id="email"
                                     name="email"
                                     required
+                                    autoComplete="email"
+                                    inputMode="email"
+                                    placeholder="name@gmail.com"
                                     value={formData.email}
                                     onChange={handleChange}
+                                    onBlur={handleEmailBlur}
                                     className="w-full px-4 py-3 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                                 />
                             </div>
@@ -251,6 +276,7 @@ export default function ContactUs() {
                                     id="message"
                                     name="message"
                                     rows={5}
+                                    required
                                     value={formData.message}
                                     onChange={handleChange}
                                     className="w-full px-4 py-3 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-y min-h-[120px]"

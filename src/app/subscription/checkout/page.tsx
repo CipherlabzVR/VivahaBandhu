@@ -272,7 +272,10 @@ export default function SubscriptionCheckoutPage() {
                 Number(user.id),
                 mockReference,
                 subscriptionPlan,
-                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT ? parseFloat(amount) : undefined,
+                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
+                    || subscriptionPlan.startsWith('matchmaker_')
+                    ? parseFloat(amount)
+                    : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
@@ -567,9 +570,11 @@ export default function SubscriptionCheckoutPage() {
                                 </div>
                                 {user?.accountType === 'Matchmaker' ? (
                                     <p className="text-xs text-amber-800 mt-3 leading-relaxed">
-                                        Matchmaker plans: transfer exactly{' '}
-                                        <strong>{MATCHMAKER_GOLD_LKR.toLocaleString('en-LK')} LKR (Gold)</strong> or{' '}
-                                        <strong>{MATCHMAKER_DIAMOND_LKR.toLocaleString('en-LK')} LKR (Diamond)</strong> so admin approval activates the correct tier.
+                                        Transfer exactly{' '}
+                                        <strong>
+                                            {Number(amount).toLocaleString('en-LK')} LKR
+                                        </strong>{' '}
+                                        for this matchmaker plan so admin approval activates the correct package.
                                     </p>
                                 ) : null}
                             </div>
