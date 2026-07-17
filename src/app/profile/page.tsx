@@ -27,6 +27,7 @@ import {
 import { PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE } from '../../constants/premiumActivation';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../constants/inputLimits';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
+import ModalScrollArea from '../../components/ModalScrollArea';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from '../../components/PasswordVisibilityToggle';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
 import { markManagedProfileDraftCompleted } from '../../utils/managedProfileDraft';
@@ -351,10 +352,6 @@ function ProfilePageContent() {
     const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false);
     const [profileCompleted, setProfileCompleted] = useState(false);
     const [profileFetched, setProfileFetched] = useState(false);
-    const pendingPrivacyPrefsRef = useRef<{
-        showInBrowse?: boolean;
-        photoVisibility?: 'everyone' | 'premium';
-    } | null>(null);
 
     useEffect(() => {
         if (!loading && !user) {
@@ -593,22 +590,20 @@ function ProfilePageContent() {
 
                     const showInBrowse = r.showInBrowse ?? r.ShowInBrowse;
                     const photoVis = r.photoVisibility ?? r.PhotoVisibility;
-                    if (
-                        (showInBrowse !== undefined && showInBrowse !== null)
-                        || (photoVis !== undefined && photoVis !== null && String(photoVis).trim() !== '')
-                    ) {
-                        pendingPrivacyPrefsRef.current = {
-                            ...(showInBrowse !== undefined && showInBrowse !== null
-                                ? { showInBrowse: !!showInBrowse }
-                                : {}),
-                            ...(photoVis !== undefined && photoVis !== null && String(photoVis).trim() !== ''
-                                ? {
-                                    photoVisibility: String(photoVis).toLowerCase() === 'premium'
-                                        ? 'premium'
-                                        : 'everyone',
-                                }
-                                : {}),
-                        };
+                    const loadedPrivacyPrefs: { showInBrowse?: boolean; photoVisibility?: 'everyone' | 'premium' } = {
+                        ...(showInBrowse !== undefined && showInBrowse !== null
+                            ? { showInBrowse: !!showInBrowse }
+                            : {}),
+                        ...(photoVis !== undefined && photoVis !== null && String(photoVis).trim() !== ''
+                            ? {
+                                photoVisibility: String(photoVis).toLowerCase() === 'premium'
+                                    ? 'premium'
+                                    : 'everyone',
+                            }
+                            : {}),
+                    };
+                    if (Object.keys(loadedPrivacyPrefs).length > 0) {
+                        setPrefs(prev => ({ ...prev, ...loadedPrivacyPrefs }));
                     }
 
                     const famPurchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
@@ -967,9 +962,6 @@ function ProfilePageContent() {
         [user?.isVerified],
     );
 
-    const canManageContactVisibilityPref =
-        user?.isSubscribed === true ||
-        (user?.accountType === 'Matchmaker' && isMatchmakerPaidTier(user?.matchmakerTier));
     const familyManagedByLabel = isRelationAccountType(user?.accountType)
         ? 'Managed by relation'
         : 'Managed by parent';
@@ -1376,7 +1368,7 @@ function ProfilePageContent() {
             const res = await matrimonialService.toggleFavorite(Number(user.id), profileId, managedId);
             if (res?.statusCode === 200) {
                 setInterestProfiles((prev) => prev.filter((x) => interactionProfileId(x) !== profileId));
-                showToast('Interest removed.', 'success');
+                showToast('Interest removed successfully', 'warning');
             } else {
                 showToast(res?.message || 'Could not remove interest.', 'error');
             }
@@ -1562,25 +1554,27 @@ function ProfilePageContent() {
     const [deletingSubAccountId, setDeletingSubAccountId] = useState<number | null>(null);
 
     // ─── Settings panel state ────────────────────────────────────────────────────
+    // Always start collapsed; only open when the user clicks Settings (or a one-shot deep link).
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     /**
-     * Allow other places (e.g. the header user dropdown) to deep-link straight to the
-     * settings panel via `/profile?settings=open`. We open the panel and then smoothly
-     * scroll it into view once the layout has settled.
+     * Allow other places (e.g. the header user dropdown) to deep-link once via
+     * `/profile?settings=open`. Clear the query immediately so the panel does not
+     * keep re-opening on every user/profile refresh, and stays hidden after Hide Settings.
      */
     useEffect(() => {
         if (!user) return;
-        if (searchParams?.get('settings') === 'open') {
-            setIsSettingsOpen(true);
-            // Defer the scroll until the panel has actually rendered.
-            const t = window.setTimeout(() => {
-                document.getElementById('user-settings-panel')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 60);
-            return () => window.clearTimeout(t);
-        }
-    }, [searchParams, user]);
+        if (searchParams?.get('settings') !== 'open') return;
+
+        setIsSettingsOpen(true);
+        router.replace('/profile', { scroll: false });
+
+        const t = window.setTimeout(() => {
+            document.getElementById('user-settings-panel')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 60);
+        return () => window.clearTimeout(t);
+    }, [searchParams, user, router]);
     /** Client settings panel state; privacy + notification prefs are server-authoritative. */
     const [prefs, setPrefs] = useState({
         emailNotifications: true,
@@ -1611,13 +1605,6 @@ function ProfilePageContent() {
             : { ...p, emailNotifications: !!user.emailOnInterest });
     }, [user?.emailOnInterest]);
 
-    useEffect(() => {
-        if (!profileFetched || !pendingPrivacyPrefsRef.current) return;
-        const loaded = pendingPrivacyPrefsRef.current;
-        pendingPrivacyPrefsRef.current = null;
-        setPrefs(p => ({ ...p, ...loaded }));
-    }, [profileFetched]);
-
     const updatePref = <K extends keyof typeof prefs>(key: K, value: (typeof prefs)[K]) => {
         setPrefs(prev => {
             const next = { ...prev, [key]: value };
@@ -1633,7 +1620,6 @@ function ProfilePageContent() {
 
     const [isSavingEmailPref, setIsSavingEmailPref] = useState(false);
     const [isSavingPrivacyPref, setIsSavingPrivacyPref] = useState(false);
-    const [isSavingContactVisibilityPref, setIsSavingContactVisibilityPref] = useState(false);
     const [bankSubAccountAwaitingApproval, setBankSubAccountAwaitingApproval] = useState(false);
 
     const refreshFamilySubAccountSlots = useCallback(async () => {
@@ -1782,27 +1768,6 @@ function ProfilePageContent() {
             showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
         } finally {
             setIsSavingPrivacyPref(false);
-        }
-    };
-
-    const handleShowContactInformationToggle = async (show: boolean) => {
-        if (!user?.id) return;
-        const previous = user.showContactInformation !== false;
-        updateUser?.({ showContactInformation: show });
-        try {
-            setIsSavingContactVisibilityPref(true);
-            const res = await matrimonialService.setMatrimonialShowContactInformation(Number(user.id), show);
-            if (res?.statusCode === 200 || res?.statusCode === 1) {
-                updateUser?.({ showContactInformation: show });
-            } else {
-                updateUser?.({ showContactInformation: previous });
-                showToast(res?.message || 'Could not save preference. Please try again.', 'error');
-            }
-        } catch (err: unknown) {
-            updateUser?.({ showContactInformation: previous });
-            showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
-        } finally {
-            setIsSavingContactVisibilityPref(false);
         }
     };
 
@@ -2414,18 +2379,19 @@ function ProfilePageContent() {
                 {isCompletionModalOpen && !isBasicProfileOnlyAccountType(user?.accountType) && !isManagedSubAccount(user) && (
                     <div
                         className="modal-overlay active profile-completion-overlay"
+                        data-lenis-prevent
                         style={{ zIndex: 1000, alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
                     >
                         <div
-                            ref={profileCompletionModalScrollRef}
                             className="modal profile-completion-modal-full"
+                            style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
                         >
                             <button className="modal-close" onClick={() => setIsCompletionModalOpen(false)}>✕</button>
                             <div className="modal-header">
                                 <h2>{profileCompleted ? 'Edit Detailed Profile' : 'Complete Your Profile'}</h2>
                                 <p style={{ color: '#666', fontSize: '0.9rem' }}>Please provide accurate information to find the best match.</p>
                             </div>
-                            <div className="modal-body">
+                            <ModalScrollArea ref={profileCompletionModalScrollRef} className="modal-body" style={{ flex: 1, minHeight: 0 }}>
                                 <ProfileCompletionForm
                                     scrollContainerRef={profileCompletionModalScrollRef}
                                     onClose={() => setIsCompletionModalOpen(false)}
@@ -2434,20 +2400,20 @@ function ProfilePageContent() {
                                         setProfileFetched(false); // Allow re-fetch
                                     }}
                                 />
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}
 
                 {/* Edit Basic Profile Modal */}
                 {isEditModalOpen && (
-                    <div className="modal-overlay active">
-                        <div className="modal">
+                    <div className="modal-overlay active" data-lenis-prevent>
+                        <div className="modal" style={{ maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                             <button className="modal-close" onClick={() => setIsEditModalOpen(false)}>✕</button>
                             <div className="modal-header">
                                 <h2>Edit Basic Details</h2>
                             </div>
-                            <div className="modal-body">
+                            <ModalScrollArea className="modal-body">
                                 <form onSubmit={async (e) => {
                                     e.preventDefault();
                                     try {
@@ -2731,7 +2697,7 @@ function ProfilePageContent() {
                                     </div>
                                     <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Save Changes</button>
                                 </form>
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}
@@ -3087,40 +3053,6 @@ function ProfilePageContent() {
                                         <option value="premium">Premium members only</option>
                                     </select>
                                 </div>
-                                {canManageContactVisibilityPref && (
-                                    <label
-                                        style={{
-                                            display: 'flex',
-                                            justifyContent: 'space-between',
-                                            alignItems: 'center',
-                                            gap: '1rem',
-                                            padding: '0.85rem 1rem',
-                                            background: '#FDF8F3',
-                                            borderRadius: '10px',
-                                            cursor: isSavingContactVisibilityPref ? 'wait' : 'pointer',
-                                            opacity: isSavingContactVisibilityPref ? 0.7 : 1,
-                                        }}
-                                    >
-                                        <span>
-                                            <span style={{ display: 'block', fontWeight: 500 }}>
-                                                Show contact details to eligible viewers
-                                            </span>
-                                            <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
-                                                {isSavingContactVisibilityPref
-                                                    ? 'Saving…'
-                                                    : 'Contact details are not shown on browse or profile previews — use in-app messaging to connect.'}
-                                            </span>
-                                        </span>
-                                        <input
-                                            type="checkbox"
-                                            checked={user.showContactInformation !== false}
-                                            disabled={isSavingContactVisibilityPref}
-                                            onChange={(e) => void handleShowContactInformationToggle(e.target.checked)}
-                                            style={{ width: 18, height: 18 }}
-                                            aria-label="Show contact details to eligible viewers"
-                                        />
-                                    </label>
-                                )}
                             </div>
                         </section>
 
@@ -3374,12 +3306,13 @@ function ProfilePageContent() {
                 {showCancelSubscriptionModal && (
                     <div
                         className="modal-overlay active"
+                        data-lenis-prevent
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="cancel-subscription-title"
                         style={{ zIndex: 1100 }}
                     >
-                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                             <button
                                 type="button"
                                 className="modal-close"
@@ -3393,7 +3326,7 @@ function ProfilePageContent() {
                                     Cancel your subscription?
                                 </h2>
                             </div>
-                            <div className="modal-body">
+                            <ModalScrollArea className="modal-body">
                                 <p style={{ marginBottom: '1rem', color: '#374151', lineHeight: 1.55 }}>
                                     {canManageSubAccounts(user?.accountType)
                                         ? 'Premium features and managed profiles will be disabled immediately. You can subscribe again whenever you like.'
@@ -3425,7 +3358,7 @@ function ProfilePageContent() {
                                         {isCancellingSubscription ? 'Cancelling…' : 'Yes, cancel subscription'}
                                     </button>
                                 </div>
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}
@@ -3434,17 +3367,18 @@ function ProfilePageContent() {
                 {showDeleteAccountModal && (
                     <div
                         className="modal-overlay active"
+                        data-lenis-prevent
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="delete-account-title"
                         style={{ zIndex: 1100 }}
                     >
-                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                             <button className="modal-close" onClick={() => !isDeletingAccount && setShowDeleteAccountModal(false)} aria-label="Close">✕</button>
                             <div className="modal-header">
                                 <h2 id="delete-account-title" style={{ color: '#b91c1c' }}>Delete account?</h2>
                             </div>
-                            <div className="modal-body">
+                            <ModalScrollArea className="modal-body">
                                 <p style={{ marginBottom: '1rem', color: '#374151' }}>
                                     This will permanently delete <strong>your profile</strong>, your messages, saved/favourited profiles, notifications
                                     {user?.accountType === 'Matchmaker' ? ', and every client profile you manage.' : '.'}
@@ -3484,7 +3418,7 @@ function ProfilePageContent() {
                                         {isDeletingAccount ? 'Deleting…' : 'Delete forever'}
                                     </button>
                                 </div>
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}
@@ -3615,7 +3549,7 @@ function ProfilePageContent() {
 
                 {/* Create managed profile — full basic + detailed form, no separate login */}
                 {isCreateSubAccountModalOpen && user?.id && (
-                    <div className="modal-overlay active managed-profile-modal-overlay">
+                    <div className="modal-overlay active managed-profile-modal-overlay" data-lenis-prevent>
                         <div className="modal managed-profile-modal">
                             <button className="modal-close" onClick={() => setIsCreateSubAccountModalOpen(false)} aria-label="Close">✕</button>
                             <div className="modal-header">
@@ -3624,7 +3558,7 @@ function ProfilePageContent() {
                                     Enter basic and detailed profile information in one step. The profile appears in browse with a managed-by label; messages and interest are delivered to your account.
                                 </p>
                             </div>
-                            <div ref={managedProfileModalScrollRef} className="modal-body">
+                            <ModalScrollArea ref={managedProfileModalScrollRef} className="modal-body">
                                 <ProfileCompletionForm
                                     key={`managed-create-${user.id}-${managedProfileFormSession}`}
                                     managedCreate={managedCreateConfig}
@@ -3652,13 +3586,13 @@ function ProfilePageContent() {
                                         showToast('Managed profile created successfully.', 'success');
                                     }}
                                 />
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}
 
                 {editingSubAccount && user?.id && (
-                    <div className="modal-overlay active managed-profile-modal-overlay">
+                    <div className="modal-overlay active managed-profile-modal-overlay" data-lenis-prevent>
                         <div className="modal managed-profile-modal">
                             <button
                                 className="modal-close"
@@ -3678,7 +3612,7 @@ function ProfilePageContent() {
                                     {[editingSubAccount.firstName, editingSubAccount.lastName].filter(Boolean).join(' ').trim() || 'this profile'}.
                                 </p>
                             </div>
-                            <div ref={managedProfileEditModalScrollRef} className="modal-body">
+                            <ModalScrollArea ref={managedProfileEditModalScrollRef} className="modal-body">
                                 <ProfileCompletionForm
                                     key={`managed-edit-${editingSubAccount.id}-${managedEditFormSession}`}
                                     managedEdit={{
@@ -3694,7 +3628,7 @@ function ProfilePageContent() {
                                         showToast('Managed profile updated successfully.', 'success');
                                     }}
                                 />
-                            </div>
+                            </ModalScrollArea>
                         </div>
                     </div>
                 )}

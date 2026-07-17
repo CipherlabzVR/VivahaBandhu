@@ -122,27 +122,24 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                 {loading ? (
                     <div
                         id="pricing-plans"
-                        className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto min-h-[520px]"
+                        className="pricing-plans-grid min-h-[520px]"
                         aria-busy="true"
                         aria-label="Loading pricing plans"
                     >
                         {[0, 1, 2].map((slot) => (
                             <div
                                 key={slot}
-                                className="w-full max-w-[360px] rounded-3xl p-8 bg-white/40 border border-white/30 min-h-[420px] animate-pulse"
+                                className="rounded-3xl p-8 bg-white/40 border border-white/30 min-h-[420px] animate-pulse"
                             />
                         ))}
-                        <p className="w-full text-center text-white/90 text-sm -mt-2">Loading plans…</p>
+                        <p className="col-span-full text-center text-white/90 text-sm">Loading plans…</p>
                     </div>
                 ) : packages.length === 0 ? (
                     <p className="text-center text-white/90 text-sm py-8 max-w-md mx-auto">
                         No plans are available right now. Please check back later or contact support.
                     </p>
                 ) : (
-                    <div
-                        id="pricing-plans"
-                        className="flex flex-wrap justify-center items-stretch gap-8 max-w-[1400px] mx-auto"
-                    >
+                    <div id="pricing-plans" className="pricing-plans-grid">
                         {packages.map((pkg) => {
                             const id = packageId(pkg);
                             const name = packageName(pkg);
@@ -160,7 +157,7 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                             return (
                                 <div
                                     key={id || name}
-                                    className={`w-full max-w-[360px] rounded-3xl p-8 backdrop-blur-xl shadow-xl animate-glass-shine transition-all duration-300 relative ${
+                                    className={`pricing-plan-card rounded-3xl p-8 backdrop-blur-xl shadow-xl animate-glass-shine transition-all duration-300 relative ${
                                         isCurrent
                                             ? 'bg-white/85 border-2 border-emerald-500 ring-2 ring-emerald-400/40'
                                             : popular
@@ -177,67 +174,71 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                                             {t('mostPopular')}
                                         </span>
                                     ) : null}
-                                    <h3 className="text-2xl font-playfair font-bold text-text-dark mb-2">{name}</h3>
-                                    {desc ? (
-                                        <p className="text-text-light text-sm mb-4">{desc}</p>
-                                    ) : null}
-                                    <div className="mb-6">
-                                        <span className="text-4xl font-bold text-text-dark">
-                                            LKR {price.toLocaleString('en-LK')}
-                                        </span>
-                                        {period ? (
-                                            <span className="text-text-light">{period}</span>
+                                    <div className="pricing-plan-card__body">
+                                        <h3 className="text-2xl font-playfair font-bold text-text-dark mb-2">{name}</h3>
+                                        {desc ? (
+                                            <p className="text-text-light text-sm mb-4">{desc}</p>
                                         ) : null}
-                                        {validityLabel && !free ? (
-                                            <p className="text-text-light text-sm mt-2">
-                                                Valid for: <span className="font-medium text-text-dark">{validityLabel}</span>
-                                            </p>
-                                        ) : null}
+                                        <div className="mb-6">
+                                            <span className="text-4xl font-bold text-text-dark">
+                                                LKR {price.toLocaleString('en-LK')}
+                                            </span>
+                                            {period ? (
+                                                <span className="text-text-light">{period}</span>
+                                            ) : null}
+                                            {validityLabel && !free ? (
+                                                <p className="text-text-light text-sm mt-2">
+                                                    Valid for: <span className="font-medium text-text-dark">{validityLabel}</span>
+                                                </p>
+                                            ) : null}
+                                        </div>
+                                        <PackageFeatureList labels={featureLabels} className="space-y-3" />
                                     </div>
-                                    <PackageFeatureList labels={featureLabels} className="space-y-3 mb-8" />
-                                    {isCurrent ? (
-                                        <button
-                                            type="button"
-                                            className="w-full px-6 py-3 border-2 border-emerald-600 text-emerald-700 rounded-full font-semibold bg-emerald-50 cursor-default"
-                                            disabled
-                                        >
-                                            {t('currentPlan')}
-                                        </button>
-                                    ) : free ? (
-                                        premiumLocked ? (
+                                    <div className="pricing-plan-card__cta">
+                                        {isCurrent ? (
                                             <button
                                                 type="button"
-                                                className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                                                onClick={onOpenSubscription}
+                                                className="w-full px-6 py-3 border-2 border-emerald-600 text-emerald-700 rounded-full font-semibold bg-emerald-50 cursor-default"
+                                                disabled
                                             >
-                                                Switch to free plan
+                                                {t('currentPlan')}
+                                            </button>
+                                        ) : free ? (
+                                            premiumLocked ? (
+                                                <button
+                                                    type="button"
+                                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                                    onClick={onOpenSubscription}
+                                                >
+                                                    Switch to free plan
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                                                    onClick={onOpenSubscription}
+                                                >
+                                                    {t('getStarted')}
+                                                </button>
+                                            )
+                                        ) : canUpgradeToPackage ? (
+                                            <button
+                                                type="button"
+                                                className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
+                                                onClick={() => goCheckout(pkg)}
+                                            >
+                                                {t('upgradeNow')}
                                             </button>
                                         ) : (
                                             <button
                                                 type="button"
-                                                className="w-full px-6 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
-                                                onClick={onOpenSubscription}
+                                                className="w-full px-6 py-3 border-2 border-gray-300 text-gray-500 rounded-full font-semibold bg-gray-50 cursor-not-allowed"
+                                                disabled
                                             >
-                                                {t('getStarted')}
+                                                {premiumLocked ? 'Included in your plan' : t('currentPlan')}
                                             </button>
-                                        )
-                                    ) : canUpgradeToPackage ? (
-                                        <button
-                                            type="button"
-                                            className="w-full px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary-dark transition-colors"
-                                            onClick={() => goCheckout(pkg)}
-                                        >
-                                            {t('upgradeNow')}
-                                        </button>
-                                    ) : (
-                                        <button
-                                            type="button"
-                                            className="w-full px-6 py-3 border-2 border-gray-300 text-gray-500 rounded-full font-semibold bg-gray-50 cursor-not-allowed"
-                                            disabled
-                                        >
-                                            {premiumLocked ? 'Included in your plan' : t('currentPlan')}
-                                        </button>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             );
                         })}

@@ -2,6 +2,7 @@
 
 import type { ManagedSubAccount } from '../utils/managedSubAccounts';
 import { subAccountDisplayName } from '../utils/managedSubAccounts';
+import ModalScrollArea from './ModalScrollArea';
 
 export type ManagedSubAccountActionKind = 'interest' | 'message' | 'save' | 'preferredSearch';
 
@@ -81,6 +82,8 @@ export default function ManagedSubAccountActionPicker({
             role="dialog"
             aria-modal="true"
             aria-labelledby="managed-sub-account-picker-title"
+            data-modal-open="true"
+            data-lenis-prevent
             style={{
                 position: 'fixed',
                 inset: 0,
@@ -116,7 +119,7 @@ export default function ManagedSubAccountActionPicker({
                     </p>
                 </div>
 
-                <div style={{ padding: '12px 16px', maxHeight: 'min(360px, 50vh)', overflowY: 'auto' }}>
+                <ModalScrollArea style={{ padding: '12px 16px', maxHeight: 'min(360px, 50vh)' }}>
                     {subAccounts.map((sub) => {
                         const isSelected = selectedId === sub.id;
                         const name = subAccountDisplayName(sub);
@@ -182,7 +185,7 @@ export default function ManagedSubAccountActionPicker({
                             </button>
                         );
                     })}
-                </div>
+                </ModalScrollArea>
 
                 <div
                     style={{

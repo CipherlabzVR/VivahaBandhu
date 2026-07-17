@@ -7,6 +7,7 @@ import {
     packagePrice,
     packageValidityLabel,
 } from '../utils/matrimonialPackages';
+import ModalScrollArea from './ModalScrollArea';
 
 type SubAccountPackagePickerModalProps = {
     open: boolean;
@@ -32,12 +33,13 @@ export default function SubAccountPackagePickerModal({
     return (
         <div
             className="modal-overlay active"
+            data-lenis-prevent
             role="dialog"
             aria-modal="true"
             aria-labelledby="sub-account-packages-title"
             style={{ zIndex: 1100 }}
         >
-            <div className="modal" style={{ maxWidth: '640px', width: '95%' }}>
+            <div className="modal" style={{ maxWidth: '640px', width: '95%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <button className="modal-close" onClick={onClose} aria-label="Close">
                     ✕
                 </button>
@@ -46,7 +48,7 @@ export default function SubAccountPackagePickerModal({
                         Choose a sub-account package
                     </h2>
                 </div>
-                <div className="modal-body">
+                <ModalScrollArea className="modal-body">
                     {bankAwaitingApproval ? (
                         <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
                             Your bank transfer for a sub-account slot is <strong>pending admin approval</strong>.
@@ -177,7 +179,7 @@ export default function SubAccountPackagePickerModal({
                             {bankAwaitingApproval ? 'Close' : 'Cancel'}
                         </button>
                     </div>
-                </div>
+                </ModalScrollArea>
             </div>
         </div>
     );

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { isManagedSubAccountActive, subAccountDisplayName, type ManagedSubAccount } from '../utils/managedSubAccounts';
+import ModalScrollArea from './ModalScrollArea';
 
 type Props = {
     open: boolean;
@@ -79,8 +80,8 @@ export function MatchmakerClientSelectionModal({
     };
 
     return (
-        <div className="modal-overlay active modal-overlay--stacked" role="dialog" aria-modal="true">
-            <div className="modal" style={{ maxWidth: '560px' }}>
+        <div className="modal-overlay active modal-overlay--stacked" data-lenis-prevent role="dialog" aria-modal="true">
+            <div className="modal" style={{ maxWidth: '560px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <button
                     type="button"
                     className="modal-close"
@@ -98,11 +99,11 @@ export function MatchmakerClientSelectionModal({
                         be paused until you change your selection or upgrade your plan.
                     </p>
                 </div>
-                <div className="modal-body">
+                <ModalScrollArea className="modal-body">
                     <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '1rem' }}>
                         Selected: {selectedIds.length} / {maxSelectable}
                     </p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '360px', overflowY: 'auto' }}>
+                    <div data-lenis-prevent style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: '360px', overflowY: 'auto' }}>
                         {sortedAccounts.map((sub) => {
                             const id = Number(sub.id);
                             const checked = selectedIds.includes(id);
@@ -162,7 +163,7 @@ export function MatchmakerClientSelectionModal({
                             {isSubmitting ? 'Saving…' : 'Activate selected profiles'}
                         </button>
                     </div>
-                </div>
+                </ModalScrollArea>
             </div>
         </div>
     );

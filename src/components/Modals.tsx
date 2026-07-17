@@ -34,6 +34,7 @@ import SubscriptionPlanPicker from './SubscriptionPlanPicker';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
 import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
+import ModalScrollArea from './ModalScrollArea';
 import { HeartIcon, BookmarkIcon, ShareIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge from './PremiumBadge';
@@ -41,7 +42,7 @@ import { premiumBadgeLabelForProfile } from '../constants/subscription';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
-import { showToast } from '../utils/toast';
+import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
 import { REGISTER_MATRIMONIAL_ACCOUNT_TYPES } from '../utils/matrimonialAccountTypes';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
@@ -69,10 +70,22 @@ function viewerProfileUserId(p: Record<string, unknown> | null | undefined): num
     return matrimonialProfileUserId(p);
 }
 
-/** Eating / drinking / smoking preference from API; blank or placeholder "-" → em dash */
+/** Eating / drinking / smoking preference from API; blank or placeholder "-" → Not Specified */
 function partnerPreferenceHabitDisplay(v: unknown): string {
     const s = v != null ? String(v).trim() : '';
-    return s && s !== '-' ? s : '—';
+    return s && s !== '-' ? s : 'Not Specified';
+
+}
+
+/** Comma-separated partner preference lists (religion, ethnicity). */
+function partnerPreferenceListDisplay(v: unknown): string {
+    const s = v != null ? String(v).trim() : '';
+    if (!s || s === '-') return 'Not Specified';
+    return s
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(', ') || 'Not Specified';
 }
 
 function parentUserIdFromLoginResult(r: MatrimonialLoginResponse['result'] | undefined): number | undefined {
@@ -2054,12 +2067,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     managedProfileUserIdForApi(managedProfileUserId)
                 );
                 if (res.statusCode === 200) {
-                    setInteractionFavoriteIds((prev) => {
-                        const has = prev.includes(targetProfileUserId);
-                        return has ? prev.filter((id) => id !== targetProfileUserId) : [...prev, targetProfileUserId];
-                    });
+                    const wasAlreadyInterested = interactionFavoriteIds.includes(targetProfileUserId);
+                    setInteractionFavoriteIds((prev) =>
+                        wasAlreadyInterested
+                            ? prev.filter((id) => id !== targetProfileUserId)
+                            : [...prev, targetProfileUserId]
+                    );
                     notifyMatrimonialInteractionsChanged();
-                    showToast('Interest updated successfully', 'success');
+                    showInterestToggleToastFromResponse(res?.result ?? res?.Result, wasAlreadyInterested);
                 } else {
                     showToast(res?.message || res?.Message || 'Could not update interest. Try again.', 'error');
                 }
@@ -2360,14 +2375,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             )}
 
             {/* Login Modal */}
-            <div className={`modal-overlay ${activeModal === 'login' || activeModal === 'verify' ? 'active' : ''}`} id="loginModal">
+            <div className={`modal-overlay ${activeModal === 'login' || activeModal === 'verify' ? 'active' : ''}`} id="loginModal" data-lenis-prevent>
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
                         <h2>{activeModal === 'verify' ? 'Verify Account' : 'Welcome Back'}</h2>
                         <p>{activeModal === 'verify' ? 'Please verify your account to continue' : 'Login to continue your journey'}</p>
                     </div>
-                    <div className="modal-body">
+                    <ModalScrollArea className="modal-body">
                         {activeModal !== 'verify' && !showVerification && (
                             <div className="login-tabs">
                                 <button className={`login-tab ${loginTab === 'login' ? 'active' : ''}`} onClick={() => { setLoginTab('login'); setShowForgotPassword(false); }}>Login</button>
@@ -3393,19 +3408,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </p>
                             </div>
                         )}
-                    </div>
+                    </ModalScrollArea>
                 </div>
             </div>
 
             {/* Register Modal */}
-            <div className={`modal-overlay ${activeModal === 'register' ? 'active' : ''}`} id="registerModal">
+            <div className={`modal-overlay ${activeModal === 'register' ? 'active' : ''}`} id="registerModal" data-lenis-prevent>
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
                         <h2>Create Account</h2>
                         <p>Start your journey to find your perfect match</p>
                     </div>
-                    <div className="modal-body">
+                    <ModalScrollArea className="modal-body">
                         {showVerification ? (
                             <div className="verification-screen">
                                 <div className="register-steps">
@@ -3926,12 +3941,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </p>
                             </>
                         )}
-                    </div>
+                    </ModalScrollArea>
                 </div>
             </div>
 
             {/* Subscription Modal */}
-            <div className={`modal-overlay subscription-modal ${activeModal === 'subscription' ? 'active' : ''}`} id="subscriptionModal" onClick={handleOverlayClick}>
+            <div className={`modal-overlay subscription-modal ${activeModal === 'subscription' ? 'active' : ''}`} id="subscriptionModal" data-lenis-prevent onClick={handleOverlayClick}>
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
@@ -3940,7 +3955,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             ? 'Compare Free, Gold, and Diamond — same plans as on our homepage pricing section.'
                             : 'Compare Free and Premium — same plans and features as on our homepage pricing section.'}</p>
                     </div>
-                    <div className="modal-body">
+                    <ModalScrollArea className="modal-body">
                         {subscriptionPackagesLoading ? (
                             <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>Loading plans…</p>
                         ) : subscriptionPackages.length === 0 ? (
@@ -4001,13 +4016,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </div>
                             </>
                         )}
-                    </div>
+                    </ModalScrollArea>
                 </div>
             </div>
 
             {showFreePlanConfirmModal ? (
                 <div
                     className="modal-overlay modal-overlay--stacked active"
+                    data-lenis-prevent
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="free-plan-confirm-title"
@@ -4032,7 +4048,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 Continue on the free plan?
                             </h2>
                         </div>
-                        <div className="modal-body">
+                        <ModalScrollArea className="modal-body">
                             <p
                                 style={{
                                     marginBottom: '1rem',
@@ -4076,17 +4092,18 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     {isSwitchingToFreePlan ? 'Switching…' : 'Yes, continue on free plan'}
                                 </button>
                             </div>
-                        </div>
+                        </ModalScrollArea>
                     </div>
                 </div>
             ) : null}
 
             {/* Profile Detail Modal */}
-            <div className={`modal-overlay profile-detail-modal ${activeModal === 'profile' ? 'active' : ''}`} id="profileDetailModal" onClick={handleOverlayClick}>
-                <div className="modal" style={{ maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className={`modal-overlay profile-detail-modal ${activeModal === 'profile' ? 'active' : ''}`} id="profileDetailModal" data-lenis-prevent onClick={handleOverlayClick}>
+                <div className="modal" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <button className="modal-close" onClick={close}>✕</button>
 
                     {selectedProfile ? (
+                        <ModalScrollArea className="modal-body" style={{ maxHeight: '90vh', paddingTop: '3rem' }}>
                         <div className="profile-detail-content">
                             {selectedProfile.viewAsOthers && (
                                 <div
@@ -4413,10 +4430,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <div className="info-item"><label>Mother&apos;s Name</label><span>{(selectedProfile.motherName || selectedProfile.MotherName || '').trim() || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Father's Occupation</label><span>{selectedProfile.fatherOccupation || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Mother's Occupation</label><span>{selectedProfile.motherOccupation || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Father's Religion</label><span>{selectedProfile.fatherReligion || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Mother's Religion</label><span>{selectedProfile.motherReligion || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Father&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.fatherCountryOfResidence} /></span></div>
-                                            <div className="info-item"><label>Mother&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.motherCountryOfResidence} /></span></div>
+                                            <div className="info-item"><label>Father&apos;s Religion</label><span>{selectedProfile.fatherReligion || selectedProfile.FatherReligion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother&apos;s Religion</label><span>{selectedProfile.motherReligion || selectedProfile.MotherReligion || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Father&apos;s Ethnicity</label><span>{selectedProfile.fatherEthnicity || selectedProfile.FatherEthnicity || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Mother&apos;s Ethnicity</label><span>{selectedProfile.motherEthnicity || selectedProfile.MotherEthnicity || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Father&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.fatherCountryOfResidence ?? selectedProfile.FatherCountryOfResidence} /></span></div>
+                                            <div className="info-item"><label>Mother&apos;s Country</label><span><CountryResidenceDisplay value={selectedProfile.motherCountryOfResidence ?? selectedProfile.MotherCountryOfResidence} /></span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -4450,8 +4469,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <div className="info-item"><label>Eating Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerEatingHabits ?? selectedProfile.PartnerEatingHabits)}</span></div>
                                             <div className="info-item"><label>Drinking Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerDrinkingHabits ?? selectedProfile.PartnerDrinkingHabits)}</span></div>
                                             <div className="info-item"><label>Smoking Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerSmokingHabits ?? selectedProfile.PartnerSmokingHabits)}</span></div>
-                                            <div className="info-item"><label>Religion</label><span>{selectedProfile.partnerReligion || 'Not Specified'}</span></div>
-                                            <div className="info-item"><label>Education</label><span>{selectedProfile.partnerQualificationLevel || 'Not Specified'}</span></div>
+                                            <div className="info-item"><label>Religion</label><span>{partnerPreferenceListDisplay(selectedProfile.partnerReligion ?? selectedProfile.PartnerReligion)}</span></div>
+                                            <div className="info-item"><label>Ethnicity</label><span>{partnerPreferenceListDisplay(selectedProfile.partnerEthnicity ?? selectedProfile.PartnerEthnicity)}</span></div>
+                                            <div className="info-item"><label>Education</label><span>{selectedProfile.partnerQualificationLevel || selectedProfile.PartnerQualificationLevel || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Country of Origin</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfOrigin ?? selectedProfile.PartnerCountryOfOrigin} /></span></div>
                                             <div className="info-item"><label>Country of Residence</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfResidence ?? selectedProfile.PartnerCountryOfResidence} /></span></div>
                                         </div>
@@ -4466,11 +4486,14 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </>
                             )}
                         </div>
+                        </ModalScrollArea>
                     ) : (
+                        <ModalScrollArea className="modal-body" style={{ maxHeight: '90vh', paddingTop: '3rem' }}>
                         <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                             <div className="spinner" style={{ margin: '0 auto 1rem', display: 'block' }}></div>
                             <p>Loading profile details...</p>
                         </div>
+                        </ModalScrollArea>
                     )}
                 </div>
             </div>
@@ -4481,6 +4504,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                     role="dialog"
                     aria-modal="true"
                     aria-label="Photo viewer"
+                    data-modal-open="true"
+                    data-lenis-prevent
                     onClick={() => setGalleryLightboxSrc(null)}
                     style={{
                         position: 'fixed',
@@ -4533,10 +4558,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             )}
 
             {/* Blog Detail Modal */}
-            <div className={`modal-overlay blog-modal ${activeModal === 'blog' ? 'active' : ''}`} id="blogModal" onClick={handleOverlayClick}>
-                <div className="modal" style={{ maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className={`modal-overlay blog-modal ${activeModal === 'blog' ? 'active' : ''}`} id="blogModal" data-lenis-prevent onClick={handleOverlayClick}>
+                <div className="modal" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                     <button className="modal-close" onClick={close}>✕</button>
                     {selectedBlogId && (
+                        <ModalScrollArea className="modal-body" style={{ maxHeight: '90vh', paddingTop: '3rem' }}>
                         <div className="blog-detail-content">
                             {selectedBlogId === 1 && (
                                 <>
@@ -4743,6 +4769,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 </>
                             )}
                         </div>
+                        </ModalScrollArea>
                     )}
                 </div>
             </div>

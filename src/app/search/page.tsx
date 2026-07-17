@@ -8,7 +8,6 @@ import Modals from '../../components/Modals';
 import CustomDropdown from '../../components/CustomDropdown';
 import { matrimonialService } from '../../services/matrimonialService';
 import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
-import { religionFilterMatches } from '../../utils/religionMatch';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
@@ -19,7 +18,7 @@ import {
     quickSearchFromUrlParams,
     writeQuickSearchSession,
 } from '../../utils/quickSearchSession';
-import { brideGroomToBrowseGender, managedParentShowsBothGenders, profileBrowseGender, viewerUserIdForBrowseGenderFilter } from '../../utils/selfAccountBrowseGender';
+import { brideGroomToBrowseGender, managedParentShowsBothGenders } from '../../utils/selfAccountBrowseGender';
 import { showToast } from '../../utils/toast';
 import { profileBrowseUserId } from '../../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../../hooks/useOwnedSubAccountsForBrowse';
@@ -76,70 +75,83 @@ function SearchContent() {
     useEffect(() => {
         const fetchAndFilterProfiles = async () => {
             try {
-                // Fetch up to 100 recent profiles and filter them on the client side since we don't have a search endpoint yet
-                const res = await matrimonialService.getRecentProfiles(100, viewerUserIdForBrowseGenderFilter(user));
-                if (res.statusCode === 200 && res.result) {
-                    const allProfiles = res.result;
+                const genderParam = searchParams.get('gender');
+                const resolvedGender =
+                    genderParam && genderParam !== 'Any'
+                        ? genderParam
+                        : quickSearchFromUrlParams(searchParams, user, subAccounts).gender;
+                const ageFrom = searchParams.get('ageFrom');
+                const ageTo = searchParams.get('ageTo');
+                const religion = searchParams.get('religion');
+                const district = searchParams.get('district');
+                const qRaw = searchParams.get('q');
+                const q = (qRaw ?? '').trim().toLowerCase();
+                const browseGender =
+                    resolvedGender && resolvedGender !== 'Any'
+                        ? brideGroomToBrowseGender(resolvedGender)
+                        : '';
 
-                    const genderParam = searchParams.get('gender');
-                    const resolvedGender =
-                        genderParam && genderParam !== 'Any'
-                            ? genderParam
-                            : quickSearchFromUrlParams(searchParams, user, subAccounts).gender;
-                    const ageFrom = searchParams.get('ageFrom');
-                    const ageTo = searchParams.get('ageTo');
-                    const religion = searchParams.get('religion');
-                    const district = searchParams.get('district');
-                    const qRaw = searchParams.get('q');
-                    const q = (qRaw ?? '').trim().toLowerCase();
+                const res = await matrimonialService.searchProfiles({
+                    gender: browseGender || null,
+                    minAge: ageFrom ? parseInt(ageFrom, 10) : null,
+                    maxAge: ageTo ? parseInt(ageTo, 10) : null,
+                    religion: religion && religion !== 'Any' && religion !== '' ? religion : null,
+                    maritalStatus: null,
+                    sortBy: 'latest',
+                    pageNumber: 1,
+                    pageSize: 100,
+                    preferredSearch: false,
+                    ...(user?.id ? { userId: Number(user.id) } : {}),
+                });
 
-                    const filtered = allProfiles.filter((profile: any) => {
-                        if (ownedIds.size > 0 && ownedIds.has(profileBrowseUserId(profile))) return false;
-                        if (user?.id != null) {
-                            const pid = Number(profile.userId ?? profile.UserId ?? 0);
-                            if (pid === Number(user.id)) return false;
-                        }
-                        if (q) {
-                            const idStr =
-                                profile.id != null
-                                    ? String(profile.id)
-                                    : profile.Id != null
-                                        ? String(profile.Id)
-                                        : '';
-                            const blob = [
-                                profile.firstName,
-                                profile.lastName,
-                                profile.occupation,
-                                profile.cityOfResidence,
-                                idStr,
-                                profile.matrimonialProfileId != null ? String(profile.matrimonialProfileId) : '',
-                                profile.displayId,
-                                profile.profileCode,
-                            ]
-                                .filter(Boolean)
-                                .join(' ')
-                                .toLowerCase();
-                            if (!blob.includes(q)) {
-                                const parts = q.split(/\s+/).filter(Boolean);
-                                if (!parts.length || !parts.every((w: string) => blob.includes(w))) return false;
-                            }
-                        }
-                        if (resolvedGender && resolvedGender !== 'Any') {
-                            const targetGender = brideGroomToBrowseGender(resolvedGender);
-                            if (targetGender && profileBrowseGender(profile) !== targetGender) return false;
-                        }
-                        if (ageFrom && profile.age < parseInt(ageFrom)) return false;
-                        if (ageTo && profile.age > parseInt(ageTo)) return false;
-                        const profRel = profile.religion ?? profile.Religion;
-                        if (religion && religion !== 'Any' && !religionFilterMatches(profRel, religion)) return false;
-                        if (district && district !== 'Any' && profile.cityOfResidence !== district) return false;
-                        return true;
-                    });
+                const ok = res.statusCode === 200 || res.statusCode === 1;
+                const raw = ok
+                    ? res.result?.profiles ?? res.result?.Profiles ?? res.Result?.profiles ?? res.Result?.Profiles ?? []
+                    : [];
+                const allProfiles = Array.isArray(raw) ? raw : [];
 
-                    setResults(filtered);
-                }
+                const filtered = allProfiles.filter((profile: any) => {
+                    if (ownedIds.size > 0 && ownedIds.has(profileBrowseUserId(profile))) return false;
+                    if (user?.id != null) {
+                        const pid = Number(profile.userId ?? profile.UserId ?? 0);
+                        if (pid === Number(user.id)) return false;
+                    }
+                    if (q) {
+                        const idStr =
+                            profile.id != null
+                                ? String(profile.id)
+                                : profile.Id != null
+                                    ? String(profile.Id)
+                                    : '';
+                        const blob = [
+                            profile.firstName ?? profile.FirstName,
+                            profile.lastName ?? profile.LastName,
+                            profile.occupation ?? profile.Occupation,
+                            profile.cityOfResidence ?? profile.CityOfResidence,
+                            idStr,
+                            profile.matrimonialProfileId != null ? String(profile.matrimonialProfileId) : '',
+                            profile.displayId,
+                            profile.profileCode,
+                        ]
+                            .filter(Boolean)
+                            .join(' ')
+                            .toLowerCase();
+                        if (!blob.includes(q)) {
+                            const parts = q.split(/\s+/).filter(Boolean);
+                            if (!parts.length || !parts.every((w: string) => blob.includes(w))) return false;
+                        }
+                    }
+                    if (district && district !== 'Any') {
+                        const city = profile.cityOfResidence ?? profile.CityOfResidence ?? '';
+                        if (String(city) !== district) return false;
+                    }
+                    return true;
+                });
+
+                setResults(filtered);
             } catch (error) {
-                console.error("Failed to load search results", error);
+                console.error('Failed to load search results', error);
+                setResults([]);
             }
         };
         fetchAndFilterProfiles();

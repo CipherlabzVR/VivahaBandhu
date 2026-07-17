@@ -1,53 +1,38 @@
+import { smoothScrollTo } from './lenisScroll';
+
 const FOOTER_SCROLL_RESTORE_KEY = 'mymatch_footer_scroll_restore';
 
 const FOOTER_SCROLL_GUARD_KEY = 'mymatch_footer_scroll_guard';
 
-
-
 let guardCleanup: (() => void) | null = null;
 
-
-
 function clearUrlHash(): void {
-
     if (typeof window === 'undefined') return;
-
     if (window.location.hash) {
-
         history.replaceState(history.state, '', window.location.pathname + window.location.search);
-
     }
-
 }
 
-
-
 function scrollToSiteFooter(): void {
-
     const footer = document.getElementById('site-footer');
-
-    if (footer) {
-
-        footer.scrollIntoView({ behavior: 'auto', block: 'start' });
-
-    }
-
+    if (!footer) return;
+    const top = footer.getBoundingClientRect().top + window.scrollY;
+    smoothScrollTo(Math.max(0, top), { immediate: true });
 }
 
 
 
 function endFooterScrollGuard(): void {
-
     guardCleanup?.();
-
     guardCleanup = null;
-
     if (typeof window !== 'undefined') {
-
         sessionStorage.removeItem(FOOTER_SCROLL_GUARD_KEY);
-
     }
+}
 
+/** Cancel an in-progress footer pin so hash / section navigation can scroll freely. */
+export function cancelFooterScrollRestore(): void {
+    endFooterScrollGuard();
 }
 
 

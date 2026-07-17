@@ -54,6 +54,8 @@ export default function HoroscopeLightbox({ open, src, alt = 'Horoscope', onClos
             role="dialog"
             aria-modal="true"
             aria-label="Horoscope viewer"
+            data-modal-open="true"
+            data-lenis-prevent
             onClick={onClose}
             style={{
                 position: 'fixed',

@@ -40,8 +40,10 @@ export default function WelcomePopup({ firstName, onClose }: WelcomePopupProps) 
     }, [displayText, fullText]);
 
     return (
-        <div 
-            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000] animate-[fadeIn_0.3s_ease-in]" 
+        <div
+            data-modal-open="true"
+            data-lenis-prevent
+            className="fixed inset-0 bg-black/70 flex items-center justify-center z-[10000] animate-[fadeIn_0.3s_ease-in]"
             onClick={onClose}
         >
             <div 

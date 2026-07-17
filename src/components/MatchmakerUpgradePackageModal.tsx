@@ -9,6 +9,7 @@ import {
     packagePrice,
     packageValidityLabel,
 } from '../utils/matrimonialPackages';
+import ModalScrollArea from './ModalScrollArea';
 
 type MatchmakerUpgradePackageModalProps = {
     open: boolean;
@@ -34,12 +35,13 @@ export default function MatchmakerUpgradePackageModal({
     return (
         <div
             className="modal-overlay active"
+            data-lenis-prevent
             role="dialog"
             aria-modal="true"
             aria-labelledby="matchmaker-upgrade-packages-title"
             style={{ zIndex: 1100 }}
         >
-            <div className="modal" style={{ maxWidth: '640px', width: '95%' }}>
+            <div className="modal" style={{ maxWidth: '640px', width: '95%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <button className="modal-close" onClick={onClose} aria-label="Close">
                     ✕
                 </button>
@@ -48,7 +50,7 @@ export default function MatchmakerUpgradePackageModal({
                         {title || 'Upgrade to add more client profiles'}
                     </h2>
                 </div>
-                <div className="modal-body">
+                <ModalScrollArea className="modal-body">
                     <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
                         {introLine ||
                             'Choose a plan below. After payment you can create more client profiles under your matchmaker account.'}
@@ -190,7 +192,7 @@ export default function MatchmakerUpgradePackageModal({
                             Cancel
                         </button>
                     </div>
-                </div>
+                </ModalScrollArea>
             </div>
         </div>
     );

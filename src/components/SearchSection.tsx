@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
-import { showToast } from '../utils/toast';
+import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
@@ -11,10 +11,8 @@ import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
 import {
     MATRIMONIAL_MARITAL_STATUS_OPTIONS,
-    maritalStatusFilterMatches,
     normalizeMaritalStatus,
 } from '../constants/matrimonialMaritalStatus';
-import { religionFilterMatches } from '../utils/religionMatch';
 
 import { MATRIMONIAL_MIN_SEARCH_AGE, validateMatrimonialSearchAge } from '../utils/matrimonialSearchAge';
 import { excludeOwnedProfilesFromBrowse, normalizeBrowseProfiles, readProfileMatchScore, matchScoreBadgeColors } from '../utils/browseProfileFilters';
@@ -34,7 +32,6 @@ import {
     defaultBrowseGenderForUser,
     effectiveBrowseGenderForUser,
     managedParentShowsBothGenders,
-    profileMatchesBrowseGender,
 } from '../utils/selfAccountBrowseGender';
 
 interface SearchSectionProps {
@@ -76,30 +73,6 @@ function defaultBrowseFieldsForUser(
 
 function browseOwnerKey(user: { id: string } | null | undefined): string {
     return user?.id != null && user.id !== '' ? `user:${user.id}` : 'anon';
-}
-
-function profileMatchesBrowseFilters(
-    profile: any,
-    f: BrowseFilterFields,
-    user?: { gender?: string; accountType?: string; parentUserId?: number | null } | null,
-    subAccounts: readonly Pick<ManagedSubAccount, 'gender'>[] = []
-): boolean {
-    const genderFilter = effectiveBrowseGenderForUser(user, f.gender, subAccounts);
-    if (genderFilter && !profileMatchesBrowseGender(profile, genderFilter)) return false;
-    const age = Number(profile.age ?? profile.Age ?? 0);
-    if (f.minAge) {
-        const min = parseInt(f.minAge, 10);
-        if (!Number.isNaN(min) && age > 0 && age < min) return false;
-    }
-    if (f.maxAge) {
-        const max = parseInt(f.maxAge, 10);
-        if (!Number.isNaN(max) && age > 0 && age > max) return false;
-    }
-    if (f.religion && !religionFilterMatches(profile.religion ?? profile.Religion, f.religion)) return false;
-    if (f.maritalStatus && !maritalStatusFilterMatches(profile.maritalStatus ?? profile.MaritalStatus, f.maritalStatus)) {
-        return false;
-    }
-    return true;
 }
 
 function sameBrowseFields(a: BrowseFilterFields, b: BrowseFilterFields): boolean {
@@ -304,15 +277,15 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         if (!q) return true;
         const needle = q.toLowerCase();
         const haystack = [
-            profile.firstName,
-            profile.lastName,
-            profile.cityOfResidence,
-            profile.country,
-            profile.occupation,
-            profile.qualificationLevel,
-            profile.religion,
-            profile.ethnicity,
-            profile.maritalStatus,
+            profile.firstName ?? profile.FirstName,
+            profile.lastName ?? profile.LastName,
+            profile.cityOfResidence ?? profile.CityOfResidence,
+            profile.country ?? profile.CountryOfResidence,
+            profile.occupation ?? profile.Occupation,
+            profile.qualificationLevel ?? profile.QualificationLevel,
+            profile.religion ?? profile.Religion,
+            profile.ethnicity ?? profile.Ethnicity,
+            profile.maritalStatus ?? profile.MaritalStatus,
         ]
             .filter(Boolean)
             .join(' ')
@@ -332,10 +305,9 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         [activeFilters]
     );
 
-    const profilesMatchingActiveCriteria = useMemo(() => {
-        if (preferredSearch) return profiles;
-        return profiles.filter((p) => profileMatchesBrowseFilters(p, activeCriteria, user, subAccounts));
-    }, [profiles, activeCriteria, preferredSearch, user, subAccounts]);
+    // Structured filters are applied by SearchProfiles on the server. Do not re-filter
+    // client-side (missing fields like maritalStatus previously wiped every result).
+    const profilesMatchingActiveCriteria = useMemo(() => profiles, [profiles]);
 
     const filteredProfiles = useMemo(() => {
         if (!searchTerm) return profilesMatchingActiveCriteria;
@@ -645,17 +617,17 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                     managedProfileUserIdForApi(managedProfileUserId)
                 );
                 if (res.statusCode === 200) {
+                    const wasAlreadyInterested = (interactions.Favorites || []).includes(profileId);
                     setInteractions((prev) => {
                         const currentFavorites = prev.Favorites || [];
                         return {
                             ...prev,
-                            Favorites: currentFavorites.includes(profileId)
+                            Favorites: wasAlreadyInterested
                                 ? currentFavorites.filter((id) => id !== profileId)
                                 : [...currentFavorites, profileId],
                         };
                     });
-                    setActionToast('Interest updated successfully');
-                    setTimeout(() => setActionToast(''), 2000);
+                    showInterestToggleToastFromResponse(res?.result ?? res?.Result, wasAlreadyInterested);
                 } else {
                     showToast(res?.message || res?.Message || 'Could not update interest.', 'error');
                 }
