@@ -15,7 +15,8 @@ import Footer from '../components/Footer';
 import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
 import { useAuth } from '../context/AuthContext';
-import { endHashScrollGuard, getSiteHashId, preparePricingHashNavigation } from '../utils/siteHashScroll';
+import { consumePendingSiteHash, endHashScrollGuard, getSiteHashId, prepareSiteHashNavigation } from '../utils/siteHashScroll';
+import { cancelFooterScrollRestore } from '../utils/footerScrollRestore';
 
 export default function Home() {
   const { user } = useAuth();
@@ -56,16 +57,21 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const syncPricingHashScroll = () => {
-      if (getSiteHashId() === 'pricing') {
-        preparePricingHashNavigation();
+    const syncHashScroll = () => {
+      const pending = consumePendingSiteHash();
+      const id = pending || getSiteHashId();
+      if (!id) return;
+      cancelFooterScrollRestore();
+      if (pending && window.location.hash !== `#${id}`) {
+        history.replaceState(history.state, '', `/#${id}`);
       }
+      prepareSiteHashNavigation(id, id === 'pricing' ? 'auto' : 'smooth');
     };
 
-    syncPricingHashScroll();
-    window.addEventListener('hashchange', syncPricingHashScroll);
+    syncHashScroll();
+    window.addEventListener('hashchange', syncHashScroll);
     return () => {
-      window.removeEventListener('hashchange', syncPricingHashScroll);
+      window.removeEventListener('hashchange', syncHashScroll);
       endHashScrollGuard();
     };
   }, []);

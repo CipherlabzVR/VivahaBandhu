@@ -16,7 +16,6 @@ import { formatDeviceDate, formatDeviceTime, parseApiDateForDisplay } from '@/ut
 import {
     inboxContactDisplayName,
     inboxContactDisplayPhoto,
-    inboxContactManagerName,
     inboxContactPeerName,
     inboxThreadKey,
     messageMatchesManagedThread,
@@ -89,7 +88,6 @@ function normalizeInboxContact(row: Record<string, unknown>) {
         latestMessage: String((row as any).latestMessage ?? (row as any).LatestMessage ?? ''),
         sentAt: (row as any).sentAt ?? (row as any).SentAt,
         unreadCount: Number((row as any).unreadCount ?? (row as any).UnreadCount ?? 0),
-        isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(row),
         peerIsPremium: readPeerIsPremiumFromRow(row),
     };
 }
@@ -138,12 +136,11 @@ function resolveManagedInboxPresentation(
         };
     }
 
-    const managerName = inboxContactManagerName(contact);
+    // Viewing a managed sub/client thread: show only the sub-account name (no "Managed by").
     return {
         listName: inboxContactDisplayName(contact),
         listPhoto: inboxContactDisplayPhoto(contact),
-        listSubtitle:
-            hasManagedThread && managerName ? `Managed by ${managerName}` : null,
+        listSubtitle: null,
     };
 }
 
@@ -238,16 +235,6 @@ function formatLastSeenLabel(lastSeen: string | null, isOnline: boolean, presenc
     return `Last seen ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
-/** API may return camelCase or PascalCase; default true when unknown (e.g. legacy rows). */
-function readMatrimonialChatEnabledFromRow(row: unknown): boolean {
-    if (!row || typeof row !== 'object') return true;
-    const o = row as Record<string, unknown>;
-    const v = o.isMatrimonialChatEnabled ?? o.IsMatrimonialChatEnabled;
-    if (v === false || v === 0) return false;
-    if (typeof v === 'string' && v.toLowerCase() === 'false') return false;
-    return true;
-}
-
 /** When false, the contact is on the free plan and cannot receive messages. Default true if unknown (legacy API). */
 function readPeerIsPremiumFromRow(row: unknown): boolean {
     if (!row || typeof row !== 'object') return true;
@@ -307,8 +294,6 @@ function MessagesContent() {
     // Delete message state
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
-    const [chatEnabled, setChatEnabled] = useState(true);
-    const [chatStatusToast, setChatStatusToast] = useState('');
     const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const [shareHoroscopePages, setShareHoroscopePages] = useState<string[]>([]);
     const [sharingHoroscope, setSharingHoroscope] = useState(false);
@@ -522,6 +507,40 @@ function MessagesContent() {
             return;
         }
 
+        // Cross-family managed threads are stored under the other parent’s inbox id.
+        // Resolve manager from the profile so we can open the existing thread (with correct premium).
+        if (user?.id) {
+            void matrimonialService
+                .getProfile(contactId, Number(user.id))
+                .then((p) => {
+                    if (selectedContactRef.current) return;
+                    const r = p?.result;
+                    const managerId = Number(
+                        (r as { managerId?: unknown; ManagerId?: unknown } | undefined)?.managerId ??
+                            (r as { ManagerId?: unknown } | undefined)?.ManagerId ??
+                            0
+                    );
+                    if (Number.isFinite(managerId) && managerId > 0) {
+                        const parentRow = scopedRows.find(
+                            (c) =>
+                                Number(c.contactId) === managerId &&
+                                readManagedProfileUserId(c.managedProfileUserId) === targetManagedId
+                        );
+                        if (parentRow) {
+                            void handleSelectContact(parentRow);
+                            return;
+                        }
+                    }
+                    void handleSelectContact(contactId, targetManagedId);
+                })
+                .catch(() => {
+                    if (!selectedContactRef.current) {
+                        void handleSelectContact(contactId, targetManagedId);
+                    }
+                });
+            return;
+        }
+
         void handleSelectContact(contactId, targetManagedId);
     };
 
@@ -532,53 +551,9 @@ function MessagesContent() {
     }, []);
 
     useEffect(() => {
-        if (!user?.id) return;
-        let cancelled = false;
-        (async () => {
-            try {
-                const res = await matrimonialService.getProfile(Number(user.id), Number(user.id));
-                if (cancelled) return;
-                if (res.statusCode === 200 || res.statusCode === 1) {
-                    const r = res.result;
-                    if (r) setChatEnabled(readMatrimonialChatEnabledFromRow(r));
-                }
-            } catch {
-                if (!cancelled) setChatEnabled(true);
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [user?.id]);
-
-    useEffect(() => {
         const id = window.setInterval(() => setPresenceClockTick((x) => x + 1), 60_000);
         return () => window.clearInterval(id);
     }, []);
-
-    const handleToggleChatEnabled = async () => {
-        if (!user?.id) return;
-        const prev = chatEnabled;
-        const next = !prev;
-        setChatEnabled(next);
-        try {
-            const res = await matrimonialService.setMatrimonialChatEnabled(Number(user.id), next);
-            const ok = res.statusCode === 200 || res.statusCode === 1;
-            if (!ok) {
-                setChatEnabled(prev);
-                setChatStatusToast(String(res.message || res.Message || 'Could not update chat setting'));
-                setTimeout(() => setChatStatusToast(''), 2200);
-                return;
-            }
-            setChatStatusToast(next ? 'Chat is on' : 'Chat is off - others cannot message you');
-            setTimeout(() => setChatStatusToast(''), 1800);
-        } catch (err) {
-            setChatEnabled(prev);
-            const msg = err instanceof Error ? err.message : 'Could not update chat setting';
-            setChatStatusToast(msg);
-            setTimeout(() => setChatStatusToast(''), 2200);
-        }
-    };
 
     useEffect(() => {
         if (!user?.id) {
@@ -639,17 +614,12 @@ function MessagesContent() {
         );
     }, [selectedContact, hasMutualInterest, selectedMutualInterestState]);
 
-    const peerChatOff =
-        !!selectedContact &&
-        Number(selectedContact.contactId) !== Number(user?.id) &&
-        !readMatrimonialChatEnabledFromRow(selectedContact);
     const peerOnFreePlan =
         !!selectedContact &&
         Number(selectedContact.contactId) !== Number(user?.id) &&
         !readPeerIsPremiumFromRow(selectedContact);
     const senderCanMessage = viewerCanSendMessages(user);
-    const canSendInThread =
-        chatEnabled && senderCanMessage && hasMutualInterest && !peerChatOff && !peerOnFreePlan;
+    const canSendInThread = senderCanMessage && hasMutualInterest && !peerOnFreePlan;
 
     useEffect(() => {
         if (!selectedContact?.contactId) return;
@@ -1022,7 +992,6 @@ function MessagesContent() {
                     latestMessage: '',
                     sentAt: null,
                     unreadCount: 0,
-                    isMatrimonialChatEnabled: true,
                     peerIsPremium: true,
                 };
                 matrimonialService.getProfile(contactId, Number(user.id)).then((p) => {
@@ -1038,7 +1007,6 @@ function MessagesContent() {
                                 peerFirstName: r.firstName || 'User',
                                 peerLastName: r.lastName || '',
                                 peerProfilePhoto: r.profilePhoto,
-                                isMatrimonialChatEnabled: readMatrimonialChatEnabledFromRow(r),
                                 peerIsPremium: readPeerIsPremiumFromRow(r),
                             };
                         });
@@ -1124,7 +1092,9 @@ function MessagesContent() {
                         .map((row: Record<string, unknown>) => normalizeChatMessage(row))
                         .filter(Boolean) as ReturnType<typeof normalizeChatMessage>[];
                     setMessages(prev => {
-                        if (cleaned.length !== prev.length || JSON.stringify(cleaned.map((m) => m?.id)) !== JSON.stringify(prev.map(m => m.id))) {
+                        const sig = (list: typeof cleaned) =>
+                            JSON.stringify(list.map((m) => [m?.id, m?.isRead]));
+                        if (cleaned.length !== prev.length || sig(cleaned) !== sig(prev)) {
                             return cleaned;
                         }
                         return prev;
@@ -1177,8 +1147,7 @@ function MessagesContent() {
     const handleShareHoroscope = async () => {
         if (!canSendInThread || !user || !selectedContact || shareHoroscopePages.length === 0) return;
         if (isManagedParent && managedProfileUserIdForShare == null) {
-            setChatStatusToast('Select a profile before sharing horoscope.');
-            setTimeout(() => setChatStatusToast(''), 2200);
+            showToast('Select a profile before sharing horoscope.', 'info');
             return;
         }
 
@@ -1196,17 +1165,14 @@ function MessagesContent() {
                     setMessages((prev) => [...prev, normalized]);
                     scrollToBottom();
                 }
-                setChatStatusToast('Horoscope shared');
-                setTimeout(() => setChatStatusToast(''), 1800);
+                showToast('Horoscope shared', 'success');
             } else {
                 const msg = String(res.message || res.Message || 'Could not share horoscope');
-                setChatStatusToast(msg);
-                setTimeout(() => setChatStatusToast(''), 2200);
+                showToast(msg, 'error');
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Could not share horoscope';
-            setChatStatusToast(msg);
-            setTimeout(() => setChatStatusToast(''), 2200);
+            showToast(msg, 'error');
         } finally {
             setSharingHoroscope(false);
         }
@@ -1252,16 +1218,14 @@ function MessagesContent() {
                 setNewMessage(content);
                 setMessages((prev) => prev.filter((m) => m.id !== tempId));
                 const msg = String(res.message || res.Message || 'Failed to send message');
-                setChatStatusToast(msg);
-                setTimeout(() => setChatStatusToast(''), 3500);
+                showToast(msg, 'error');
             }
         } catch (err) {
             console.error('Failed to send message', err);
             setNewMessage(content);
             setMessages((prev) => prev.filter((m) => m.id !== tempId));
             if (err instanceof Error && err.message) {
-                setChatStatusToast(err.message);
-                setTimeout(() => setChatStatusToast(''), 3500);
+                showToast(err.message, 'error');
             }
         }
     };
@@ -1430,14 +1394,6 @@ function MessagesContent() {
                                         <p className="text-sm text-text-light mt-1">Connect with your matches</p>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={handleToggleChatEnabled}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${chatEnabled ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'}`}
-                                    title="Enable or disable chatting"
-                                >
-                                    Chat: {chatEnabled ? 'On' : 'Off'}
-                                </button>
                             </div>
                         </div>
 
@@ -1499,11 +1455,6 @@ function MessagesContent() {
                                                     {!readPeerIsPremiumFromRow(contact) && (
                                                         <span className="text-[0.65rem] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded-full">
                                                             Free plan
-                                                        </span>
-                                                    )}
-                                                    {!readMatrimonialChatEnabledFromRow(contact) && (
-                                                        <span className="text-[0.65rem] font-semibold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
-                                                            Chat off
                                                         </span>
                                                     )}
                                                     <span className="text-[0.7rem] text-text-light whitespace-nowrap">
@@ -1590,14 +1541,6 @@ function MessagesContent() {
                                                 ? inboxContactPeerName(selectedContact)
                                                 : inboxContactDisplayName(selectedContact)}
                                         </h3>
-                                        {!isManagedParent &&
-                                            readManagedProfileUserId(selectedContact.managedProfileUserId) !=
-                                                null &&
-                                            inboxContactManagerName(selectedContact) && (
-                                                <span className="text-xs text-text-light font-medium mt-0.5 truncate">
-                                                    Managed by {inboxContactManagerName(selectedContact)}
-                                                </span>
-                                            )}
                                         {actingSubAccount && (
                                             <span className="text-xs text-primary font-medium mt-0.5 truncate flex items-center gap-1.5">
                                                 <ProfileAvatar
@@ -1626,7 +1569,7 @@ function MessagesContent() {
 
                                 {/* Messages Area */}
                                 <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6 flex flex-col gap-4 bg-[url('/pattern-bg.png')] bg-opacity-5">
-                                    {messages.length === 0 && mutualInterestNotice && senderCanMessage && chatEnabled && (
+                                    {messages.length === 0 && mutualInterestNotice && senderCanMessage && (
                                         <div className="mx-auto my-auto max-w-md text-center px-6 py-8 bg-white/80 backdrop-blur-sm rounded-2xl border border-sky-100 shadow-sm">
                                             <div className="text-3xl mb-3" aria-hidden>🤝</div>
                                             <h3 className="font-playfair text-xl font-bold text-text-dark mb-2">
@@ -1770,18 +1713,13 @@ function MessagesContent() {
                                             </p>
                                         </div>
                                     )}
-                                    {senderCanMessage && !chatEnabled && (
-                                        <div className="mb-3 px-4 py-2 rounded-xl bg-red-50 text-red-700 text-sm border border-red-100">
-                                            Chat is currently disabled on your profile. Turn it on to send messages.
-                                        </div>
-                                    )}
-                                    {senderCanMessage && chatEnabled && !hasMutualInterest && mutualInterestNotice && (
+                                    {senderCanMessage && !hasMutualInterest && mutualInterestNotice && (
                                         <div className="mb-3 px-4 py-3 rounded-xl bg-sky-50 text-sky-950 text-sm border border-sky-100 leading-relaxed">
                                             <p className="m-0 font-medium">{mutualInterestNotice.title}</p>
                                             <p className="m-0 mt-1 text-sky-900/90">{mutualInterestNotice.body}</p>
                                         </div>
                                     )}
-                                    {senderCanMessage && chatEnabled && peerOnFreePlan && selectedContact && (
+                                    {senderCanMessage && peerOnFreePlan && selectedContact && (
                                         <div className="mb-3 px-4 py-3 rounded-xl bg-slate-50 text-slate-800 text-sm border border-slate-200 leading-relaxed">
                                             <p className="m-0 font-medium">
                                                 {peerDisplayName(selectedContact)} is on the free plan
@@ -1789,14 +1727,6 @@ function MessagesContent() {
                                             <p className="m-0 mt-1 text-slate-600">
                                                 This member cannot receive messages while on the free plan. Messaging will become
                                                 available once they upgrade to premium.
-                                            </p>
-                                        </div>
-                                    )}
-                                    {senderCanMessage && chatEnabled && !peerOnFreePlan && peerChatOff && selectedContact && (
-                                        <div className="mb-3 px-4 py-3 rounded-xl bg-amber-50 text-amber-950 text-sm border border-amber-100 leading-relaxed">
-                                            <p className="m-0 font-medium">{peerDisplayName(selectedContact)} has chat turned off</p>
-                                            <p className="m-0 mt-1 text-amber-900/90">
-                                                You cannot send new messages until they enable chat on their profile.
                                             </p>
                                         </div>
                                     )}
@@ -1837,12 +1767,8 @@ function MessagesContent() {
                                                     : !hasMutualInterest
                                                       ? 'Connect through mutual interest to message'
                                                       : peerOnFreePlan
-                                                      ? 'This member is on the free plan'
-                                                      : peerChatOff
-                                                        ? 'Chat is unavailable for this member'
-                                                        : !chatEnabled
-                                                          ? 'Enable chat on your profile to send messages'
-                                                          : 'Write your message...'
+                                                        ? 'This member is on the free plan'
+                                                        : 'Write your message...'
                                             }
                                             className="flex-1 bg-transparent px-4 outline-none text-text-dark placeholder:text-text-light/50"
                                             autoComplete="off"
@@ -1892,12 +1818,6 @@ function MessagesContent() {
                         </svg>
                         {deletingMsgId === contextMenu.msgId ? 'Deleting...' : 'Delete Message'}
                     </button>
-                </div>
-            )}
-
-            {chatStatusToast && (
-                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 2200, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
-                    {chatStatusToast}
                 </div>
             )}
 

@@ -1,5 +1,18 @@
+import { smoothScrollTo } from './lenisScroll';
+
 const PRICING_HASH = 'pricing';
 const HASH_SCROLL_GUARD_KEY = 'mymatch_hash_scroll_guard';
+
+/** Home-page sections reachable via footer / header hash links. */
+export const SITE_SECTION_HASHES = [
+    'how-it-works',
+    'matchmaker',
+    'blog',
+    'faq',
+    'pricing',
+] as const;
+
+const PENDING_SITE_HASH_KEY = 'mymatch_pending_site_hash';
 
 /** Fixed header offset so section titles sit below the nav bar. */
 export const SITE_HEADER_SCROLL_OFFSET = 96;
@@ -11,13 +24,47 @@ export function getSiteHashId(): string {
     return window.location.hash.replace(/^#/, '').trim();
 }
 
+/** Stash a home section id when navigating from another page (App Router drops hashes). */
+export function setPendingSiteHash(sectionId: string): void {
+    if (typeof window === 'undefined') return;
+    const id = sectionId.trim();
+    if (!id) return;
+    sessionStorage.setItem(PENDING_SITE_HASH_KEY, id);
+}
+
+export function consumePendingSiteHash(): string {
+    if (typeof window === 'undefined') return '';
+    const id = sessionStorage.getItem(PENDING_SITE_HASH_KEY)?.trim() || '';
+    if (id) sessionStorage.removeItem(PENDING_SITE_HASH_KEY);
+    return id;
+}
+
 export function scrollToSiteSection(sectionId: string, behavior: ScrollBehavior = 'auto'): boolean {
     if (typeof window === 'undefined') return false;
     const el = document.getElementById(sectionId);
     if (!el) return false;
     const top = el.getBoundingClientRect().top + window.scrollY - SITE_HEADER_SCROLL_OFFSET;
-    window.scrollTo({ top: Math.max(0, top), left: 0, behavior });
+    smoothScrollTo(Math.max(0, top), { immediate: behavior === 'auto' });
     return true;
+}
+
+/** Scroll to a known home hash section (retries briefly while the layout settles). */
+export function prepareSiteHashNavigation(sectionId?: string, behavior: ScrollBehavior = 'smooth'): void {
+    if (typeof window === 'undefined') return;
+    const id = (sectionId || getSiteHashId()).trim();
+    if (!id) return;
+    if (!(SITE_SECTION_HASHES as readonly string[]).includes(id)) return;
+
+    if (id === PRICING_HASH) {
+        preparePricingHashNavigation();
+        return;
+    }
+
+    const attempt = () => {
+        scrollToSiteSection(id, behavior);
+    };
+    attempt();
+    [50, 150, 350, 700].forEach((ms) => window.setTimeout(attempt, ms));
 }
 
 export function endHashScrollGuard(): void {

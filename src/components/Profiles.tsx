@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
-import { showToast } from '../utils/toast';
+import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
@@ -133,17 +133,17 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                     managedProfileUserIdForApi(managedProfileUserId)
                 );
                 if (res.statusCode === 200) {
+                    const wasAlreadyInterested = (interactions.Favorites || []).includes(profileId);
                     setInteractions((prev) => {
                         const currentFavorites = prev.Favorites || [];
                         return {
                             ...prev,
-                            Favorites: currentFavorites.includes(profileId)
+                            Favorites: wasAlreadyInterested
                                 ? currentFavorites.filter((id) => id !== profileId)
                                 : [...currentFavorites, profileId],
                         };
                     });
-                    setActionToast('Interest updated successfully');
-                    setTimeout(() => setActionToast(''), 2000);
+                    showInterestToggleToastFromResponse(res?.result ?? res?.Result, wasAlreadyInterested);
                 } else {
                     showToast(res?.message || res?.Message || 'Could not update interest.', 'error');
                 }

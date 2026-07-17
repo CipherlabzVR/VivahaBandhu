@@ -1,14 +1,16 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, type MouseEvent } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import {
+    cancelFooterScrollRestore,
     footerLinkLeavesPage,
     markFooterNavDeparture,
     tryRestoreFooterScroll,
 } from '../utils/footerScrollRestore';
+import { prepareSiteHashNavigation, setPendingSiteHash } from '../utils/siteHashScroll';
 
 const COLUMN_DELAY_MS = 90;
 const HIDDEN_LENGTH = 500;
@@ -21,9 +23,16 @@ const HEART_PATH =
   'C 40 5, 45 20, 60 35 ' +
   'C 75 50, 105 45, 115 25';
 
+function hashSectionIdFromHref(href: string): string | null {
+    if (!href.startsWith('/#')) return null;
+    const id = href.slice(2).split('?')[0].trim();
+    return id || null;
+}
+
 export default function Footer() {
     const { t } = useLanguage();
     const pathname = usePathname();
+    const router = useRouter();
     const ref = useRef<HTMLElement>(null);
     const pathRef = useRef<SVGPathElement>(null);
     const [inView, setInView] = useState(false);
@@ -61,19 +70,39 @@ export default function Footer() {
     }, [pathname]);
 
     const handleFooterLinkClick = useCallback(
-        (href: string) => {
+        (e: MouseEvent<HTMLAnchorElement>, href: string) => {
+            const sectionId = hashSectionIdFromHref(href);
+            if (sectionId) {
+                // Stop footer pin-guard from fighting section scroll / clearing the hash.
+                cancelFooterScrollRestore();
+                if (pathname === '/') {
+                    e.preventDefault();
+                    if (window.location.hash !== `#${sectionId}`) {
+                        history.pushState(history.state, '', `/#${sectionId}`);
+                    }
+                    prepareSiteHashNavigation(sectionId, 'smooth');
+                    return;
+                }
+                // Leaving another page for a home section — do not mark footer restore,
+                // otherwise Back would pin the previous page at the footer.
+                e.preventDefault();
+                setPendingSiteHash(sectionId);
+                router.push('/');
+                return;
+            }
+
             if (footerLinkLeavesPage(href, pathname)) {
                 markFooterNavDeparture();
             }
         },
-        [pathname],
+        [pathname, router],
     );
 
     const footerLink = (href: string, label: string) => (
         <Link
             href={href}
             className="text-gray-300 hover:text-primary transition-colors"
-            onClick={() => handleFooterLinkClick(href)}
+            onClick={(e) => handleFooterLinkClick(e, href)}
         >
             {label}
         </Link>

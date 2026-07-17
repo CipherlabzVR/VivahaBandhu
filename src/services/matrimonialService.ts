@@ -620,35 +620,6 @@ export const matrimonialService = {
     },
 
     /**
-     * Turn matrimonial direct chat on or off (persisted; blocks others from sending when off).
-     */
-    async setMatrimonialChatEnabled(userId: number, isMatrimonialChatEnabled: boolean): Promise<any> {
-        try {
-            const token = getStoredToken();
-            const response = await fetch(`${API_BASE_URL}/Matrimonial/SetMatrimonialChatEnabled`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: token ? `Bearer ${token}` : '',
-                },
-                body: JSON.stringify({
-                    UserId: userId,
-                    IsMatrimonialChatEnabled: isMatrimonialChatEnabled,
-                }),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(
-                    (data as { message?: string }).message || 'Failed to update chat preference'
-                );
-            }
-            return data;
-        } catch (error) {
-            throw error;
-        }
-    },
-
-    /**
      * Premium only: show or hide phone / WhatsApp / email from viewers who would normally see them.
      */
     async setMatrimonialShowContactInformation(userId: number, showContactInformation: boolean): Promise<any> {
