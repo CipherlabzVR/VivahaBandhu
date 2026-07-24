@@ -6,8 +6,6 @@ import Header from '../../components/Header';
 import Footer from '../../components/Footer';
 import ManagedSubAccountActivityCard from '../../components/ManagedSubAccountActivityCard';
 import SubAccountPackagePickerModal from '../../components/SubAccountPackagePickerModal';
-import MatchmakerUpgradePackageModal from '../../components/MatchmakerUpgradePackageModal';
-import { MatchmakerClientSelectionModal } from '../../components/MatchmakerClientSelectionModal';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import Modals from '../../components/Modals';
@@ -18,10 +16,9 @@ import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, canoni
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
 import {
-    isMatchmakerPaidTier,
     PREMIUM_SUBSCRIPTION_LKR,
     CHECKOUT_PLAN_SUB_ACCOUNT,
-    formatMatchmakerTierName,
+    CHECKOUT_PLAN_MATCHMAKER_CLIENT,
     profilePlanBadgeLabel,
 } from '../../constants/subscription';
 import { PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE } from '../../constants/premiumActivation';
@@ -57,16 +54,10 @@ import { useMatrimonialNotifications } from '../../context/MatrimonialNotificati
 import { respondToIncomingInterest } from '../../utils/respondToIncomingInterest';
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
 import { formatSubscriptionTimeRemaining, parseSubscriptionRemaining } from '../../utils/subscriptionExpiry';
-import { packagePrice, resolveCheckoutPlan, type PublicMatrimonialPackage } from '../../utils/matrimonialPackages';
+import { packageName, packagePrice, type PublicMatrimonialPackage } from '../../utils/matrimonialPackages';
 import { ownedBrowseUserIds } from '../../utils/browseProfileFilters';
 import { prepareProfileModalPayload } from '../../utils/profileVisitorActions';
-import {
-    paidMatchmakerPackages,
-    platformMaxMatchmakerClients,
-    resolveMatchmakerClientLimitState,
-    upgradeMatchmakerPackages,
-    type MatchmakerClientLimitState,
-} from '../../utils/matchmakerClientLimits';
+import { paidMatchmakerPackages } from '../../utils/matchmakerClientLimits';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
@@ -430,8 +421,10 @@ function ProfilePageContent() {
                     if (u.dateofBirth || u.dateOfBirth) {
                         profileUpdates.dob = toDateOnly(u.dateofBirth || u.dateOfBirth);
                     }
-                    if (u.profilePhoto && u.profilePhoto.length > 0) {
-                        profileUpdates.profilePhoto = u.profilePhoto;
+                    // Sync avatar including cleared photos (empty string).
+                    if (u.profilePhoto !== undefined && u.profilePhoto !== null) {
+                        const photo = String(u.profilePhoto).trim();
+                        profileUpdates.profilePhoto = photo ? withCacheBuster(photo) : '';
                     }
                     if (u.status !== undefined) {
                         profileUpdates.isVerified = u.status === 1;
@@ -460,9 +453,20 @@ function ProfilePageContent() {
                         profileUpdates.isVerified = rStatus === 1;
                     }
                     
-                    const profilePhoto = r.profilePhoto || r.ProfilePhoto;
-                    if (!profileUpdates.profilePhoto && !user?.profilePhoto && profilePhoto && profilePhoto.length > 0) {
-                        profileUpdates.profilePhoto = withCacheBuster(profilePhoto);
+                    // Prefer matrimonial profile photo; empty means removed — do not keep a stale avatar.
+                    const matrimonialPhoto = String(
+                        r.profilePhotoFromProfile ?? r.ProfilePhotoFromProfile ?? ''
+                    ).trim();
+                    const userPhoto = String(r.profilePhoto ?? r.ProfilePhoto ?? '').trim();
+                    if (
+                        Object.prototype.hasOwnProperty.call(r, 'profilePhotoFromProfile') ||
+                        Object.prototype.hasOwnProperty.call(r, 'ProfilePhotoFromProfile')
+                    ) {
+                        profileUpdates.profilePhoto = matrimonialPhoto
+                            ? withCacheBuster(matrimonialPhoto)
+                            : '';
+                    } else if (!profileUpdates.profilePhoto && userPhoto) {
+                        profileUpdates.profilePhoto = withCacheBuster(userPhoto);
                     }
                     
                     const gender = r.gender || r.Gender;
@@ -561,18 +565,19 @@ function ProfilePageContent() {
                     }
                     const acctMm = ((profileUpdates.accountType || user?.accountType || '') === 'Matchmaker');
                     if (acctMm) {
-                        const tierStr = profileUpdates.matchmakerTier ?? user?.matchmakerTier;
-                        const maxSlots = Number(profileUpdates.matchmakerMaxClientProfiles ?? user?.matchmakerMaxClientProfiles ?? NaN);
-                        const usedSlots = Number(profileUpdates.matchmakerClientProfileCount ?? NaN);
-                        const pendingSelection =
-                            profileUpdates.matchmakerClientSelectionPending
-                            ?? user?.matchmakerClientSelectionPending;
-                        if (Number.isFinite(maxSlots) && maxSlots > 0 && Number.isFinite(usedSlots)) {
-                            profileUpdates.matchmakerCanAddClients =
-                                !pendingSelection
-                                && isMatchmakerPaidTier(tierStr)
-                                && usedSlots < maxSlots;
-                        }
+                        const purchased = Number(
+                            profileUpdates.familySubAccountSlotsPurchased
+                            ?? user?.familySubAccountSlotsPurchased
+                            ?? 0,
+                        );
+                        const consumed = Number(
+                            profileUpdates.familySubAccountSlotsConsumed
+                            ?? user?.familySubAccountSlotsConsumed
+                            ?? 0,
+                        );
+                        profileUpdates.matchmakerCanAddClients = Math.max(0, purchased - consumed) > 0;
+                        profileUpdates.matchmakerClientSelectionPending = false;
+                        profileUpdates.matchmakerMaxClientProfiles = 0;
                     }
 
                     // Notification preference (server-authoritative). Defaults to true
@@ -1623,7 +1628,10 @@ function ProfilePageContent() {
     const [bankSubAccountAwaitingApproval, setBankSubAccountAwaitingApproval] = useState(false);
 
     const refreshFamilySubAccountSlots = useCallback(async () => {
-        if (!user?.id || !isFamilyParentAccountType(user.accountType)) return;
+        if (
+            !user?.id
+            || (!isFamilyParentAccountType(user.accountType) && user.accountType !== 'Matchmaker')
+        ) return;
         const token = getStoredToken();
         if (!token) return;
         const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
@@ -1676,20 +1684,33 @@ function ProfilePageContent() {
                 updates.subscriptionCancelled = subCancelled === true || subCancelled === 'true';
             }
 
+            const purchased = Number(updates.familySubAccountSlotsPurchased ?? user.familySubAccountSlotsPurchased ?? 0);
+            const consumed = Number(updates.familySubAccountSlotsConsumed ?? user.familySubAccountSlotsConsumed ?? 0);
+            const remaining = Math.max(0, purchased - consumed);
+            if (user.accountType === 'Matchmaker') {
+                updates.matchmakerTier = purchased > 0 || updates.isSubscribed ? 'PAYG' : 'FREE';
+                updates.matchmakerCanAddClients = remaining > 0;
+                updates.matchmakerMaxClientProfiles = 0;
+                updates.matchmakerClientSelectionPending = false;
+            }
+
             if (Object.keys(updates).length > 0) {
                 updateUser(updates);
             }
 
-            const purchased = Number(updates.familySubAccountSlotsPurchased ?? user.familySubAccountSlotsPurchased ?? 0);
-            const consumed = Number(updates.familySubAccountSlotsConsumed ?? user.familySubAccountSlotsConsumed ?? 0);
-            const remaining = Math.max(0, purchased - consumed);
             const hadPending = typeof window !== 'undefined'
                 && localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
 
             if (remaining > 0 && hadPending) {
                 localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
                 setBankSubAccountAwaitingApproval(false);
-                showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
+                showToast(
+                    user.accountType === 'Matchmaker'
+                        ? 'Client account slot purchased. You can create a client profile now.'
+                        : SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+                    'success',
+                    5500,
+                );
             } else if (typeof window !== 'undefined') {
                 const stillPending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
                 setBankSubAccountAwaitingApproval(stillPending && remaining <= 0);
@@ -1833,8 +1854,6 @@ function ProfilePageContent() {
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
     const [showSubAccountPackageModal, setShowSubAccountPackageModal] = useState(false);
-    const [showMatchmakerUpgradeModal, setShowMatchmakerUpgradeModal] = useState(false);
-    const [showMatchmakerClientSelectionModal, setShowMatchmakerClientSelectionModal] = useState(false);
     const handleDeleteOwnAccount = async () => {
         if (!user?.id) return;
         if (deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') {
@@ -1877,28 +1896,29 @@ function ProfilePageContent() {
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 setSubAccounts(prev => prev.filter(sa => sa.id !== subAccount.id));
                 setManagedSubActivity(prev => prev.filter((a: any) => (a.subUserId ?? a.SubUserId) !== subAccount.id));
-                if (user.accountType === 'Matchmaker') {
-                    const nextCount = Math.max(
-                        0,
-                        (typeof user.matchmakerClientProfileCount === 'number'
-                            ? user.matchmakerClientProfileCount
-                            : subAccounts.length) - 1,
-                    );
-                    updateUser?.({
-                        matchmakerClientProfileCount: nextCount,
-                        matchmakerCanAddClients: isMatchmakerPaidTier(user.matchmakerTier)
-                            && nextCount < (user.matchmakerMaxClientProfiles ?? 0),
-                    });
-                } else if (isFamilyParentAccountType(user.accountType)) {
+                if (
+                    user.accountType === 'Matchmaker'
+                    || isFamilyParentAccountType(user.accountType)
+                ) {
                     const r = (res?.result ?? {}) as Record<string, unknown>;
                     const purchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
                     const consumed = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
                     if (purchased != null || consumed != null) {
+                        const nextPurchased =
+                            purchased != null ? Number(purchased) : user.familySubAccountSlotsPurchased;
+                        const nextConsumed =
+                            consumed != null ? Number(consumed) : user.familySubAccountSlotsConsumed;
                         updateUser?.({
-                            familySubAccountSlotsPurchased:
-                                purchased != null ? Number(purchased) : user.familySubAccountSlotsPurchased,
-                            familySubAccountSlotsConsumed:
-                                consumed != null ? Number(consumed) : user.familySubAccountSlotsConsumed,
+                            familySubAccountSlotsPurchased: nextPurchased,
+                            familySubAccountSlotsConsumed: nextConsumed,
+                            matchmakerClientProfileCount:
+                                user.accountType === 'Matchmaker'
+                                    ? Math.max(0, (user.matchmakerClientProfileCount ?? subAccounts.length) - 1)
+                                    : user.matchmakerClientProfileCount,
+                            matchmakerCanAddClients:
+                                user.accountType === 'Matchmaker'
+                                    ? Math.max(0, (nextPurchased ?? 0) - (nextConsumed ?? 0)) > 0
+                                    : user.matchmakerCanAddClients,
                         });
                     } else {
                         void refreshFamilySubAccountSlots();
@@ -2082,7 +2102,11 @@ function ProfilePageContent() {
     }, [isCompletionModalOpen]);
 
     useEffect(() => {
-        if (typeof window === 'undefined' || !user?.id || !isFamilyParentAccountType(user.accountType)) return;
+        if (
+            typeof window === 'undefined'
+            || !user?.id
+            || (!isFamilyParentAccountType(user.accountType) && user.accountType !== 'Matchmaker')
+        ) return;
 
         const syncPendingFromSlots = () => {
             const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
@@ -2127,17 +2151,26 @@ function ProfilePageContent() {
     ]);
 
     useEffect(() => {
-        if (!user?.id || !isFamilyParentAccountType(user.accountType)) {
+        const isFamily = isFamilyParentAccountType(user?.accountType);
+        const isMatchmaker = user?.accountType === 'Matchmaker';
+        if (!user?.id || (!isFamily && !isMatchmaker)) {
             setLiveSubAccountPackage(null);
             setSubAccountPackages([]);
+            setMatchmakerPackages([]);
             return;
         }
         let cancelled = false;
         setLoadingSubAccountPackages(true);
-        matrimonialService.getSubAccountPackages().then((pkgs) => {
+        setLoadingMatchmakerPackages(isMatchmaker);
+        const load = isMatchmaker
+            ? matrimonialService.getMatchmakerPackages()
+            : matrimonialService.getSubAccountPackages();
+        load.then((pkgs) => {
             if (cancelled) return;
-            setSubAccountPackages(pkgs);
-            const primary = pkgs[0];
+            const paid = isMatchmaker ? paidMatchmakerPackages(pkgs) : pkgs;
+            setSubAccountPackages(paid);
+            if (isMatchmaker) setMatchmakerPackages(paid);
+            const primary = paid[0];
             if (primary) {
                 const price = packagePrice(primary);
                 const lifetime = !!(primary.isLifetimeValidity ?? primary.IsLifetimeValidity);
@@ -2157,29 +2190,15 @@ function ProfilePageContent() {
                 setLiveSubAccountPackage(null);
             }
         }).finally(() => {
-            if (!cancelled) setLoadingSubAccountPackages(false);
+            if (!cancelled) {
+                setLoadingSubAccountPackages(false);
+                setLoadingMatchmakerPackages(false);
+            }
         });
         return () => {
             cancelled = true;
         };
     }, [user?.id, user?.accountType, updateUser]);
-
-    useEffect(() => {
-        if (!user?.id || user.accountType !== 'Matchmaker') {
-            setMatchmakerPackages([]);
-            return;
-        }
-        let cancelled = false;
-        setLoadingMatchmakerPackages(true);
-        matrimonialService.getMatchmakerPackages().then((pkgs) => {
-            if (!cancelled) setMatchmakerPackages(pkgs);
-        }).finally(() => {
-            if (!cancelled) setLoadingMatchmakerPackages(false);
-        });
-        return () => {
-            cancelled = true;
-        };
-    }, [user?.id, user?.accountType]);
 
     // In a real app, you would have a save function here that calls an API and updates the User Context
 
@@ -2236,102 +2255,16 @@ function ProfilePageContent() {
     const handleSelectSubAccountPackage = useCallback((pkg: PublicMatrimonialPackage) => {
         setShowSubAccountPackageModal(false);
         const amount = packagePrice(pkg);
+        const plan =
+            user?.accountType === 'Matchmaker'
+                ? CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                : CHECKOUT_PLAN_SUB_ACCOUNT;
         const params = new URLSearchParams({
-            plan: CHECKOUT_PLAN_SUB_ACCOUNT,
+            plan,
             amount: String(amount),
         });
         router.push(`/subscription/checkout?${params.toString()}`);
-    }, [router]);
-
-    const matchmakerClientsUsed = useMemo(() => {
-        if (user?.accountType !== 'Matchmaker') return 0;
-        return Math.max(
-            0,
-            typeof user.matchmakerClientProfileCount === 'number'
-                ? user.matchmakerClientProfileCount
-                : subAccounts.length,
-        );
-    }, [user?.accountType, user?.matchmakerClientProfileCount, subAccounts.length]);
-
-    const matchmakerClientsMax = useMemo(() => {
-        if (user?.accountType !== 'Matchmaker') return 0;
-        return Math.max(0, user.matchmakerMaxClientProfiles ?? 0);
-    }, [user?.accountType, user?.matchmakerMaxClientProfiles]);
-
-    const matchmakerClientLimitState = useMemo((): MatchmakerClientLimitState => {
-        if (user?.accountType !== 'Matchmaker') return 'can_create';
-        return resolveMatchmakerClientLimitState({
-            clientsUsed: matchmakerClientsUsed,
-            clientsMax: matchmakerClientsMax,
-            matchmakerTier: user.matchmakerTier,
-            matchmakerPackages,
-        });
-    }, [user?.accountType, user?.matchmakerTier, matchmakerClientsUsed, matchmakerClientsMax, matchmakerPackages]);
-
-    const matchmakerUpgradePackagesList = useMemo(() => {
-        if (matchmakerClientLimitState === 'needs_plan') {
-            return paidMatchmakerPackages(matchmakerPackages);
-        }
-        if (matchmakerClientLimitState === 'upgrade_for_more') {
-            return upgradeMatchmakerPackages(matchmakerPackages, matchmakerClientsMax);
-        }
-        return [];
-    }, [matchmakerClientLimitState, matchmakerPackages, matchmakerClientsMax]);
-
-    const matchmakerCanChooseActiveClients =
-        user?.accountType === 'Matchmaker'
-        && user.isSubscribed
-        && matchmakerClientsMax > 0
-        && subAccounts.length > matchmakerClientsMax;
-
-    useEffect(() => {
-        if (user?.matchmakerClientSelectionPending) {
-            setShowMatchmakerClientSelectionModal(true);
-        }
-    }, [user?.matchmakerClientSelectionPending]);
-
-    const handleConfirmMatchmakerClientSelection = async (selectedIds: number[]) => {
-        if (!user?.id) return;
-        const res = await matrimonialService.selectMatchmakerActiveClients(Number(user.id), selectedIds);
-        if (res?.statusCode !== 200 && res?.statusCode !== 1) {
-            throw new Error(res?.message || 'Failed to save client selection.');
-        }
-        const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
-        const activeCount = Number(r?.matchmakerClientProfileCount ?? r?.MatchmakerClientProfileCount ?? selectedIds.length);
-        const maxClients = Number(r?.matchmakerMaxClientProfiles ?? r?.MatchmakerMaxClientProfiles ?? matchmakerClientsMax);
-        const canAdd = r?.matchmakerCanAddClients ?? r?.MatchmakerCanAddClients;
-        updateUser?.({
-            matchmakerClientSelectionPending: false,
-            matchmakerClientProfileCount: activeCount,
-            matchmakerCanAddClients:
-                typeof canAdd === 'boolean'
-                    ? canAdd
-                    : activeCount < maxClients,
-        });
-        setShowMatchmakerClientSelectionModal(false);
-        await fetchSubAccounts();
-        window.dispatchEvent(new CustomEvent('sub-accounts-changed'));
-        showToast(res?.message || 'Client profiles updated.', 'success');
-    };
-
-    const matchmakerPlatformMaxClients = useMemo(
-        () => platformMaxMatchmakerClients(matchmakerPackages),
-        [matchmakerPackages],
-    );
-
-    const openMatchmakerUpgradeModal = useCallback(() => {
-        setShowMatchmakerUpgradeModal(true);
-    }, []);
-
-    const handleSelectMatchmakerUpgradePackage = useCallback((pkg: PublicMatrimonialPackage) => {
-        setShowMatchmakerUpgradeModal(false);
-        const amount = packagePrice(pkg);
-        const params = new URLSearchParams({
-            plan: resolveCheckoutPlan(pkg),
-            amount: String(amount),
-        });
-        router.push(`/subscription/checkout?${params.toString()}`);
-    }, [router]);
+    }, [router, user?.accountType]);
 
     if (loading) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '1.2rem', color: 'var(--primary)' }}>Loading...</div>;
@@ -2341,7 +2274,7 @@ function ProfilePageContent() {
 
     const isFamilyParentAccount = isFamilyParentAccountType(user.accountType);
     const isMatchmakerAccount = user.accountType === 'Matchmaker';
-    const usesSubAccountSlots = isFamilyParentAccount;
+    const usesSubAccountSlots = isFamilyParentAccount || isMatchmakerAccount;
     const subSlotValidityMonths =
         liveSubAccountPackage?.validityMonths ?? user.familySubAccountPackageValidityMonths;
     const subSlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
@@ -2349,7 +2282,9 @@ function ProfilePageContent() {
     const subSlotsRemaining = Math.max(0, subSlotsPurchased - subSlotsConsumed);
     const canCreateManagedSubAccount = usesSubAccountSlots && subSlotsRemaining > 0;
     const needsSubAccountPayment = usesSubAccountSlots && subSlotsRemaining <= 0;
-
+    const matchmakerPackageDisplayName = isMatchmakerAccount
+        ? (matchmakerPackages[0] ? packageName(matchmakerPackages[0]) : undefined)
+        : undefined;
     return (
         <main>
             <Header 
@@ -2718,13 +2653,14 @@ function ProfilePageContent() {
                                 <span className="badge" style={{ background: '#eef2ff', color: 'var(--primary)', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 500 }}>
                                     {displayMatrimonialAccountType(user.accountType) || 'Free Member'}
                                 </span>
-                                {user.isSubscribed ? (
+                                {user.isSubscribed || (isMatchmakerAccount && (user.matchmakerTier || '').toUpperCase() === 'PAYG') ? (
                                     <span className="badge" style={{ background: '#047857', color: '#fff', padding: '0.4rem 1rem', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 600 }}>
                                         ✓ {profilePlanBadgeLabel({
                                             accountType: user.accountType,
-                                            isSubscribed: user.isSubscribed,
+                                            isSubscribed: true,
                                             matchmakerTier: user.matchmakerTier,
                                             subscriptionCancelled: user.subscriptionCancelled,
+                                            matchmakerPackageName: matchmakerPackageDisplayName,
                                         })}
                                     </span>
                                 ) : bankPremiumAwaitingApproval ? (
@@ -2745,6 +2681,7 @@ function ProfilePageContent() {
                                             isSubscribed: false,
                                             matchmakerTier: user.matchmakerTier,
                                             pendingApproval: true,
+                                            matchmakerPackageName: matchmakerPackageDisplayName,
                                         })}
                                     </span>
                                 ) : (
@@ -2752,7 +2689,8 @@ function ProfilePageContent() {
                                         {profilePlanBadgeLabel({
                                             accountType: user.accountType,
                                             isSubscribed: false,
-                                            matchmakerTier: user.matchmakerTier,
+                                            matchmakerTier: user.matchmakerTier || 'FREE',
+                                            matchmakerPackageName: matchmakerPackageDisplayName,
                                         })}
                                     </span>
                                 )}
@@ -3134,79 +3072,37 @@ function ProfilePageContent() {
                                     </button>
                                 </div>
                             ) : user.accountType === 'Matchmaker' ? (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankPremiumAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankPremiumAwaitingApproval && !user.isSubscribed ? '1px solid #fcd34d' : undefined }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: canCreateManagedSubAccount ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankSubAccountAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankSubAccountAwaitingApproval && !canCreateManagedSubAccount ? '1px solid #fcd34d' : undefined }}>
                                     <div>
-                                        <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : bankPremiumAwaitingApproval ? '#b45309' : '#374151' }}>
-                                            {user.isSubscribed
-                                                ? user.subscriptionCancelled
-                                                    ? `${formatMatchmakerTierName(user.matchmakerTier) || 'Matchmaker'} — cancelled`
-                                                    : `${formatMatchmakerTierName(user.matchmakerTier) || 'Matchmaker'} — active`
-                                                : bankPremiumAwaitingApproval
-                                                    ? 'Matchmaker — payment pending approval'
-                                                    : 'Matchmaker Free'}
+                                        <div style={{ fontWeight: 600, color: canCreateManagedSubAccount ? '#7c2d12' : bankSubAccountAwaitingApproval ? '#b45309' : '#374151' }}>
+                                            {bankSubAccountAwaitingApproval && !canCreateManagedSubAccount
+                                                ? 'Matchmaker — payment pending approval'
+                                                : 'Matchmaker · pay per client account'}
                                         </div>
                                         <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
-                                            {user.isSubscribed
-                                                ? user.subscriptionCancelled
-                                                    ? 'Your subscription is cancelled, but your plan stays active until the end of your paid period. Reactivate any time before then.'
-                                                    : user.matchmakerTier?.toUpperCase() === 'GOLD'
-                                                    ? '50 full-detail profile views per day. Up to 5 client profiles.'
-                                                    : user.matchmakerTier?.toUpperCase() === 'DIAMOND'
-                                                        ? 'Unlimited full-detail views. Up to 10 client profiles.'
-                                                        : 'Paid matchmaker subscription active.'
-                                                : bankPremiumAwaitingApproval
-                                                    ? 'Your bank transfer slip is being reviewed. We will activate Gold or Diamond as soon as the payment is verified.'
-                                                    : 'Browse basic listings only — no contacts, messaging, or client profiles until you upgrade.'}
+                                            {bankSubAccountAwaitingApproval && !canCreateManagedSubAccount
+                                                ? 'Your bank transfer is waiting for admin approval. You can create a client profile after approval.'
+                                                : canCreateManagedSubAccount
+                                                    ? `You have ${subSlotsRemaining} unused client-account slot(s). Create a profile when ready — ${subSlotsConsumed}/${subSlotsPurchased} used.`
+                                                    : `Pay for one client account (from ${subAccountPriceLabel}), then create that profile. Add unlimited accounts — no fixed package.`}
                                         </div>
-                                        {user.isSubscribed && subscriptionRemainingDisplay ? (
-                                            <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8, lineHeight: 1.45 }}>
-                                                <strong style={{ fontSize: '0.95rem' }}>
-                                                    {subscriptionRemainingDisplay.primary}
-                                                </strong>
-                                                {subscriptionRemainingDisplay.secondary ? (
-                                                    <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
-                                                        {subscriptionRemainingDisplay.secondary}
-                                                        {' · '}
-                                                        {subscriptionPeriodLabel}
-                                                    </span>
-                                                ) : (
-                                                    <span style={{ marginLeft: 6 }}>({subscriptionPeriodLabel})</span>
-                                                )}
-                                            </div>
-                                        ) : user.isSubscribed ? (
-                                            <div style={{ color: '#92400e', fontSize: '0.82rem', marginTop: 8 }}>
-                                                Premium active ({subscriptionPeriodLabel})
-                                            </div>
-                                        ) : null}
                                     </div>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                        {user.isSubscribed && user.subscriptionCancelled ? (
-                                            <button
-                                                type="button"
-                                                onClick={handleReactivateSubscription}
-                                                disabled={isReactivatingSubscription}
-                                                style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #047857', background: '#047857', color: 'white', fontWeight: 600, cursor: isReactivatingSubscription ? 'not-allowed' : 'pointer', opacity: isReactivatingSubscription ? 0.7 : 1 }}
-                                            >
-                                                {isReactivatingSubscription ? 'Reactivating…' : 'Reactivate subscription'}
-                                            </button>
-                                        ) : user.isSubscribed ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowCancelSubscriptionModal(true)}
-                                                disabled={isCancellingSubscription}
-                                                style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
-                                            >
-                                                {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
-                                            </button>
-                                        ) : bankPremiumAwaitingApproval ? (
+                                        {bankSubAccountAwaitingApproval && !canCreateManagedSubAccount ? (
                                             <span style={{ padding: '0.55rem 1rem', fontSize: '0.9rem', fontWeight: 600, color: '#92400e' }}>Awaiting verification</span>
                                         ) : (
                                             <button
                                                 type="button"
                                                 className="btn btn-primary"
-                                                onClick={() => openModal('subscription')}
+                                                onClick={() => {
+                                                    if (canCreateManagedSubAccount) {
+                                                        setIsCreateSubAccountModalOpen(true);
+                                                    } else {
+                                                        openSubAccountPackageModal();
+                                                    }
+                                                }}
                                             >
-                                                Upgrade plan
+                                                {canCreateManagedSubAccount ? 'Create client profile' : 'Pay for client account'}
                                             </button>
                                         )}
                                     </div>
@@ -3423,45 +3319,25 @@ function ProfilePageContent() {
                     </div>
                 )}
 
-                <MatchmakerUpgradePackageModal
-                    open={showMatchmakerUpgradeModal}
-                    onClose={() => setShowMatchmakerUpgradeModal(false)}
-                    packages={matchmakerUpgradePackagesList}
-                    loading={loadingMatchmakerPackages}
-                    title={
-                        matchmakerClientLimitState === 'needs_plan'
-                            ? 'Choose a Matchmaker plan'
-                            : 'Upgrade to add more client profiles'
-                    }
-                    introLine={
-                        matchmakerClientLimitState === 'needs_plan'
-                            ? 'Choose a plan below. After payment you can create client profiles under your matchmaker account.'
-                            : `You have used all ${matchmakerClientsMax} client profile slot(s). Choose a higher plan to add more profiles (up to ${matchmakerPlatformMaxClients}).`
-                    }
-                    onSelectPackage={handleSelectMatchmakerUpgradePackage}
-                />
-
-                {user?.accountType === 'Matchmaker' && matchmakerClientsMax > 0 && subAccounts.length > 0 ? (
-                    <MatchmakerClientSelectionModal
-                        open={showMatchmakerClientSelectionModal}
-                        maxSelectable={matchmakerClientsMax}
-                        subAccounts={subAccounts}
-                        requireSelection={!!user.matchmakerClientSelectionPending}
-                        onClose={() => setShowMatchmakerClientSelectionModal(false)}
-                        onConfirm={handleConfirmMatchmakerClientSelection}
-                    />
-                ) : null}
-
                 <SubAccountPackagePickerModal
                     open={showSubAccountPackageModal}
                     onClose={() => setShowSubAccountPackageModal(false)}
                     packages={subAccountPackages}
-                    loading={loadingSubAccountPackages}
+                    loading={loadingSubAccountPackages || loadingMatchmakerPackages}
                     bankAwaitingApproval={bankSubAccountAwaitingApproval}
+                    title={
+                        isMatchmakerAccount
+                            ? 'Choose a client-account package'
+                            : 'Choose a sub-account package'
+                    }
                     introLine={
-                        needsSubAccountPayment
-                            ? 'Choose a package to pay for your first sub-account slot, then create a managed profile.'
-                            : `You have used all ${subSlotsPurchased} slot(s). Choose a package to add another managed profile.`
+                        isMatchmakerAccount
+                            ? (needsSubAccountPayment
+                                ? 'Pay for one client account, then create that profile. You can add unlimited accounts — pay for each one.'
+                                : `You have used all ${subSlotsPurchased} client-account slot(s). Pay for another to add more.`)
+                            : (needsSubAccountPayment
+                                ? 'Choose a package to pay for your first sub-account slot, then create a managed profile.'
+                                : `You have used all ${subSlotsPurchased} slot(s). Choose a package to add another managed profile.`)
                     }
                     onSelectPackage={handleSelectSubAccountPackage}
                 />
@@ -3577,10 +3453,12 @@ function ProfilePageContent() {
                                             const nextCount = (typeof user.matchmakerClientProfileCount === 'number'
                                                 ? user.matchmakerClientProfileCount
                                                 : subAccounts.length) + 1;
+                                            const nextConsumed = (user.familySubAccountSlotsConsumed ?? 0) + 1;
+                                            const purchased = user.familySubAccountSlotsPurchased ?? 0;
                                             updateUser?.({
                                                 matchmakerClientProfileCount: nextCount,
-                                                matchmakerCanAddClients: isMatchmakerPaidTier(user.matchmakerTier)
-                                                    && nextCount < (user.matchmakerMaxClientProfiles ?? 0),
+                                                familySubAccountSlotsConsumed: nextConsumed,
+                                                matchmakerCanAddClients: nextConsumed < purchased,
                                             });
                                         }
                                         showToast('Managed profile created successfully.', 'success');
@@ -3642,83 +3520,31 @@ function ProfilePageContent() {
                             <button
                                 type="button"
                                 className="btn btn-primary"
-                                disabled={matchmakerClientLimitState === 'absolute_max' || !!user.matchmakerClientSelectionPending}
                                 onClick={() => {
-                                    if (user.matchmakerClientSelectionPending) {
-                                        setShowMatchmakerClientSelectionModal(true);
+                                    if (user?.isVerified === false) {
+                                        window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                         return;
                                     }
-                                    if (matchmakerClientLimitState === 'can_create') {
-                                        if (user?.isVerified === false) {
-                                            window.dispatchEvent(new CustomEvent('open-verify-modal'));
-                                            return;
-                                        }
-                                        setIsCreateSubAccountModalOpen(true);
+                                    if (!canCreateManagedSubAccount) {
+                                        openSubAccountPackageModal();
                                         return;
                                     }
-                                    if (
-                                        matchmakerClientLimitState === 'needs_plan'
-                                    ) {
-                                        openMatchmakerUpgradeModal();
-                                        return;
-                                    }
+                                    setIsCreateSubAccountModalOpen(true);
                                 }}
                             >
-                                {matchmakerClientLimitState === 'can_create'
-                                    ? '+ Add New Profile'
-                                        : matchmakerClientLimitState === 'absolute_max'
-                                            ? "Can't add more accounts"
-                                            : 'Upgrade to add clients'}
+                                {canCreateManagedSubAccount ? '+ Add New Profile' : 'Pay for client account'}
                             </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem', fontSize: '0.95rem' }}>
-                            {matchmakerClientsMax > 0
-                                ? `Client profiles you create appear in browse with a matchmaker badge. Complete basic and detailed details in one step — no separate client login — ${matchmakerClientsUsed}/${matchmakerClientsMax} client profile slot(s) used. Messages and interest for each profile are grouped below.`
-                                : 'Client profiles you create appear in browse with a matchmaker badge. Complete basic and detailed details in one step — no separate client login. Upgrade to a Matchmaker plan to add client profiles.'}
+                            {`Client profiles appear in browse with a matchmaker badge. Pay for one account, then create it — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. No fixed package limit. Messages and interest for each profile are grouped below.`}
                         </p>
-                        {matchmakerClientLimitState === 'needs_plan' && (
+                        {needsSubAccountPayment && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                Choose a Matchmaker plan to unlock client profile slots.
+                                {bankSubAccountAwaitingApproval
+                                    ? 'Your bank transfer for a client-account slot is pending admin approval.'
+                                    : `Pay for a client account (from ${subAccountPriceLabel}) before creating a profile.`}
                             </p>
                         )}
-                        {user.matchmakerClientSelectionPending ? (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                Your plan includes {matchmakerClientsMax} active client slot{matchmakerClientsMax === 1 ? '' : 's'}, but you have {subAccounts.length} profiles on file.
-                                Choose which profiles should stay active before using matchmaker features.
-                                {' '}
-                                <button
-                                    type="button"
-                                    className="btn btn-outline"
-                                    style={{ marginTop: '0.5rem', padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
-                                    onClick={() => setShowMatchmakerClientSelectionModal(true)}
-                                >
-                                    Choose active profiles
-                                </button>
-                            </p>
-                        ) : null}
-                        {matchmakerCanChooseActiveClients && !user.matchmakerClientSelectionPending ? (
-                            <p style={{ color: '#666', fontSize: '0.88rem', marginBottom: '1rem' }}>
-                                You have more client profiles than your plan allows. Only {matchmakerClientsMax} can be active at once.{' '}
-                                <button
-                                    type="button"
-                                    className="btn btn-outline"
-                                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem', marginLeft: '0.25rem' }}
-                                    onClick={() => setShowMatchmakerClientSelectionModal(true)}
-                                >
-                                    Change active profiles
-                                </button>
-                            </p>
-                        ) : null}
-                        {matchmakerClientLimitState === 'absolute_max' && matchmakerClientsUsed >= matchmakerClientsMax && user.isSubscribed ? (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                You have used all {matchmakerClientsMax} client profile slot(s) on your current plan. To change to a different premium plan, switch to the free plan first from Subscription settings.
-                            </p>
-                        ) : null}
-                        {matchmakerClientLimitState === 'absolute_max' && !(matchmakerClientsUsed >= matchmakerClientsMax && user.isSubscribed) ? (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
-                                You have reached the maximum of {matchmakerClientsMax} client profile{matchmakerClientsMax === 1 ? '' : 's'} for your plan. Remove a profile to add another — you cannot add more accounts at this tier.
-                            </p>
-                        ) : null}
                         {subAccounts.length > 3 ? (
                             <p className="managed-sub-accounts-scroll-hint">
                                 Showing 3 accounts at a time — scroll to see all {subAccounts.length}.

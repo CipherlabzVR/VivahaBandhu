@@ -34,7 +34,7 @@ export default function ProfileManagedBadge({
         return (
             <ManagedProfileBadge
                 managedByLabel={String(profile.managedByLabel ?? profile.ManagedByLabel ?? 'Managed by parent')}
-                managerName={String(profile.managerName ?? profile.ManagerName ?? '')}
+                managedByType={String(profile.managedByType ?? profile.ManagedByType ?? '')}
                 variant={variant}
             />
         );

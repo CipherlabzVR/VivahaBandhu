@@ -72,8 +72,15 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
         }
     }, [loading, packages.length, userHasPlan]);
 
+    const isMatchmaker = user?.accountType === 'Matchmaker';
+
     const goCheckout = (pkg: PublicMatrimonialPackage) => {
-        if (userHasActivePremiumPlan(user)) {
+        // Matchmakers pay per client account and can purchase repeatedly.
+        if (!isMatchmaker && userHasActivePremiumPlan(user)) {
+            onOpenSubscription();
+            return;
+        }
+        if (isFreePackage(pkg)) {
             onOpenSubscription();
             return;
         }
@@ -140,7 +147,7 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                     </p>
                 ) : (
                     <div id="pricing-plans" className="pricing-plans-grid">
-                        {packages.map((pkg) => {
+                        {(isMatchmaker ? packages.filter((p) => !isFreePackage(p)) : packages).map((pkg) => {
                             const id = packageId(pkg);
                             const name = packageName(pkg);
                             const desc = pkg.description ?? pkg.Description;
@@ -148,10 +155,11 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                             const period = packagePeriodLabel(pkg);
                             const popular = !!(pkg.isPopular ?? pkg.IsPopular);
                             const free = isFreePackage(pkg);
-                            const isCurrent = isUserCurrentPackage(pkg, packages, user);
+                            // Matchmakers pay per account — packages are never a locked "current subscription".
+                            const isCurrent = isMatchmaker ? false : isUserCurrentPackage(pkg, packages, user);
                             const featureLabels = packageFeatureLabels(pkg);
                             const validityLabel = packageValidityLabel(pkg);
-                            const premiumLocked = userHasActivePremiumPlan(user);
+                            const premiumLocked = isMatchmaker ? false : userHasActivePremiumPlan(user);
                             const canUpgradeToPackage = !premiumLocked && !free && !isCurrent;
 
                             return (

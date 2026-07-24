@@ -1,6 +1,5 @@
 import {
-    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
-    CHECKOUT_PLAN_MATCHMAKER_GOLD,
+    CHECKOUT_PLAN_MATCHMAKER_CLIENT,
     CHECKOUT_PLAN_PREMIUM_SELF,
 } from '../constants/subscription';
 
@@ -43,7 +42,9 @@ export function packageId(pkg: PublicMatrimonialPackage): number {
 }
 
 export function packageName(pkg: PublicMatrimonialPackage): string {
-    return (pkg.name ?? pkg.Name ?? 'Package').trim();
+    return (pkg.name ?? pkg.Name ?? 'Package')
+        .replace(/\s*\(default\)\s*$/i, '')
+        .trim();
 }
 
 export function packagePrice(pkg: PublicMatrimonialPackage): number {
@@ -123,10 +124,7 @@ export function buildFeatureComparisonRows(
 /** Maps a backoffice package to checkout `plan` query values understood by the API. */
 export function resolveCheckoutPlan(pkg: PublicMatrimonialPackage): string {
     if (isMatchmakerAudience(pkg)) {
-        const tier = (pkg.matchmakerTier ?? pkg.MatchmakerTier ?? '').toUpperCase();
-        const key = (pkg.systemPackageKey ?? pkg.SystemPackageKey ?? '').toLowerCase();
-        if (tier === 'DIAMOND' || key.includes('diamond')) return CHECKOUT_PLAN_MATCHMAKER_DIAMOND;
-        return CHECKOUT_PLAN_MATCHMAKER_GOLD;
+        return CHECKOUT_PLAN_MATCHMAKER_CLIENT;
     }
     return CHECKOUT_PLAN_PREMIUM_SELF;
 }
@@ -143,10 +141,6 @@ export type UserPlanContext = {
     matchmakerTier?: string;
 } | null | undefined;
 
-function packageMatchmakerTier(pkg: PublicMatrimonialPackage): string {
-    return (pkg.matchmakerTier ?? pkg.MatchmakerTier ?? '').toUpperCase();
-}
-
 function packageSystemKey(pkg: PublicMatrimonialPackage): string {
     return (pkg.systemPackageKey ?? pkg.SystemPackageKey ?? '').toLowerCase();
 }
@@ -159,32 +153,15 @@ export function resolveUserCurrentPackage(
     if (!user || packages.length === 0) return null;
 
     const isMatchmaker = user.accountType === 'Matchmaker';
-    const mmTier = (user.matchmakerTier || 'FREE').toUpperCase();
     const subscribed = user.isSubscribed === true;
 
     if (isMatchmaker) {
-        if (!subscribed || mmTier === 'FREE') {
-            return (
-                packages.find((p) => packageSystemKey(p) === 'mm-free') ??
-                packages.find((p) => isMatchmakerAudience(p) && isFreePackage(p)) ??
-                null
-            );
-        }
-        if (mmTier === 'GOLD') {
-            return (
-                packages.find((p) => isMatchmakerAudience(p) && packageMatchmakerTier(p) === 'GOLD') ??
-                packages.find((p) => packageSystemKey(p).includes('gold')) ??
-                null
-            );
-        }
-        if (mmTier === 'DIAMOND') {
-            return (
-                packages.find((p) => isMatchmakerAudience(p) && packageMatchmakerTier(p) === 'DIAMOND') ??
-                packages.find((p) => packageSystemKey(p).includes('diamond')) ??
-                null
-            );
-        }
-        return null;
+        // Pay-per-client: no active "subscription package" — pick the primary paid slot package for display.
+        return (
+            packages.find((p) => packageSystemKey(p) === 'mm-client-slot-default') ??
+            packages.find((p) => isMatchmakerAudience(p) && !isFreePackage(p)) ??
+            null
+        );
     }
 
     const selfPackages = packages.filter((p) => !isMatchmakerAudience(p));

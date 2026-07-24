@@ -47,6 +47,7 @@ import {
 import {
     type FavoriteActivityRow,
     mutualInterestBlockMessage,
+    resolveManagedProfileIdsWithMutualInterest,
     resolveMutualInterestState,
     MATRIMONIAL_INTERACTIONS_CHANGED_EVENT,
 } from '@/utils/messagingMutualInterest';
@@ -88,7 +89,7 @@ function normalizeInboxContact(row: Record<string, unknown>) {
         latestMessage: String((row as any).latestMessage ?? (row as any).LatestMessage ?? ''),
         sentAt: (row as any).sentAt ?? (row as any).SentAt,
         unreadCount: Number((row as any).unreadCount ?? (row as any).UnreadCount ?? 0),
-        peerIsPremium: readPeerIsPremiumFromRow(row),
+        peerIsPremium: readPeerIsPremiumFromRow(row) !== false,
     };
 }
 
@@ -235,14 +236,32 @@ function formatLastSeenLabel(lastSeen: string | null, isOnline: boolean, presenc
     return `Last seen ${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
-/** When false, the contact is on the free plan and cannot receive messages. Default true if unknown (legacy API). */
-function readPeerIsPremiumFromRow(row: unknown): boolean {
-    if (!row || typeof row !== 'object') return true;
+/**
+ * Whether the contact (receiver) can receive messages (premium / paid manager).
+ * Returns null when the API has not provided a peer-premium flag yet.
+ */
+function readPeerIsPremiumFromRow(row: unknown): boolean | null {
+    if (!row || typeof row !== 'object') return null;
     const o = row as Record<string, unknown>;
-    const v = o.peerIsPremium ?? o.PeerIsPremium ?? o.isPremium ?? o.IsPremium;
+    // Prefer messaging-specific flags (same rule as SendMessage / inbox PeerIsPremium).
+    const v =
+        o.peerIsPremium ??
+        o.PeerIsPremium ??
+        o.canReceiveMessages ??
+        o.CanReceiveMessages;
     if (v === false || v === 0) return false;
     if (typeof v === 'string' && v.toLowerCase() === 'false') return false;
-    return true;
+    if (v === true || v === 1) return true;
+    if (typeof v === 'string' && v.toLowerCase() === 'true') return true;
+
+    // GetProfile (and similar) expose isPremium for the viewed member.
+    const legacy = o.isPremium ?? o.IsPremium;
+    if (legacy === false || legacy === 0) return false;
+    if (typeof legacy === 'string' && legacy.toLowerCase() === 'false') return false;
+    if (legacy === true || legacy === 1) return true;
+    if (typeof legacy === 'string' && legacy.toLowerCase() === 'true') return true;
+
+    return null;
 }
 
 function viewerCanSendMessages(user: {
@@ -257,9 +276,10 @@ function viewerCanSendMessages(user: {
     return user.isSubscribed === true;
 }
 
+/** Always the other person in the thread (receiver), never the managed/sender profile. */
 function peerDisplayName(contact: InboxContact | null): string {
     if (!contact) return 'This member';
-    return inboxContactDisplayName(contact);
+    return inboxContactPeerName(contact);
 }
 
 function MessagesContent() {
@@ -295,6 +315,7 @@ function MessagesContent() {
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
     const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
+    const [favoriteActivityReady, setFavoriteActivityReady] = useState(false);
     const [shareHoroscopePages, setShareHoroscopePages] = useState<string[]>([]);
     const [sharingHoroscope, setSharingHoroscope] = useState(false);
     const [horoscopeLightboxSrc, setHoroscopeLightboxSrc] = useState<string | null>(null);
@@ -558,9 +579,11 @@ function MessagesContent() {
     useEffect(() => {
         if (!user?.id) {
             setFavoriteActivity([]);
+            setFavoriteActivityReady(false);
             return;
         }
         let cancelled = false;
+        setFavoriteActivityReady(false);
         const loadFavoriteActivity = () => {
             matrimonialService.getUserInteractions(Number(user.id)).then((res) => {
                 if (cancelled) return;
@@ -569,8 +592,12 @@ function MessagesContent() {
                     res?.result?.favoriteActivity ??
                     [];
                 setFavoriteActivity(Array.isArray(favAct) ? favAct : []);
+                setFavoriteActivityReady(true);
             }).catch(() => {
-                if (!cancelled) setFavoriteActivity([]);
+                if (!cancelled) {
+                    setFavoriteActivity([]);
+                    setFavoriteActivityReady(true);
+                }
             });
         };
         loadFavoriteActivity();
@@ -614,10 +641,11 @@ function MessagesContent() {
         );
     }, [selectedContact, hasMutualInterest, selectedMutualInterestState]);
 
+    const peerPremiumState = selectedContact ? readPeerIsPremiumFromRow(selectedContact) : null;
     const peerOnFreePlan =
         !!selectedContact &&
         Number(selectedContact.contactId) !== Number(user?.id) &&
-        !readPeerIsPremiumFromRow(selectedContact);
+        peerPremiumState === false;
     const senderCanMessage = viewerCanSendMessages(user);
     const canSendInThread = senderCanMessage && hasMutualInterest && !peerOnFreePlan;
 
@@ -938,16 +966,30 @@ function MessagesContent() {
             urlManagedProfileUserId == null &&
             !urlContactPickerHandledRef.current
         ) {
-            managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
-                urlContactPickerHandledRef.current = true;
-                const managedId = managedProfileUserIdForApi(managedProfileUserId);
-                if (managedId != null) {
-                    setActiveSubAccountId(managedId);
-                }
-                void handleSelectContact(Number(urlUserId), managedId ?? null);
-                const managedQuery = managedId != null ? `&managedProfileUserId=${managedId}` : '';
-                router.replace(`/messages?userId=${urlUserId}${managedQuery}`);
-            });
+            // Wait for interest data so we can auto-pick the account that already has mutual interest.
+            if (!favoriteActivityReady) return;
+
+            const mutualManagedIds = resolveManagedProfileIdsWithMutualInterest(
+                favoriteActivity,
+                Number(urlUserId),
+                managedActionPicker.activeSubAccounts.map((s) => s.id),
+            );
+            const preferredManagedId = mutualManagedIds.length === 1 ? mutualManagedIds[0]! : null;
+
+            managedActionPicker.runWithManagedAccount(
+                'message',
+                (managedProfileUserId) => {
+                    urlContactPickerHandledRef.current = true;
+                    const managedId = managedProfileUserIdForApi(managedProfileUserId);
+                    if (managedId != null) {
+                        setActiveSubAccountId(managedId);
+                    }
+                    void handleSelectContact(Number(urlUserId), managedId ?? null);
+                    const managedQuery = managedId != null ? `&managedProfileUserId=${managedId}` : '';
+                    router.replace(`/messages?userId=${urlUserId}${managedQuery}`);
+                },
+                preferredManagedId,
+            );
             return;
         }
 
@@ -955,7 +997,7 @@ function MessagesContent() {
         if (!subAccountsLoaded && canManageSubAccounts(user?.accountType)) return;
         openContactFromUrl(inbox);
         // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when inbox + sub tab are ready
-    }, [inbox, showSubAccountTabs, activeSubAccountId, subAccountsLoaded, urlUserId, urlManagedProfileUserId, isManagedParent, subAccounts.length, user?.accountType]);
+    }, [inbox, showSubAccountTabs, activeSubAccountId, subAccountsLoaded, urlUserId, urlManagedProfileUserId, isManagedParent, subAccounts.length, user?.accountType, favoriteActivityReady, favoriteActivity]);
 
     const handleSelectContact = async (
         contactOrId: InboxContact | number,
@@ -992,22 +1034,25 @@ function MessagesContent() {
                     latestMessage: '',
                     sentAt: null,
                     unreadCount: 0,
+                    // Unknown until GetProfile returns PeerIsPremium / IsPremium.
                     peerIsPremium: true,
                 };
                 matrimonialService.getProfile(contactId, Number(user.id)).then((p) => {
                     if (p.statusCode === 200 && p.result) {
-                        const r = p.result;
+                        const r = p.result as Record<string, unknown>;
+                        const peerPremium = readPeerIsPremiumFromRow(r);
                         setSelectedContact((prev) => {
                             if (!prev || !contactsMatch(prev, contact)) return prev;
                             return {
                                 ...prev,
-                                firstName: r.firstName || 'User',
-                                lastName: r.lastName || '',
-                                profilePhoto: r.profilePhoto,
-                                peerFirstName: r.firstName || 'User',
-                                peerLastName: r.lastName || '',
-                                peerProfilePhoto: r.profilePhoto,
-                                peerIsPremium: readPeerIsPremiumFromRow(r),
+                                firstName: String(r.firstName ?? r.FirstName ?? 'User'),
+                                lastName: String(r.lastName ?? r.LastName ?? ''),
+                                profilePhoto: (r.profilePhoto ?? r.ProfilePhoto ?? null) as string | null,
+                                peerFirstName: String(r.firstName ?? r.FirstName ?? 'User'),
+                                peerLastName: String(r.lastName ?? r.LastName ?? ''),
+                                peerProfilePhoto: (r.profilePhoto ?? r.ProfilePhoto ?? null) as string | null,
+                                // false → show free-plan banner; null/true → allow until proven free
+                                peerIsPremium: peerPremium !== false,
                             };
                         });
                     }
@@ -1452,7 +1497,7 @@ function MessagesContent() {
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
-                                                    {!readPeerIsPremiumFromRow(contact) && (
+                                                    {readPeerIsPremiumFromRow(contact) === false && (
                                                         <span className="text-[0.65rem] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded-full">
                                                             Free plan
                                                         </span>

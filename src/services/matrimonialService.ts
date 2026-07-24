@@ -619,6 +619,30 @@ export const matrimonialService = {
         }
     },
 
+    /** Remaining free daily profile views for the logged-in user. */
+    async getDailyProfileViewStatus(userId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(
+                `${API_BASE_URL}/Matrimonial/GetDailyProfileViewStatus?userId=${userId}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': token ? `Bearer ${token}` : '',
+                    },
+                }
+            );
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || data.Message || 'Failed to load daily view status');
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     /**
      * Premium only: show or hide phone / WhatsApp / email from viewers who would normally see them.
      */
@@ -1196,6 +1220,34 @@ export const matrimonialService = {
         }
     },
 
+    /**
+     * Convert Self / Parents / Relation account to Matchmaker and clear detailed profile fields.
+     * Caller MUST confirm with the user first.
+     */
+    async convertToMatchmaker(userId: number): Promise<any> {
+        try {
+            const token = getStoredToken();
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/ConvertToMatchmaker?userId=${userId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': token ? `Bearer ${token}` : ''
+                }
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(data.message || data.Message || 'Failed to convert to Matchmaker');
+            }
+            const status = Number(data.statusCode ?? data.StatusCode);
+            if (status !== 200 && status !== 1) {
+                throw new Error(data.message || data.Message || 'Failed to convert to Matchmaker');
+            }
+            return data;
+        } catch (error) {
+            throw error;
+        }
+    },
+
     async purchaseAdditionalFamilySubAccountSlot(userId: number, mockReference?: string): Promise<any> {
         try {
             const token = getStoredToken();
@@ -1455,6 +1507,9 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     familySubAccountSlotsMaxTotal?: number;
     familySubAccountAdditionalAmountLkr?: number;
     familySubAccountPackageValidityMonths?: number;
+    isSubjectToDailyProfileViewLimit?: boolean;
+    dailyProfileViewLimit?: number;
+    remainingDailyProfileViews?: number;
 } {
     if (!r || typeof r !== 'object') {
         return {};
@@ -1467,8 +1522,11 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     const mx = mxRaw as Record<string, unknown>;
     const tierRaw = mx.MatchmakerTier ?? mx.matchmakerTier ?? 'FREE';
     const tier = String(tierRaw || 'FREE');
+    const tierUpper = tier.toUpperCase();
     const mmPaid =
-        tier.toUpperCase() === 'GOLD' || tier.toUpperCase() === 'DIAMOND';
+        tierUpper === 'GOLD'
+        || tierUpper === 'DIAMOND'
+        || tierUpper === 'PAYG';
     const isPremiumSelf = !!(mx.IsPremiumSubscribed ?? mx.isPremiumSubscribed);
 
     const toIsoExpiry = (raw: unknown): string | undefined => {
@@ -1507,6 +1565,11 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
     const famMaxTotal = mx.FamilySubAccountSlotsMaxTotal ?? mx.familySubAccountSlotsMaxTotal;
     const famExtraCost = mx.FamilySubAccountAdditionalAmountLkr ?? mx.familySubAccountAdditionalAmountLkr;
     const famValidity = mx.FamilySubAccountPackageValidityMonths ?? mx.familySubAccountPackageValidityMonths;
+    const subjectDaily =
+        (mx.IsSubjectToDailyProfileViewLimit ?? mx.isSubjectToDailyProfileViewLimit) === true ||
+        (mx.IsSubjectToDailyProfileViewLimit ?? mx.isSubjectToDailyProfileViewLimit) === 'true';
+    const dailyLimit = mx.DailyProfileViewLimit ?? mx.dailyProfileViewLimit;
+    const remainingDaily = mx.RemainingDailyProfileViews ?? mx.remainingDailyProfileViews;
 
     return {
         isPremiumSelfSubscribed: isPremiumSelf,
@@ -1523,7 +1586,7 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
             selectionPending === true || selectionPending === 'true',
         isSubscribed:
             accountType === 'Matchmaker'
-                ? mmPaid
+                ? mmPaid || isPremiumSelf
                 : isPremiumSelf,
         subscriptionExpiresAt,
         subscriptionIsLifetime,
@@ -1534,6 +1597,10 @@ export function mapUserFieldsFromSignInResult(r: Record<string, unknown> | undef
         familySubAccountSlotsMaxTotal: famMaxTotal != null && famMaxTotal !== '' ? Number(famMaxTotal) : undefined,
         familySubAccountAdditionalAmountLkr: famExtraCost != null && famExtraCost !== '' ? Number(famExtraCost) : undefined,
         familySubAccountPackageValidityMonths: famValidity != null && famValidity !== '' ? Number(famValidity) : undefined,
+        isSubjectToDailyProfileViewLimit: subjectDaily,
+        dailyProfileViewLimit: dailyLimit != null && dailyLimit !== '' ? Number(dailyLimit) : undefined,
+        remainingDailyProfileViews:
+            remainingDaily != null && remainingDaily !== '' ? Number(remainingDaily) : undefined,
     };
 }
 

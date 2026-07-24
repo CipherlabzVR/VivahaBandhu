@@ -61,6 +61,12 @@ interface User {
     familySubAccountAdditionalAmountLkr?: number;
     /** Validity in months for the active sub-account package. */
     familySubAccountPackageValidityMonths?: number;
+    /** Free Self / Parents / Relation / Matchmaker-without-slots: subject to daily profile view cap. */
+    isSubjectToDailyProfileViewLimit?: boolean;
+    /** Daily free profile view cap (typically 10). */
+    dailyProfileViewLimit?: number;
+    /** Remaining free profile views for today when subject to the daily limit. */
+    remainingDailyProfileViews?: number;
 }
 
 interface AuthContextType {

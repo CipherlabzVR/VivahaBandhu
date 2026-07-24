@@ -12,7 +12,9 @@ export const PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE =
     'You have successfully activated premium membership. Browse profiles to find your partner!';
 
 export const MATCHMAKER_PLAN_ACTIVATED_MESSAGE =
-    'Your matchmaker plan is now active. Add client profiles and use premium matchmaker features.';
+    'Client account slot purchased. Create a client profile from your profile page — you can buy more anytime.';
+
+export const MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE = MATCHMAKER_PLAN_ACTIVATED_MESSAGE;
 
 /** Shown via GlobalToast right after the user uploads a bank transfer slip. */
 export const BANK_TRANSFER_SUBMITTED_MESSAGE =

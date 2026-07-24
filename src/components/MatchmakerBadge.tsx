@@ -1,9 +1,9 @@
 import type { CSSProperties } from 'react';
 
 interface MatchmakerBadgeProps {
-    /** Matchmaker name to show in the tooltip (e.g. "Suresh Perera"). Optional. */
+    /** Kept for callers; name is not shown on the badge. */
     matchmakerName?: string;
-    /** Compact "MM" pill (used inside small profile cards) vs full text pill (used in the detail view). */
+    /** Compact pill (profile cards) vs full text pill (detail view). */
     variant?: 'compact' | 'full';
     style?: CSSProperties;
 }
@@ -12,10 +12,8 @@ interface MatchmakerBadgeProps {
  * Badge shown on profiles that were registered by a matchmaker on behalf of a client.
  * Tells viewers that messages and interest will reach the matchmaker, not the profile owner directly.
  */
-export default function MatchmakerBadge({ matchmakerName, variant = 'compact', style }: MatchmakerBadgeProps) {
-    const tooltip = matchmakerName
-        ? `Managed by matchmaker: ${matchmakerName}. Messages and interest go to the matchmaker.`
-        : 'Managed by a matchmaker. Messages and interest go to the matchmaker.';
+export default function MatchmakerBadge({ variant = 'compact', style }: MatchmakerBadgeProps) {
+    const tooltip = 'Managed by a matchmaker. Messages and interest go to the matchmaker.';
 
     const baseStyle: CSSProperties = {
         display: 'inline-flex',
@@ -49,11 +47,7 @@ export default function MatchmakerBadge({ matchmakerName, variant = 'compact', s
             >
                 <path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z" />
             </svg>
-            {variant === 'full' ? (
-                <span>Matchmaker{matchmakerName ? ` · ${matchmakerName}` : ''}</span>
-            ) : (
-                <span>Matchmaker</span>
-            )}
+            <span>Matchmaker</span>
         </span>
     );
 }

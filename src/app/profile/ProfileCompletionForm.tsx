@@ -1,6 +1,7 @@
 ﻿'use client';
 
-import { useState, useEffect, useMemo, useRef, type ReactNode, type CSSProperties, type RefObject } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type ReactNode, type CSSProperties, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Country, City } from 'country-state-city';
@@ -314,15 +315,51 @@ function CityAutocomplete({
     disabled?: boolean;
 }) {
     const [open, setOpen] = useState(false);
+    const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
     const MAX_VISIBLE = 100;
+
+    const updateMenuPosition = useCallback(() => {
+        const input = inputRef.current;
+        if (!input) return;
+        const rect = input.getBoundingClientRect();
+        const gap = 4;
+        const spaceBelow = window.innerHeight - rect.bottom - gap - 12;
+        const spaceAbove = rect.top - gap - 12;
+        const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
+        const maxHeight = Math.max(140, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
+        setMenuBox({
+            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
+            left: rect.left,
+            width: rect.width,
+            maxHeight,
+        });
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!open) {
+            setMenuBox(null);
+            return;
+        }
+        updateMenuPosition();
+        const onReposition = () => updateMenuPosition();
+        window.addEventListener('resize', onReposition);
+        // Capture scroll from modal Lenis / nested scroll parents without closing the menu.
+        window.addEventListener('scroll', onReposition, true);
+        return () => {
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+        };
+    }, [open, updateMenuPosition, value, cityGroups]);
 
     useEffect(() => {
         if (!open) return;
         const onDoc = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-                setOpen(false);
-            }
+            const target = e.target as Node;
+            if (wrapRef.current?.contains(target) || listRef.current?.contains(target)) return;
+            setOpen(false);
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
@@ -366,10 +403,123 @@ function CityAutocomplete({
 
     const totalVisible = filteredGroups.reduce((sum, g) => sum + g.visible.length, 0);
     const hasAnything = filteredGroups.some((g) => g.totalMatched > 0);
+    const showMenu = open && !disabled && hasAnything && menuBox != null && typeof document !== 'undefined';
+
+    const listbox = showMenu
+        ? createPortal(
+              <div
+                  ref={listRef}
+                  role="listbox"
+                  data-lenis-prevent
+                  data-lenis-prevent-wheel
+                  data-lenis-prevent-touch
+                  onWheel={(e) => {
+                      // Keep wheel scrolling inside the list; do not let modal Lenis steal it.
+                      e.stopPropagation();
+                  }}
+                  style={{
+                      position: 'fixed',
+                      top: menuBox.top,
+                      left: menuBox.left,
+                      width: menuBox.width,
+                      zIndex: 10050,
+                      background: '#fff',
+                      border: '1px solid #ddd',
+                      borderRadius: 6,
+                      maxHeight: menuBox.maxHeight,
+                      overflowY: 'auto',
+                      overscrollBehavior: 'contain',
+                      WebkitOverflowScrolling: 'touch',
+                      boxShadow: '0 6px 18px rgba(0,0,0,0.12)',
+                  }}
+              >
+                  {filteredGroups.map((group) => {
+                      if (group.visible.length === 0) return null;
+                      const showCountryHeader = cityGroups.length > 1;
+                      return (
+                          <div key={group.country}>
+                              {showCountryHeader && (
+                                  <div
+                                      style={{
+                                          padding: '0.4rem 0.7rem',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 600,
+                                          letterSpacing: '0.04em',
+                                          textTransform: 'uppercase',
+                                          color: '#8a6d3b',
+                                          background: '#fdf6ec',
+                                          borderTop: '1px solid #f1e6d2',
+                                          borderBottom: '1px solid #f1e6d2',
+                                          position: 'sticky',
+                                          top: 0,
+                                          zIndex: 1,
+                                      }}
+                                  >
+                                      {group.country}
+                                  </div>
+                              )}
+                              {group.visible.map((city) => (
+                                  <div
+                                      key={`${group.country}::${city}`}
+                                      role="option"
+                                      aria-selected={city === value}
+                                      onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          onChange(city);
+                                          setOpen(false);
+                                      }}
+                                      style={{
+                                          padding: '0.45rem 0.7rem',
+                                          cursor: 'pointer',
+                                          fontSize: '0.9rem',
+                                          background: city === value ? '#f5efe6' : 'transparent',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                          (e.currentTarget as HTMLDivElement).style.background = '#fdf6ec';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                          (e.currentTarget as HTMLDivElement).style.background =
+                                              city === value ? '#f5efe6' : 'transparent';
+                                      }}
+                                  >
+                                      {city}
+                                  </div>
+                              ))}
+                              {group.hiddenCount > 0 && (
+                                  <div
+                                      style={{
+                                          padding: '0.35rem 0.7rem',
+                                          fontSize: '0.72rem',
+                                          color: '#888',
+                                          background: '#fafafa',
+                                      }}
+                                  >
+                                      +{group.hiddenCount} more in {group.country} - keep typing to narrow down
+                                  </div>
+                              )}
+                          </div>
+                      );
+                  })}
+                  {totalVisible === 0 && (
+                      <div
+                          style={{
+                              padding: '0.5rem 0.7rem',
+                              fontSize: '0.85rem',
+                              color: '#888',
+                          }}
+                      >
+                          No matches - your typed value will be kept as-is.
+                      </div>
+                  )}
+              </div>,
+              document.body
+          )
+        : null;
 
     return (
         <div ref={wrapRef} style={{ position: 'relative' }}>
             <input
+                ref={inputRef}
                 type="text"
                 name={name}
                 value={value}
@@ -386,102 +536,7 @@ function CityAutocomplete({
                 disabled={disabled}
                 autoComplete="off"
             />
-            {open && !disabled && hasAnything && (
-                <div
-                    role="listbox"
-                    style={{
-                        position: 'absolute',
-                        top: 'calc(100% + 2px)',
-                        left: 0,
-                        right: 0,
-                        zIndex: 20,
-                        background: '#fff',
-                        border: '1px solid #ddd',
-                        borderRadius: 6,
-                        maxHeight: 260,
-                        overflowY: 'auto',
-                        boxShadow: '0 6px 18px rgba(0,0,0,0.08)',
-                    }}
-                >
-                    {filteredGroups.map((group) => {
-                        if (group.visible.length === 0) return null;
-                        const showCountryHeader = cityGroups.length > 1;
-                        return (
-                            <div key={group.country}>
-                                {showCountryHeader && (
-                                    <div
-                                        style={{
-                                            padding: '0.4rem 0.7rem',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 600,
-                                            letterSpacing: '0.04em',
-                                            textTransform: 'uppercase',
-                                            color: '#8a6d3b',
-                                            background: '#fdf6ec',
-                                            borderTop: '1px solid #f1e6d2',
-                                            borderBottom: '1px solid #f1e6d2',
-                                            position: 'sticky',
-                                            top: 0,
-                                        }}
-                                    >
-                                        {group.country}
-                                    </div>
-                                )}
-                                {group.visible.map((city) => (
-                                    <div
-                                        key={`${group.country}::${city}`}
-                                        role="option"
-                                        aria-selected={city === value}
-                                        onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            onChange(city);
-                                            setOpen(false);
-                                        }}
-                                        style={{
-                                            padding: '0.45rem 0.7rem',
-                                            cursor: 'pointer',
-                                            fontSize: '0.9rem',
-                                            background: city === value ? '#f5efe6' : 'transparent',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            (e.currentTarget as HTMLDivElement).style.background = '#fdf6ec';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            (e.currentTarget as HTMLDivElement).style.background =
-                                                city === value ? '#f5efe6' : 'transparent';
-                                        }}
-                                    >
-                                        {city}
-                                    </div>
-                                ))}
-                                {group.hiddenCount > 0 && (
-                                    <div
-                                        style={{
-                                            padding: '0.35rem 0.7rem',
-                                            fontSize: '0.72rem',
-                                            color: '#888',
-                                            background: '#fafafa',
-                                        }}
-                                    >
-                                        +{group.hiddenCount} more in {group.country} - keep typing to narrow down
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                    {totalVisible === 0 && (
-                        <div
-                            style={{
-                                padding: '0.5rem 0.7rem',
-                                fontSize: '0.85rem',
-                                color: '#888',
-                            }}
-                        >
-                            No matches - your typed value will be kept as-is.
-                        </div>
-                    )}
-                </div>
-            )}
+            {listbox}
         </div>
     );
 }
@@ -1204,8 +1259,18 @@ export default function ProfileCompletionForm({
                 upload1: v('upload1') || prev.upload1,
                 upload2: v('upload2') || prev.upload2,
                 upload3: v('upload3') || prev.upload3,
-                profilePhoto:
-                    String(p.profilePhotoFromProfile ?? p.ProfilePhotoFromProfile ?? v('profilePhoto') ?? prev.profilePhoto),
+                profilePhoto: (() => {
+                    // Prefer matrimonial profile photo; empty string means intentionally removed — do not
+                    // fall back to a stale AppUser / previous form URL.
+                    if (
+                        Object.prototype.hasOwnProperty.call(p, 'profilePhotoFromProfile') ||
+                        Object.prototype.hasOwnProperty.call(p, 'ProfilePhotoFromProfile')
+                    ) {
+                        return String(p.profilePhotoFromProfile ?? p.ProfilePhotoFromProfile ?? '').trim();
+                    }
+                    const fromUser = String(p.profilePhoto ?? p.ProfilePhoto ?? '').trim();
+                    return fromUser || prev.profilePhoto;
+                })(),
                 remarks: v('remarks') || prev.remarks,
             }));
         };
@@ -1944,6 +2009,8 @@ export default function ProfileCompletionForm({
 
         if (fieldName === 'profilePhoto') {
             updateUser({ profilePhoto: '' });
+            setManagedPhotoPreview('');
+            setManagedBasic((prev) => ({ ...prev, profilePhotoBase64: '' }));
         }
 
         await persistFieldUpdate(fieldName, '');
@@ -2087,10 +2154,11 @@ export default function ProfileCompletionForm({
 
             const result = await response.json();
             if (result.statusCode === 1 || result.statusCode === 200) { // Success
-                // Keep UI in sync without requiring a refresh.
-                if (formData.profilePhoto) {
-                    updateUser({ profilePhoto: withCacheBuster(formData.profilePhoto) });
-                }
+                // Keep UI in sync without requiring a refresh (including cleared photos).
+                const nextPhoto = String(formData.profilePhoto ?? '').trim();
+                updateUser({
+                    profilePhoto: nextPhoto ? withCacheBuster(nextPhoto) : '',
+                });
                 if (formData.horoscopeDocument) {
                     updateUser({ horoscopeDocument: withCacheBuster(formData.horoscopeDocument) });
                 }

@@ -21,6 +21,10 @@ function ProfilesPageInner() {
     const viewUserHandled = useRef<string | null>(null);
 
     useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }, []);
+
+    useEffect(() => {
         if (loading) return;
         if (user && isManagedSubAccount(user)) {
             router.replace('/profile');
@@ -69,7 +73,10 @@ function ProfilesPageInner() {
             />
             {!(user && isManagedSubAccount(user)) && (
                 <div className="pt-20">
-                    <SearchSection onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)} />
+                    <SearchSection
+                        onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)}
+                        onOpenSubscription={() => openModal('subscription')}
+                    />
                 </div>
             )}
             <Footer />

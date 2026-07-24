@@ -95,6 +95,27 @@ export function resolveMutualInterestState(
     return 'needs_connection';
 }
 
+/**
+ * Managed profile ids (from the viewer's client/sub list) that already have mutual interest
+ * with the peer — used to skip the "which profile is messaging?" picker.
+ */
+export function resolveManagedProfileIdsWithMutualInterest(
+    favoriteActivity: FavoriteActivityRow[],
+    peerUserId: number,
+    managedProfileUserIds: readonly number[],
+): number[] {
+    const peer = Number(peerUserId);
+    if (!Number.isFinite(peer) || peer <= 0) return [];
+
+    const ids = managedProfileUserIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+    return ids.filter(
+        (managedId) => resolveMutualInterestState(favoriteActivity, peer, managedId) === 'mutual'
+    );
+}
+
 export function mutualInterestBlockMessage(
     peerName: string,
     state: MutualInterestState,
