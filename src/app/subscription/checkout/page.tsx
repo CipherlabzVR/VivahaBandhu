@@ -273,6 +273,10 @@ export default function SubscriptionCheckoutPage() {
                 mockReference,
                 subscriptionPlan,
                 isSlotPlan ? parseFloat(amount) : undefined,
+                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
+                    || subscriptionPlan.startsWith('matchmaker_')
+                    ? parseFloat(amount)
+                    : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (isSlotPlan) {
@@ -567,6 +571,11 @@ export default function SubscriptionCheckoutPage() {
                                     <p className="text-xs text-amber-800 mt-3 leading-relaxed">
                                         Transfer exactly <strong>LKR {amount}</strong> for one client-account slot.
                                         After admin approval you can create that client profile. Buy again anytime for more accounts.
+                                        Transfer exactly{' '}
+                                        <strong>
+                                            {Number(amount).toLocaleString('en-LK')} LKR
+                                        </strong>{' '}
+                                        for this matchmaker plan so admin approval activates the correct package.
                                     </p>
                                 ) : null}
                             </div>
