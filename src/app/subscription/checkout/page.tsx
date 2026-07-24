@@ -268,15 +268,13 @@ export default function SubscriptionCheckoutPage() {
             const isSlotPlan =
                 subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
                 || subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT;
+            const shouldSendAmount =
+                isSlotPlan || subscriptionPlan.startsWith('matchmaker_');
             const res = await matrimonialService.activateMockSubscription(
                 Number(user.id),
                 mockReference,
                 subscriptionPlan,
-                isSlotPlan ? parseFloat(amount) : undefined,
-                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
-                    || subscriptionPlan.startsWith('matchmaker_')
-                    ? parseFloat(amount)
-                    : undefined,
+                shouldSendAmount ? parseFloat(amount) : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (isSlotPlan) {
