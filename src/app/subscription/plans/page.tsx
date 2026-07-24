@@ -6,7 +6,7 @@ import Header from '../../../components/Header';
 import SubscriptionPlanPicker from '../../../components/SubscriptionPlanPicker';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
-import { CHECKOUT_PLAN_SUB_ACCOUNT } from '../../../constants/subscription';
+import { CHECKOUT_PLAN_MATCHMAKER_CLIENT, CHECKOUT_PLAN_SUB_ACCOUNT } from '../../../constants/subscription';
 import {
     type BankTransferPaymentPurpose,
     resolveSubscriptionPlansAudience,
@@ -82,12 +82,10 @@ function SubscriptionPlansContent() {
                     list = normalizePublicPackages(res?.result ?? res?.Result);
                 }
 
-                if (resubmit) {
-                    if (audience === 'matchmaker') {
-                        list = paidMatchmakerPackages(list);
-                    } else if (audience === 'user') {
-                        list = list.filter((p) => !isFreePackage(p));
-                    }
+                if (audience === 'matchmaker') {
+                    list = paidMatchmakerPackages(list);
+                } else if (resubmit && audience === 'user') {
+                    list = list.filter((p) => !isFreePackage(p));
                 }
 
                 if (cancelled) return;
@@ -120,12 +118,15 @@ function SubscriptionPlansContent() {
         [packages, selectedPackageId],
     );
 
+    const isMatchmakerAudience = audience === 'matchmaker';
+    const isSlotAudience = audience === 'sub_account' || audience === 'matchmaker';
+
     const selectedIsCurrentPlan = selectedPackage
-        ? isUserCurrentPackage(selectedPackage, packages, user)
+        ? !isSlotAudience && isUserCurrentPackage(selectedPackage, packages, user)
         : false;
 
     const selectedCanCheckout = selectedPackage
-        ? audience === 'sub_account'
+        ? isSlotAudience
             ? packagePrice(selectedPackage) > 0
             : canUserCheckoutSubscriptionPackage(selectedPackage, packages, user)
         : false;
@@ -133,7 +134,7 @@ function SubscriptionPlansContent() {
     const goToCheckout = () => {
         if (!selectedPackage || selectedIsCurrentPlan || !selectedCanCheckout) return;
 
-        if (userHasActivePremiumPlan(user) && audience !== 'sub_account') {
+        if (userHasActivePremiumPlan(user) && !isSlotAudience) {
             showToast('You already have premium. Switch to the free plan first to change packages.', 'info');
             return;
         }
@@ -142,7 +143,9 @@ function SubscriptionPlansContent() {
         const plan =
             audience === 'sub_account'
                 ? CHECKOUT_PLAN_SUB_ACCOUNT
-                : resolveCheckoutPlan(selectedPackage);
+                : audience === 'matchmaker'
+                    ? CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                    : resolveCheckoutPlan(selectedPackage);
         const params = new URLSearchParams({
             plan,
             amount: String(amount),
@@ -153,7 +156,6 @@ function SubscriptionPlansContent() {
 
     const pageTitle = subscriptionPlansPageTitle(audience, resubmit);
     const pageIntro = subscriptionPlansPageIntro(audience, resubmit);
-    const isMatchmakerAudience = audience === 'matchmaker';
 
     if (authLoading || !user) {
         return (
@@ -176,7 +178,7 @@ function SubscriptionPlansContent() {
                     <p className="text-text-light text-center py-8">
                         No plans are available right now. Please contact support.
                     </p>
-                ) : audience === 'sub_account' ? (
+                ) : isSlotAudience ? (
                     <div className="space-y-3">
                         {packages.map((pkg) => {
                             const id = packageId(pkg);

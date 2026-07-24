@@ -12,7 +12,7 @@ import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBad
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
 import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
-import { excludeSelfFromFeaturedBrowse, normalizeBrowseProfiles, readProfileMatchScore } from '../utils/browseProfileFilters';
+import { excludeSelfFromFeaturedBrowse, normalizeBrowseProfiles } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
 import {
@@ -23,6 +23,7 @@ import {
     filterProfilesForBrowse,
     viewerUserIdForBrowseGenderFilter,
 } from '../utils/selfAccountBrowseGender';
+import FreeDailyProfileViewsBanner from './FreeDailyProfileViewsBanner';
 
 interface ProfilesProps {
     onOpenSubscription: () => void;
@@ -40,19 +41,16 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
     });
     const [actionToast, setActionToast] = useState('');
 
-    const [isMatched, setIsMatched] = useState(false);
-
     useEffect(() => {
         const fetchProfiles = async () => {
             try {
                 const uidNum = viewerId ?? (user?.id != null ? Number(user.id) : undefined);
                 const recentCount = uidNum != null && !Number.isNaN(uidNum) ? 24 : 4;
 
-                const commit = (items: unknown, matchedFlag: boolean) => {
+                const commit = (items: unknown) => {
                     const normalized = normalizeBrowseProfiles(items);
                     const genderFiltered = filterProfilesForBrowse(normalized, user, null, subAccounts);
                     setProfiles(excludeSelfFromFeaturedBrowse(uidNum, subAccounts, genderFiltered));
-                    setIsMatched(matchedFlag);
                 };
 
                 const viewerForGender = viewerUserIdForBrowseGenderFilter(user);
@@ -62,22 +60,22 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                     if (res.statusCode === 200 && res.result) {
                         const matched = res.result;
                         if (Array.isArray(matched) && matched.length > 0) {
-                            commit(matched, true);
+                            commit(matched);
                             return;
                         }
                         const fallback = await matrimonialService.getRecentProfiles(recentCount, viewerForGender);
                         if (fallback.statusCode === 200 && fallback.result) {
-                            commit(fallback.result, false);
+                            commit(fallback.result);
                         } else {
-                            commit([], false);
+                            commit([]);
                         }
                         return;
                     }
                 }
 
                 const res = await matrimonialService.getRecentProfiles(4, viewerUserIdForBrowseGenderFilter(user));
-                if (res.statusCode === 200 && res.result) commit(res.result, false);
-                else commit([], false);
+                if (res.statusCode === 200 && res.result) commit(res.result);
+                else commit([]);
             } catch (error) {
                 console.error('Failed to load profiles', error);
                 try {
@@ -88,7 +86,6 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                         res.statusCode === 200 && res.result && Array.isArray(res.result) ? res.result : [];
                     const genderFiltered = filterProfilesForBrowse(arr, user, null, subAccounts);
                     setProfiles(excludeSelfFromFeaturedBrowse(uidNum, subAccounts, genderFiltered));
-                    setIsMatched(false);
                 } catch {
                     /* ignore */
                 }
@@ -200,11 +197,14 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 <p className="text-text-light text-lg md:text-xl">{t('featuredProfilesDesc')}</p>
             </div>
 
+            <div className="max-w-[1400px] mx-auto">
+                <FreeDailyProfileViewsBanner onUpgrade={onOpenSubscription} />
+            </div>
+
             <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                 {profiles.map((profile) => {
                     const isPremium = !!(profile.isPremium || profile.IsPremium);
                     const isManaged = profileHasManagedBadge(profile);
-                    const matchScore = isMatched ? readProfileMatchScore(profile) : null;
                     const photoSrc = profile.profilePhoto || getDefaultAvatarDataUri({
                         firstName: profile.firstName,
                         lastName: profile.lastName,
@@ -247,7 +247,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                 </div>
                                 <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                                     <span className="text-primary font-semibold">
-                                        {matchScore != null ? `${matchScore}% Match` : 'New Match!'}
+                                        New Match!
                                     </span>
                                     <div className="flex gap-2">
                                         {(() => {

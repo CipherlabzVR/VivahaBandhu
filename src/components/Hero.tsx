@@ -19,6 +19,11 @@ import {
     readQuickSearchSession,
     writeQuickSearchSession,
 } from '../utils/quickSearchSession';
+import {
+    persistBrowseFieldsFromQuickSearch,
+    profilesUrlFromQuickSearch,
+    profilesUrlFromTextSearch,
+} from '../utils/browseFiltersFromQuickSearch';
 import { showToast } from '../utils/toast';
 
 const DEFAULT_HERO_STATS = {
@@ -118,17 +123,12 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
             return;
         }
         writeQuickSearchSession(search);
-        const query = new URLSearchParams(search).toString();
-        router.push(`/search?${query}`);
+        persistBrowseFieldsFromQuickSearch(search, user?.id);
+        router.push(profilesUrlFromQuickSearch(search), { scroll: true });
     };
 
     const handleHeroInlineSearch = () => {
-        const q = heroQuery.trim();
-        if (q) {
-            router.push(`/search?q=${encodeURIComponent(q)}`);
-        } else {
-            router.push('/search');
-        }
+        router.push(profilesUrlFromTextSearch(heroQuery), { scroll: true });
     };
 
     const scrollToHowItWorks = () => {
@@ -249,7 +249,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                     <button
                                         type="button"
                                         className="flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-semibold text-white shadow-sm transition-colors hover:bg-primary-dark hover:shadow-md"
-                                        onClick={() => router.push('/search')}
+                                        onClick={() => router.push('/profiles', { scroll: true })}
                                     >
                                         <svg
                                             className="h-5 w-5 shrink-0"

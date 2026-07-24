@@ -42,7 +42,8 @@ export function useManagedSubAccountActionPicker(
     const runWithManagedAccount = useCallback(
         (
             nextAction: ManagedSubAccountActionKind,
-            onConfirm: (managedProfileUserId: number) => void | Promise<void>
+            onConfirm: (managedProfileUserId: number) => void | Promise<void>,
+            preferredManagedProfileUserId?: number | null
         ) => {
             if (!needsManagedPicker) {
                 void onConfirm(0);
@@ -51,6 +52,21 @@ export function useManagedSubAccountActionPicker(
 
             if (activeSubAccounts.length === 0) {
                 notifyBlocked();
+                return;
+            }
+
+            const preferred = Number(preferredManagedProfileUserId);
+            if (Number.isFinite(preferred) && preferred > 0) {
+                const match = activeSubAccounts.find((s) => s.id === preferred);
+                if (match) {
+                    void onConfirm(match.id);
+                    return;
+                }
+            }
+
+            // Only one client/sub — no need to ask which profile is acting.
+            if (activeSubAccounts.length === 1) {
+                void onConfirm(activeSubAccounts[0]!.id);
                 return;
             }
 

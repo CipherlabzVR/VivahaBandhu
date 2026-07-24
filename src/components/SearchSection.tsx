@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
@@ -33,12 +34,19 @@ import {
     effectiveBrowseGenderForUser,
     managedParentShowsBothGenders,
 } from '../utils/selfAccountBrowseGender';
+import FreeDailyProfileViewsBanner from './FreeDailyProfileViewsBanner';
+import {
+    BROWSE_FILTERS_STORAGE_KEY,
+    browseFieldsFromProfilesUrl,
+    stripBrowseFilterParamsFromUrl,
+    textSearchFromProfilesUrl,
+} from '../utils/browseFiltersFromQuickSearch';
 
 interface SearchSectionProps {
     onOpenProfileDetail: (profile: any) => void;
+    onOpenSubscription?: () => void;
 }
 
-const BROWSE_FILTERS_STORAGE_KEY = 'cbass:browse-profile-filters';
 const PREFERRED_SEARCH_PROFILE_KEY = 'cbass:preferred-search-profile';
 
 type BrowseFilterFields = {
@@ -156,7 +164,9 @@ function persistPreferredSearchProfileId(ownerKey: string, profileId: number | n
     }
 }
 
-export default function SearchSection({ onOpenProfileDetail }: SearchSectionProps) {
+export default function SearchSection({ onOpenProfileDetail, onOpenSubscription }: SearchSectionProps) {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
@@ -202,10 +212,52 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
         return () => window.clearTimeout(handle);
     }, [searchInput]);
 
-    // After auth is ready, restore saved browse filters for this account (or anonymous)
+    // After auth is ready: apply Quick Search / hero text URL params, else restore saved browse filters
     useEffect(() => {
         if (authLoading) return;
         const ownerKey = browseOwnerKey(user);
+
+        const fromUrl = browseFieldsFromProfilesUrl(searchParams);
+        const textQuery = textSearchFromProfilesUrl(searchParams);
+
+        if (fromUrl) {
+            const base = loadSavedBrowseFields(ownerKey) ?? defaultBrowseFieldsForUser(user, subAccounts);
+            let fields: BrowseFilterFields = {
+                ...base,
+                ...fromUrl,
+                maritalStatus: fromUrl.maritalStatus ?? base.maritalStatus ?? '',
+                sortBy: fromUrl.sortBy ?? base.sortBy ?? 'latest',
+            };
+            const ageOk = validateMatrimonialSearchAge(fields.minAge, fields.maxAge);
+            if (!ageOk.ok) {
+                fields = { ...fields, minAge: '', maxAge: '' };
+            }
+            if (!fields.gender && defaultBrowseGenderForUser(user, subAccounts)) {
+                fields = { ...fields, gender: defaultBrowseGenderForUser(user, subAccounts) };
+            }
+            persistBrowseFields(ownerKey, fields);
+            setDraftFilters(fields);
+            setActiveFilters((prev) => ({ ...fields, pageNumber: 1, pageSize: prev.pageSize }));
+            setPersistedFilters(fields);
+            if (textQuery != null) {
+                const term = textQuery.trim();
+                setSearchInput(term);
+                setSearchTerm(term);
+            }
+            router.replace(stripBrowseFilterParamsFromUrl(searchParams), { scroll: false });
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+            return;
+        }
+
+        if (textQuery != null) {
+            const term = textQuery.trim();
+            setSearchInput(term);
+            setSearchTerm(term);
+            setActiveFilters((prev) => (prev.pageNumber === 1 ? prev : { ...prev, pageNumber: 1 }));
+            router.replace(stripBrowseFilterParamsFromUrl(searchParams), { scroll: false });
+            window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+
         const saved = loadSavedBrowseFields(ownerKey);
         if (saved) {
             const ageOk = validateMatrimonialSearchAge(saved.minAge, saved.maxAge);
@@ -225,7 +277,7 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
             setActiveFilters((prev) => ({ ...defaults, pageNumber: 1, pageSize: prev.pageSize }));
             setPersistedFilters(null);
         }
-    }, [user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts, authLoading]);
+    }, [user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts, authLoading, searchParams, router]);
 
     const preferredSearchSubAccount = useMemo(
         () => subAccounts.find((s) => s.id === preferredSearchProfileId) ?? null,
@@ -275,22 +327,37 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
 
     const matchesSearch = (profile: any, q: string) => {
         if (!q) return true;
-        const needle = q.toLowerCase();
+        const needle = q.trim().toLowerCase();
+        if (!needle) return true;
+        const idStr =
+            profile.id != null
+                ? String(profile.id)
+                : profile.Id != null
+                    ? String(profile.Id)
+                    : '';
         const haystack = [
             profile.firstName ?? profile.FirstName,
             profile.lastName ?? profile.LastName,
             profile.cityOfResidence ?? profile.CityOfResidence,
-            profile.country ?? profile.CountryOfResidence,
+            profile.country ?? profile.CountryOfResidence ?? profile.Country,
             profile.occupation ?? profile.Occupation,
+            profile.profession ?? profile.Profession,
             profile.qualificationLevel ?? profile.QualificationLevel,
             profile.religion ?? profile.Religion,
             profile.ethnicity ?? profile.Ethnicity,
             profile.maritalStatus ?? profile.MaritalStatus,
+            idStr,
+            profile.matrimonialProfileId != null ? String(profile.matrimonialProfileId) : '',
+            profile.displayId ?? profile.DisplayId,
+            profile.profileCode ?? profile.ProfileCode,
+            profile.accountName ?? profile.AccountName,
         ]
             .filter(Boolean)
             .join(' ')
             .toLowerCase();
-        return haystack.includes(needle);
+        if (haystack.includes(needle)) return true;
+        const parts = needle.split(/\s+/).filter(Boolean);
+        return parts.length > 0 && parts.every((w) => haystack.includes(w));
     };
 
     const activeCriteria = useMemo(
@@ -865,6 +932,8 @@ export default function SearchSection({ onOpenProfileDetail }: SearchSectionProp
                             </div>
                         )}
                     </div>
+
+                    <FreeDailyProfileViewsBanner onUpgrade={onOpenSubscription} />
 
                     <div className="results-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
                         <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

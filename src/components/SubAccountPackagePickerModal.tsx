@@ -15,7 +15,9 @@ type SubAccountPackagePickerModalProps = {
     packages: PublicMatrimonialPackage[];
     loading?: boolean;
     bankAwaitingApproval?: boolean;
+    title?: string;
     introLine?: string;
+    emptyLine?: string;
     onSelectPackage: (pkg: PublicMatrimonialPackage) => void;
 };
 
@@ -25,7 +27,9 @@ export default function SubAccountPackagePickerModal({
     packages,
     loading = false,
     bankAwaitingApproval = false,
+    title,
     introLine,
+    emptyLine,
     onSelectPackage,
 }: SubAccountPackagePickerModalProps) {
     if (!open) return null;
@@ -45,13 +49,13 @@ export default function SubAccountPackagePickerModal({
                 </button>
                 <div className="modal-header">
                     <h2 id="sub-account-packages-title" style={{ color: '#92400e' }}>
-                        Choose a sub-account package
+                        {title || 'Choose a sub-account package'}
                     </h2>
                 </div>
                 <ModalScrollArea className="modal-body">
                     {bankAwaitingApproval ? (
                         <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
-                            Your bank transfer for a sub-account slot is <strong>pending admin approval</strong>.
+                            Your bank transfer is <strong>pending admin approval</strong>.
                             You can create a managed profile once the payment is verified.
                         </p>
                     ) : (
@@ -64,7 +68,7 @@ export default function SubAccountPackagePickerModal({
                                 <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>Loading packages…</p>
                             ) : packages.length === 0 ? (
                                 <p style={{ color: '#6b7280', fontSize: '0.9rem' }}>
-                                    No sub-account packages are available right now. Please contact support.
+                                    {emptyLine || 'No packages are available right now. Please contact support.'}
                                 </p>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

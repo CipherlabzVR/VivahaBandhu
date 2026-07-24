@@ -6,11 +6,9 @@ import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 import {
     PREMIUM_SUBSCRIPTION_LKR,
-    MATCHMAKER_GOLD_LKR,
-    MATCHMAKER_DIAMOND_LKR,
+    MATCHMAKER_CLIENT_SLOT_LKR,
     CHECKOUT_PLAN_PREMIUM_SELF,
-    CHECKOUT_PLAN_MATCHMAKER_GOLD,
-    CHECKOUT_PLAN_MATCHMAKER_DIAMOND,
+    CHECKOUT_PLAN_MATCHMAKER_CLIENT,
     CHECKOUT_PLAN_SUB_ACCOUNT,
 } from '../../../constants/subscription';
 import {
@@ -18,7 +16,7 @@ import {
     BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY,
     BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE,
     BANK_TRANSFER_SUBMITTED_MESSAGE,
-    MATCHMAKER_PLAN_ACTIVATED_MESSAGE,
+    MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE,
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
@@ -31,12 +29,19 @@ import { showToast } from '../../../utils/toast';
 
 type PaymentMethod = 'card' | 'bank';
 
+function isMatchmakerClientCheckoutPlan(plan: string): boolean {
+    const p = plan.trim().toLowerCase();
+    return (
+        p === CHECKOUT_PLAN_MATCHMAKER_CLIENT
+        || p === 'matchmaker'
+        || p === 'matchmaker_gold'
+        || p === 'matchmaker_diamond'
+    );
+}
+
 function planLabel(plan: string, isMatchmaker: boolean): string {
+    if (isMatchmakerClientCheckoutPlan(plan)) return 'Matchmaker client account';
     switch (plan) {
-        case CHECKOUT_PLAN_MATCHMAKER_GOLD:
-            return 'Matchmaker Gold';
-        case CHECKOUT_PLAN_MATCHMAKER_DIAMOND:
-            return 'Matchmaker Diamond';
         case CHECKOUT_PLAN_SUB_ACCOUNT:
             return 'Sub-account slot';
         case CHECKOUT_PLAN_PREMIUM_SELF:
@@ -70,6 +75,8 @@ export default function SubscriptionCheckoutPage() {
 
     const isMatchmakerAccount = user?.accountType === 'Matchmaker';
     const isSubAccountCheckout = checkoutPlan === CHECKOUT_PLAN_SUB_ACCOUNT;
+    const isMatchmakerClientCheckout = isMatchmakerClientCheckoutPlan(checkoutPlan);
+    const isSlotCheckout = isSubAccountCheckout || isMatchmakerClientCheckout;
     const [isResubmitCheckout, setIsResubmitCheckout] = useState(false);
 
     useEffect(() => {
@@ -94,12 +101,21 @@ export default function SubscriptionCheckoutPage() {
             return;
         }
 
-        if (normalizedPlan === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
-            setAmount(String(MATCHMAKER_GOLD_LKR));
-            return;
-        }
-        if (normalizedPlan === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
-            setAmount(String(MATCHMAKER_DIAMOND_LKR));
+        if (isMatchmakerClientCheckoutPlan(normalizedPlan)) {
+            matrimonialService.getMatchmakerPackages().then((pkgs) => {
+                const primary = pkgs.find((p) => Number(p.price ?? p.Price ?? 0) > 0) ?? pkgs[0];
+                const price = Number(primary?.price ?? primary?.Price ?? 0);
+                if (price > 0) {
+                    setAmount(String(price));
+                    return;
+                }
+                const fromUser = user?.familySubAccountAdditionalAmountLkr;
+                if (fromUser != null && fromUser > 0) {
+                    setAmount(String(fromUser));
+                    return;
+                }
+                setAmount(String(MATCHMAKER_CLIENT_SLOT_LKR));
+            });
             return;
         }
         if (normalizedPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
@@ -165,39 +181,9 @@ export default function SubscriptionCheckoutPage() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const applySuccessUserPatch = (subscriptionExpiresAt?: string, matchmakerClientSelectionPending?: boolean) => {
-        const p = checkoutPlan;
+    const applySuccessUserPatch = (subscriptionExpiresAt?: string) => {
         const expPatch = subscriptionExpiresAt ? { subscriptionExpiresAt } : {};
-        const selectionPatch = matchmakerClientSelectionPending
-            ? {
-                matchmakerClientSelectionPending: true,
-                matchmakerCanAddClients: false,
-                matchmakerClientProfileCount: 0,
-            }
-            : {};
-        if (isMatchmakerAccount) {
-            if (p === CHECKOUT_PLAN_MATCHMAKER_DIAMOND) {
-                updateUser({
-                    isSubscribed: true,
-                    matchmakerTier: 'DIAMOND',
-                    matchmakerMaxClientProfiles: 10,
-                    matchmakerCanAddClients: !matchmakerClientSelectionPending,
-                    ...expPatch,
-                    ...selectionPatch,
-                });
-            } else if (p === CHECKOUT_PLAN_MATCHMAKER_GOLD) {
-                updateUser({
-                    isSubscribed: true,
-                    matchmakerTier: 'GOLD',
-                    matchmakerMaxClientProfiles: 5,
-                    matchmakerCanAddClients: !matchmakerClientSelectionPending,
-                    ...expPatch,
-                    ...selectionPatch,
-                });
-            }
-        } else {
-            updateUser({ isSubscribed: true, matchmakerTier: undefined, ...expPatch });
-        }
+        updateUser({ isSubscribed: true, matchmakerTier: undefined, ...expPatch });
     };
 
     const applySubAccountSlotPatch = (r?: Record<string, unknown>, purchased?: number) => {
@@ -206,12 +192,21 @@ export default function SubscriptionCheckoutPage() {
             (r
                 ? Number(r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased ?? (user?.familySubAccountSlotsPurchased ?? 0) + 1)
                 : (user?.familySubAccountSlotsPurchased ?? 0) + 1);
+        const nextConsumed = r
+            ? Number(r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed ?? user?.familySubAccountSlotsConsumed ?? 0)
+            : (user?.familySubAccountSlotsConsumed ?? 0);
         const subscribed = r?.isSubscribed ?? r?.IsSubscribed;
         const subLifetime = r?.subscriptionIsLifetime ?? r?.SubscriptionIsLifetime;
         const subUntil = r?.subscriptionUntilUtc ?? r?.SubscriptionUntilUtc;
+        const canAdd = Math.max(0, nextPurchased - nextConsumed) > 0;
         const patch: Record<string, unknown> = {
             familySubAccountSlotsPurchased: nextPurchased,
+            familySubAccountSlotsConsumed: nextConsumed,
             isSubscribed: subscribed === true || subscribed === 'true' || subscribed === undefined,
+            matchmakerTier: isMatchmakerAccount ? 'PAYG' : undefined,
+            matchmakerMaxClientProfiles: 0,
+            matchmakerCanAddClients: isMatchmakerAccount ? canAdd : undefined,
+            matchmakerClientSelectionPending: false,
         };
         if (subLifetime === true || subLifetime === 'true') {
             patch.subscriptionIsLifetime = true;
@@ -235,7 +230,13 @@ export default function SubscriptionCheckoutPage() {
         let subscriptionPlan =
             checkoutPlan.trim().length > 0 ? checkoutPlan.trim().toLowerCase() : CHECKOUT_PLAN_PREMIUM_SELF;
 
-        if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
+        if (isMatchmakerClientCheckoutPlan(subscriptionPlan)) {
+            subscriptionPlan = CHECKOUT_PLAN_MATCHMAKER_CLIENT;
+            if (user.accountType !== 'Matchmaker') {
+                setError('Client-account checkout is only for Matchmaker accounts.');
+                return;
+            }
+        } else if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
             if (user.accountType !== 'Parents' && user.accountType !== 'Relation' && user.accountType !== 'Father' && user.accountType !== 'Mother') {
                 setError('Sub-account checkout is only for Parents and Relation accounts.');
                 return;
@@ -245,15 +246,11 @@ export default function SubscriptionCheckoutPage() {
             return;
         }
 
-        if (subscriptionPlan.startsWith('matchmaker_') && user.accountType !== 'Matchmaker') {
-            setError('This checkout is only for Matchmaker accounts. Open pricing while logged in as a matchmaker.');
-            return;
-        }
         if (
             subscriptionPlan === CHECKOUT_PLAN_PREMIUM_SELF &&
             user.accountType === 'Matchmaker'
         ) {
-            setError('Choose Matchmaker Gold or Diamond (use the Pricing section or reopen checkout from Matchmaker Gold/Diamond).');
+            setError('Matchmakers pay per client account. Choose a client-account package from your profile.');
             return;
         }
 
@@ -268,21 +265,35 @@ export default function SubscriptionCheckoutPage() {
 
         try {
             const mockReference = `${cardNumber}|${cardHolder}|${expiry}|${cvv}|MOCK`;
+            const isSlotPlan =
+                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
+                || subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT;
             const res = await matrimonialService.activateMockSubscription(
                 Number(user.id),
                 mockReference,
                 subscriptionPlan,
+                isSlotPlan ? parseFloat(amount) : undefined,
                 subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
                     || subscriptionPlan.startsWith('matchmaker_')
                     ? parseFloat(amount)
                     : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
-                if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
+                if (isSlotPlan) {
                     const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
                     applySubAccountSlotPatch(r);
-                    setSuccess('Payment successful. Premium is now active on your account. You can create a managed profile from your profile page.');
-                    showToast(SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE, 'success', 5500);
+                    setSuccess(
+                        subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                            ? 'Payment successful. You can create a client profile from your profile page.'
+                            : 'Payment successful. Premium is now active on your account. You can create a managed profile from your profile page.',
+                    );
+                    showToast(
+                        subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                            ? MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE
+                            : SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+                        'success',
+                        5500,
+                    );
                     void refreshInterestNotifications();
                     window.setTimeout(() => router.replace('/profile'), 800);
                     return;
@@ -292,35 +303,17 @@ export default function SubscriptionCheckoutPage() {
                         ?.subscribedUntil ??
                     (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
                         ?.SubscribedUntil;
-                const resultObj = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
-                const selectionPending =
-                    resultObj?.matchmakerClientSelectionPending === true
-                    || resultObj?.MatchmakerClientSelectionPending === true;
                 let untilIso: string | undefined;
                 if (rawUntil != null && String(rawUntil).trim() !== '') {
                     const d = new Date(String(rawUntil));
                     if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
                 }
-                applySuccessUserPatch(untilIso, selectionPending);
-                setSuccess(
-                    isMatchmakerAccount
-                        ? selectionPending
-                            ? 'Payment successful. Choose which client profiles should stay active on your profile page.'
-                            : 'Payment successful. Your matchmaker subscription is active.'
-                        : 'Payment successful. Premium membership is now active.'
-                );
-                showToast(
-                    isMatchmakerAccount
-                        ? selectionPending
-                            ? 'Plan activated — choose which client profiles to keep active.'
-                            : MATCHMAKER_PLAN_ACTIVATED_MESSAGE
-                        : PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
-                    'success',
-                    5500,
-                );
+                applySuccessUserPatch(untilIso);
+                setSuccess('Payment successful. Premium membership is now active.');
+                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
                 void refreshInterestNotifications();
                 window.setTimeout(() => {
-                    router.replace(isMatchmakerAccount && selectionPending ? '/profile' : '/');
+                    router.replace('/');
                 }, 800);
             } else {
                 setError(res?.message || 'Failed to activate subscription.');
@@ -343,7 +336,7 @@ export default function SubscriptionCheckoutPage() {
             return;
         }
 
-        if (user.isSubscribed && !isSubAccountCheckout) {
+        if (user.isSubscribed && !isSlotCheckout) {
             setError('You already have an active premium plan. Switch to the free plan first to change packages.');
             return;
         }
@@ -364,11 +357,15 @@ export default function SubscriptionCheckoutPage() {
                         parsedAmount,
                         base64,
                         bankRemarks,
-                        isSubAccountCheckout ? 'sub_account' : isMatchmakerAccount ? 'matchmaker' : 'premium',
+                        isSubAccountCheckout
+                            ? 'sub_account'
+                            : isMatchmakerClientCheckout || isMatchmakerAccount
+                                ? 'matchmaker'
+                                : 'premium',
                     );
                     if (res?.statusCode === 200 || res?.statusCode === 1) {
                         if (typeof window !== 'undefined') {
-                            if (isSubAccountCheckout) {
+                            if (isSlotCheckout) {
                                 localStorage.setItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, '1');
                             } else {
                                 localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
@@ -377,12 +374,14 @@ export default function SubscriptionCheckoutPage() {
                             }
                         }
                         setSuccess(
-                            isSubAccountCheckout
-                                ? 'Slip received! Our team will review your payment and add your sub-account slot shortly. Redirecting to profile…'
-                                : 'Slip received! Our admin team will review your payment and activate your subscription shortly. You will be redirected to the home page in a moment.',
+                            isMatchmakerClientCheckout
+                                ? 'Slip received! Our team will review your payment and add your client-account slot shortly. Redirecting to profile…'
+                                : isSubAccountCheckout
+                                    ? 'Slip received! Our team will review your payment and add your sub-account slot shortly. Redirecting to profile…'
+                                    : 'Slip received! Our admin team will review your payment and activate your subscription shortly. You will be redirected to the home page in a moment.',
                         );
                         showToast(
-                            isSubAccountCheckout
+                            isSlotCheckout
                                 ? BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE
                                 : BANK_TRANSFER_SUBMITTED_MESSAGE,
                             'success',
@@ -393,7 +392,7 @@ export default function SubscriptionCheckoutPage() {
                         setBankSlipPreview(null);
                         setBankRemarks('');
                         window.setTimeout(() => {
-                            router.replace(isSubAccountCheckout ? '/profile' : '/');
+                            router.replace(isSlotCheckout ? '/profile' : '/');
                         }, 2000);
                     } else {
                         setError(res?.message || 'Failed to submit bank transfer.');
@@ -568,8 +567,10 @@ export default function SubscriptionCheckoutPage() {
                                     <span className="text-text-light">Amount:</span>
                                     <span className="font-bold text-primary">LKR {amount}</span>
                                 </div>
-                                {user?.accountType === 'Matchmaker' ? (
+                                {isMatchmakerClientCheckout ? (
                                     <p className="text-xs text-amber-800 mt-3 leading-relaxed">
+                                        Transfer exactly <strong>LKR {amount}</strong> for one client-account slot.
+                                        After admin approval you can create that client profile. Buy again anytime for more accounts.
                                         Transfer exactly{' '}
                                         <strong>
                                             {Number(amount).toLocaleString('en-LK')} LKR

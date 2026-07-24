@@ -59,6 +59,7 @@ import {
 import {
     type FavoriteActivityRow,
     mutualInterestBlockMessage,
+    resolveManagedProfileIdsWithMutualInterest,
     resolveMutualInterestState,
     notifyMatrimonialInteractionsChanged,
 } from '../utils/messagingMutualInterest';
@@ -700,21 +701,30 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
         let cancelled = false;
         setSubscriptionPackagesLoading(true);
+        const isMatchmaker = user?.accountType === 'Matchmaker';
         const audience = publicPackagesAudienceParam(user?.accountType);
 
-        matrimonialService
-            .getPublicPackages(audience)
-            .then((res) => {
+        const load = isMatchmaker
+            ? matrimonialService.getMatchmakerPackages()
+            : matrimonialService.getPublicPackages(audience).then((res) =>
+                normalizePublicPackages(res?.result ?? res?.Result));
+
+        load
+            .then((list) => {
                 if (cancelled) return;
-                const list = normalizePublicPackages(res?.result ?? res?.Result);
-                setSubscriptionPackages(list);
-                const currentPlan = resolveUserCurrentPackage(list, user);
-                const defaultPick = userHasActivePremiumPlan(user)
-                    ? list.find((p) => isFreePackage(p)) ?? currentPlan ?? list[0]
-                    : currentPlan ??
-                      list.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
-                      list.find((p) => !isFreePackage(p)) ??
-                      list[0];
+                const packages = Array.isArray(list) ? list : [];
+                setSubscriptionPackages(packages);
+                const currentPlan = resolveUserCurrentPackage(packages, user);
+                const defaultPick = isMatchmaker
+                    ? packages.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
+                      packages.find((p) => !isFreePackage(p)) ??
+                      packages[0]
+                    : userHasActivePremiumPlan(user)
+                        ? packages.find((p) => isFreePackage(p)) ?? currentPlan ?? packages[0]
+                        : currentPlan ??
+                          packages.find((p) => !isFreePackage(p) && (p.isPopular ?? p.IsPopular)) ??
+                          packages.find((p) => !isFreePackage(p)) ??
+                          packages[0];
                 setSelectedSubscriptionPackageId(defaultPick ? packageId(defaultPick) : null);
             })
             .catch(() => {
@@ -740,21 +750,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         [subscriptionPackages, selectedSubscriptionPackageId]
     );
 
-    const selectedCanCheckout = useMemo(
-        () =>
-            selectedSubscriptionPackage
-                ? canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user)
-                : false,
-        [selectedSubscriptionPackage, subscriptionPackages, user]
-    );
+    const selectedCanCheckout = useMemo(() => {
+        if (!selectedSubscriptionPackage) return false;
+        if (user?.accountType === 'Matchmaker') {
+            return packagePrice(selectedSubscriptionPackage) > 0;
+        }
+        return canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user);
+    }, [selectedSubscriptionPackage, subscriptionPackages, user]);
 
-    const selectedIsCurrentPlan = useMemo(
-        () =>
-            selectedSubscriptionPackage
-                ? isUserCurrentPackage(selectedSubscriptionPackage, subscriptionPackages, user)
-                : false,
-        [selectedSubscriptionPackage, subscriptionPackages, user]
-    );
+    const selectedIsCurrentPlan = useMemo(() => {
+        if (!selectedSubscriptionPackage) return false;
+        if (user?.accountType === 'Matchmaker') return false;
+        return isUserCurrentPackage(selectedSubscriptionPackage, subscriptionPackages, user);
+    }, [selectedSubscriptionPackage, subscriptionPackages, user]);
 
     const switchManagerAccountToFreePlan = async (): Promise<boolean> => {
         if (!user?.id || !user.isSubscribed) {
@@ -869,6 +877,25 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                         );
                         if (res.statusCode === 200 && res.result) {
                             setIsProfileLockedByDailyLimit(false);
+                            const subjectLimit =
+                                res.result.isSubjectToDailyProfileViewLimit ??
+                                res.result.IsSubjectToDailyProfileViewLimit;
+                            const remViews =
+                                res.result.remainingDailyProfileViews ??
+                                res.result.RemainingDailyProfileViews;
+                            const viewLimit =
+                                res.result.dailyProfileViewLimit ??
+                                res.result.DailyProfileViewLimit;
+                            if (subjectLimit === true || remViews != null) {
+                                updateUser({
+                                    isSubjectToDailyProfileViewLimit:
+                                        subjectLimit === true || subjectLimit === 'true',
+                                    dailyProfileViewLimit:
+                                        viewLimit != null ? Number(viewLimit) : undefined,
+                                    remainingDailyProfileViews:
+                                        remViews != null ? Number(remViews) : undefined,
+                                });
+                            }
                             setSelectedProfile((prev: any) => ({
                                 ...prev,
                                 ...res.result,
@@ -895,6 +922,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             setProfileAccessMessage(res.message);
                             if (String(res.message).toLowerCase().includes('daily profile view limit')) {
                                 setIsProfileLockedByDailyLimit(true);
+                                const limitResult = res?.result ?? res?.Result ?? {};
+                                updateUser({
+                                    isSubjectToDailyProfileViewLimit: true,
+                                    dailyProfileViewLimit: Number(
+                                        limitResult.dailyProfileViewLimit ??
+                                            limitResult.DailyProfileViewLimit ??
+                                            10
+                                    ),
+                                    remainingDailyProfileViews: 0,
+                                });
                                 showToast('Subscribe to keep viewing full profiles today.', 'info');
                             }
                         }
@@ -904,6 +941,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             setProfileAccessMessage(error.message);
                             if (error.message.toLowerCase().includes('daily profile view limit')) {
                                 setIsProfileLockedByDailyLimit(true);
+                                updateUser({
+                                    isSubjectToDailyProfileViewLimit: true,
+                                    remainingDailyProfileViews: 0,
+                                });
                                 showToast('Subscribe to keep viewing full profiles today.', 'info');
                             }
                         }
@@ -2171,27 +2212,41 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         }
         const targetUserId = matrimonialProfileUserId(selectedProfile);
         if (!targetUserId) return;
-        managedActionPicker.runWithManagedAccount('message', (managedProfileUserId) => {
-            const mutualState = resolveMutualInterestState(
-                interactionFavoriteActivity,
-                targetUserId,
-                managedProfileUserIdForApi(managedProfileUserId),
-            );
-            if (mutualState !== 'mutual') {
-                const peerName =
-                    `${selectedProfile?.firstName ?? ''} ${selectedProfile?.lastName ?? ''}`.trim() || 'This member';
-                const notice = mutualInterestBlockMessage(peerName, mutualState);
-                setProfileAccessMessage(notice.body);
-                return;
-            }
-            onClose();
-            const managedQuery = managedProfileUserIdForApi(managedProfileUserId);
-            router.push(
-                managedQuery != null
-                    ? `/messages?userId=${targetUserId}&managedProfileUserId=${managedQuery}`
-                    : `/messages?userId=${targetUserId}`
-            );
-        });
+
+        // If exactly one client/sub already has mutual interest, use that account and skip the picker.
+        const mutualManagedIds = resolveManagedProfileIdsWithMutualInterest(
+            interactionFavoriteActivity,
+            targetUserId,
+            managedActionPicker.activeSubAccounts.map((s) => s.id),
+        );
+        const preferredManagedId = mutualManagedIds.length === 1 ? mutualManagedIds[0]! : null;
+
+        managedActionPicker.runWithManagedAccount(
+            'message',
+            (managedProfileUserId) => {
+                const mutualState = resolveMutualInterestState(
+                    interactionFavoriteActivity,
+                    targetUserId,
+                    managedProfileUserIdForApi(managedProfileUserId),
+                );
+                if (mutualState !== 'mutual') {
+                    const peerName =
+                        `${selectedProfile?.firstName ?? ''} ${selectedProfile?.lastName ?? ''}`.trim() ||
+                        'This member';
+                    const notice = mutualInterestBlockMessage(peerName, mutualState);
+                    setProfileAccessMessage(notice.body);
+                    return;
+                }
+                onClose();
+                const managedQuery = managedProfileUserIdForApi(managedProfileUserId);
+                router.push(
+                    managedQuery != null
+                        ? `/messages?userId=${targetUserId}&managedProfileUserId=${managedQuery}`
+                        : `/messages?userId=${targetUserId}`
+                );
+            },
+            preferredManagedId,
+        );
     };
 
     const handleSendVerificationCode = async (method: string) => {
@@ -3950,9 +4005,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">
-                        <h2>{user?.accountType === 'Matchmaker' ? 'Matchmaker Plans' : 'Choose Subscription Plan'}</h2>
+                        <h2>{user?.accountType === 'Matchmaker' ? 'Client-account packages' : 'Choose Subscription Plan'}</h2>
                         <p>{user?.accountType === 'Matchmaker'
-                            ? 'Compare Free, Gold, and Diamond — same plans as on our homepage pricing section.'
+                            ? 'Pay for one client account, then create that profile. Add as many accounts as you need — no fixed package limit.'
                             : 'Compare Free and Premium — same plans and features as on our homepage pricing section.'}</p>
                     </div>
                     <ModalScrollArea className="modal-body">
@@ -3986,11 +4041,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         }
                                         onClick={async () => {
                                             if (!selectedSubscriptionPackage || selectedIsCurrentPlan) return;
-                                            if (isFreePackage(selectedSubscriptionPackage)) {
+                                            const isMatchmakerUser = user?.accountType === 'Matchmaker';
+                                            if (!isMatchmakerUser && isFreePackage(selectedSubscriptionPackage)) {
                                                 requestFreePlanSwitch();
                                                 return;
                                             }
-                                            if (!canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user)) {
+                                            if (
+                                                !isMatchmakerUser
+                                                && !canUserCheckoutSubscriptionPackage(selectedSubscriptionPackage, subscriptionPackages, user)
+                                            ) {
                                                 showToast('You already have premium. Switch to the free plan first to change packages.', 'info');
                                                 return;
                                             }
@@ -4004,9 +4063,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     >
                                         {selectedIsCurrentPlan
                                             ? 'Current plan'
-                                            : selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage)
+                                            : selectedSubscriptionPackage && isFreePackage(selectedSubscriptionPackage) && user?.accountType !== 'Matchmaker'
                                               ? 'Continue on Free plan'
-                                              : userHasActivePremiumPlan(user)
+                                              : userHasActivePremiumPlan(user) && user?.accountType !== 'Matchmaker'
                                                 ? 'Switch to free plan to change'
                                                 : 'Continue to Payment'}
                                     </button>
@@ -4140,8 +4199,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 >
                                     <strong>Basic matchmaker preview</strong>
                                     {' — '}
-                                    You are seeing limited profile details without contact information. Upgrade to Matchmaker Gold or
-                                    Diamond for full profiles, messaging, and client accounts.
+                                    You are seeing limited profile details without contact information. Pay for a client account
+                                    to unlock full profiles, messaging, and client profile creation.
                                     {typeof selectedProfile.remainingMatchmakerFullProfileViews === 'number' ||
                                     typeof selectedProfile.RemainingMatchmakerFullProfileViews === 'number'
                                         ? (
@@ -4189,14 +4248,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             {/* Profile Header */}
                             <div className="profile-detail-header">
                                 <div
-                                    className="profile-detail-photo"
-                                    style={(selectedProfile.isPremium || selectedProfile.IsPremium) ? {
-                                        // Match .profile-detail-photo img (15px corners); avoid 50% ellipse vs rectangular photo.
-                                        borderRadius: '15px',
-                                        overflow: 'hidden',
-                                        boxShadow: '0 0 0 4px #fde68a, 0 0 0 6px #d97706, 0 8px 24px rgba(217, 119, 6, 0.45)',
-                                        transition: 'box-shadow 0.2s',
-                                    } : undefined}
+                                    className={`profile-detail-photo${(selectedProfile.isPremium || selectedProfile.IsPremium) ? ' profile-detail-photo--premium' : ''}`}
                                 >
                                     <img
                                         src={selectedProfile.profilePhoto || getDefaultAvatarDataUri({

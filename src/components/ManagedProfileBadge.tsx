@@ -2,9 +2,20 @@ import type { CSSProperties } from 'react';
 
 interface ManagedProfileBadgeProps {
     managedByLabel?: string;
+    managedByType?: string;
+    /** Kept for callers; name is not shown on the badge. */
     managerName?: string;
     variant?: 'compact' | 'full';
     style?: CSSProperties;
+}
+
+function resolveFamilyRoleLabel(managedByType?: string, managedByLabel?: string): 'Parent' | 'Relation' {
+    const type = (managedByType || '').trim().toLowerCase();
+    const label = (managedByLabel || '').trim().toLowerCase();
+    if (type === 'relation' || label.includes('relation')) {
+        return 'Relation';
+    }
+    return 'Parent';
 }
 
 /**
@@ -12,14 +23,15 @@ interface ManagedProfileBadgeProps {
  */
 export default function ManagedProfileBadge({
     managedByLabel,
-    managerName,
+    managedByType,
     variant = 'compact',
     style,
 }: ManagedProfileBadgeProps) {
-    const label = (managedByLabel || 'Managed by parent').trim();
-    const tooltip = managerName
-        ? `${label}. Messages and interest go to ${managerName}.`
-        : `${label}. Messages and interest go to the account manager.`;
+    const role = resolveFamilyRoleLabel(managedByType, managedByLabel);
+    const tooltip =
+        role === 'Relation'
+            ? 'Managed by a relation. Messages and interest go to the account manager.'
+            : 'Managed by a parent. Messages and interest go to the account manager.';
 
     const baseStyle: CSSProperties = {
         display: 'inline-flex',
@@ -56,11 +68,7 @@ export default function ManagedProfileBadge({
                 <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
                 <path d="M16 3.13a4 4 0 0 1 0 7.75" />
             </svg>
-            {variant === 'full' ? (
-                <span>{label}{managerName ? ` · ${managerName}` : ''}</span>
-            ) : (
-                <span>{label}</span>
-            )}
+            <span>{role}</span>
         </span>
     );
 }

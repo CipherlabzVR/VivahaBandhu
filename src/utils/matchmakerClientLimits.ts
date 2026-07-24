@@ -1,58 +1,34 @@
-import { isMatchmakerPaidTier } from '../constants/subscription';
 import {
     isMatchmakerAudience,
-    packageMaxManagedAccounts,
     packagePrice,
     type PublicMatrimonialPackage,
 } from './matrimonialPackages';
 
-export type MatchmakerClientLimitState = 'can_create' | 'needs_plan' | 'upgrade_for_more' | 'absolute_max';
-
+/** Paid matchmaker client-account packages (pay-per-use; no Gold/Diamond tiers). */
 export function paidMatchmakerPackages(packages: PublicMatrimonialPackage[]): PublicMatrimonialPackage[] {
     return packages.filter((p) => isMatchmakerAudience(p) && packagePrice(p) > 0);
 }
 
-export function platformMaxMatchmakerClients(packages: PublicMatrimonialPackage[]): number {
-    const slots = paidMatchmakerPackages(packages).map(packageMaxManagedAccounts).filter((n) => n > 0);
-    if (slots.length === 0) return 10;
-    return Math.max(...slots);
+/** @deprecated No hard platform max — pay-per-account is unlimited. */
+export function platformMaxMatchmakerClients(_packages: PublicMatrimonialPackage[]): number {
+    return 0;
 }
 
-/** Paid packages that allow more client profiles than the current plan maximum. */
+/** @deprecated Upgrades between subscription tiers no longer exist. */
 export function upgradeMatchmakerPackages(
     packages: PublicMatrimonialPackage[],
-    currentMax: number,
+    _currentMax: number,
 ): PublicMatrimonialPackage[] {
-    return paidMatchmakerPackages(packages)
-        .filter((p) => packageMaxManagedAccounts(p) > currentMax)
-        .sort((a, b) => packageMaxManagedAccounts(a) - packageMaxManagedAccounts(b));
+    return paidMatchmakerPackages(packages);
 }
 
+export type MatchmakerClientLimitState = 'can_create' | 'needs_payment';
+
+/** Matchmaker client creation uses purchased slots, same as family pay-per-use. */
 export function resolveMatchmakerClientLimitState(input: {
-    clientsUsed: number;
-    clientsMax: number;
-    matchmakerTier?: string | null;
-    matchmakerPackages: PublicMatrimonialPackage[];
+    slotsPurchased: number;
+    slotsConsumed: number;
 }): MatchmakerClientLimitState {
-    const { clientsUsed, clientsMax, matchmakerTier, matchmakerPackages } = input;
-    const isPaid = isMatchmakerPaidTier(matchmakerTier);
-
-    if (clientsMax > 0 && clientsUsed < clientsMax) {
-        return 'can_create';
-    }
-
-    if (!isPaid || clientsMax <= 0) {
-        return 'needs_plan';
-    }
-
-    if (clientsUsed >= clientsMax) {
-        // Paid users cannot upgrade to a higher premium tier — only cancel to free first.
-        const platformMax = platformMaxMatchmakerClients(matchmakerPackages);
-        if (clientsMax >= platformMax) {
-            return 'absolute_max';
-        }
-        return 'absolute_max';
-    }
-
-    return 'can_create';
+    const remaining = Math.max(0, input.slotsPurchased - input.slotsConsumed);
+    return remaining > 0 ? 'can_create' : 'needs_payment';
 }

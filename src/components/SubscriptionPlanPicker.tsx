@@ -42,9 +42,12 @@ export default function SubscriptionPlanPicker({
             >
                 {packages.map((pkg) => {
                     const id = packageId(pkg);
-                    const selected = selectedPackageId === id;
+                    const selected = selectedPackageId != null && selectedPackageId === id;
                     const popular = !!(pkg.isPopular ?? pkg.IsPopular);
                     const isCurrent = isUserCurrentPackage(pkg, packages, user);
+                    // Green "current" frame only while that package is also the active selection.
+                    // Clicking another plan clears previous selected/current highlight styles.
+                    const showCurrentHighlight = isCurrent && selected;
                     const free = isFreePackage(pkg);
                     const selectable = canUserSelectSubscriptionPackage(pkg, packages, user);
                     const period = packagePeriodLabel(pkg);
@@ -55,7 +58,16 @@ export default function SubscriptionPlanPicker({
                     return (
                         <div
                             key={id || packageName(pkg)}
-                            className={`sub-option sub-option--detailed ${selected ? 'selected' : ''} ${isCurrent ? 'current-plan' : ''} ${popular && !isCurrent ? 'recommended' : ''} ${!selectable ? 'sub-option--locked' : ''}`}
+                            className={[
+                                'sub-option',
+                                'sub-option--detailed',
+                                selected ? 'selected' : '',
+                                showCurrentHighlight ? 'current-plan' : '',
+                                popular && !selected ? 'recommended' : '',
+                                !selectable ? 'sub-option--locked' : '',
+                            ]
+                                .filter(Boolean)
+                                .join(' ')}
                             onClick={() => {
                                 if (!selectable) return;
                                 onSelectPackage(id);
@@ -63,6 +75,7 @@ export default function SubscriptionPlanPicker({
                             role="button"
                             tabIndex={selectable ? 0 : -1}
                             aria-disabled={!selectable}
+                            aria-pressed={selected}
                             style={!selectable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                             onKeyDown={(e) => {
                                 if (!selectable) return;
@@ -73,7 +86,11 @@ export default function SubscriptionPlanPicker({
                             }}
                         >
                             {isCurrent ? (
-                                <span className="sub-option-current-badge">{currentPackageLabel}</span>
+                                <span
+                                    className={`sub-option-current-badge${showCurrentHighlight ? '' : ' sub-option-current-badge--quiet'}`}
+                                >
+                                    {currentPackageLabel}
+                                </span>
                             ) : null}
                             <h4>{packageName(pkg)}</h4>
                             <div className="price">

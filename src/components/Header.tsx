@@ -272,29 +272,6 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         router.push(`/profiles?viewUser=${senderUserId}`);
     };
 
-    const handleMessageFromInterestNotification = async (notification: any) => {
-        if (user?.isVerified === false) {
-            if (onOpenVerify) onOpenVerify();
-            else window.dispatchEvent(new CustomEvent('open-verify-modal'));
-            return;
-        }
-        const otherUserId = referenceIdFromNotification(notification);
-        if (!otherUserId) return;
-        await markInterestNotificationRead(notification);
-        setOpenNotificationScope(null);
-        let managedId = managedProfileUserIdFromNotification(notification);
-        if (
-            managedId == null &&
-            openNotificationScope === 'sub' &&
-            activeNotificationSubAccountId != null
-        ) {
-            managedId = activeNotificationSubAccountId;
-        }
-        const managedQuery =
-            managedId != null ? `&managedProfileUserId=${managedId}` : '';
-        router.push(`/messages?userId=${otherUserId}${managedQuery}`);
-    };
-
     const handleInterestBack = async (notification: any) => {
         if (user?.isVerified === false) {
             if (onOpenVerify) onOpenVerify();
@@ -590,19 +567,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 </div>
                                             </div>
                                             <div className="flex flex-wrap gap-2 mt-3">
-                                                {shouldShowMessageFromInterestNotification(
+                                                {!shouldShowMessageFromInterestNotification(
                                                     n as Record<string, unknown>,
                                                     favoriteActivity,
                                                     mutualContextSubAccountId,
                                                 ) ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleMessageFromInterestNotification(n)}
-                                                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
-                                                    >
-                                                        Message
-                                                    </button>
-                                                ) : (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleInterestBack(n)}
@@ -613,13 +582,20 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                             ? 'Sending…'
                                                             : 'Interest back'}
                                                     </button>
-                                                )}
+                                                ) : null}
                                                 <button
                                                     type="button"
                                                     onClick={() => handleViewInterestProfile(n)}
                                                     className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary text-amber-900/90 bg-white hover:bg-amber-50/80 transition-colors"
                                                 >
                                                     View profile
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => markInterestNotificationRead(n)}
+                                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                                                >
+                                                    Dismiss
                                                 </button>
                                             </div>
                                         </div>

@@ -5,7 +5,7 @@ import {
 } from './selfAccountBrowseGender';
 import type { ManagedSubAccount } from './managedSubAccounts';
 
-/** Persist hero quick-search values so they survive navigation (e.g. back from /search). */
+/** Persist hero quick-search values so they survive navigation (e.g. back from /profiles). */
 export const QUICK_SEARCH_SESSION_KEY = 'cbass:hero-quick-search';
 
 export type QuickSearchState = {

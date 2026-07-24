@@ -22,7 +22,6 @@ import {
     filterProfilesForBrowse,
     viewerUserIdForBrowseGenderFilter,
 } from '../utils/selfAccountBrowseGender';
-
 interface TopProfilesProps {
     onOpenProfileDetail: (profile: any) => void;
 }

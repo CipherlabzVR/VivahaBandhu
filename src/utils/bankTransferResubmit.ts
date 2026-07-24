@@ -34,7 +34,7 @@ export function subscriptionPlansPageTitle(audience: SubscriptionPlansAudience, 
             case 'sub_account':
                 return 'Choose a sub-account package';
             case 'matchmaker':
-                return 'Choose a Matchmaker plan';
+                return 'Choose a client-account package';
             default:
                 return 'Choose a subscription plan';
         }
@@ -43,7 +43,7 @@ export function subscriptionPlansPageTitle(audience: SubscriptionPlansAudience, 
         case 'sub_account':
             return 'Sub-account packages';
         case 'matchmaker':
-            return 'Matchmaker plans';
+            return 'Client-account packages';
         default:
             return 'Choose subscription plan';
     }
@@ -51,13 +51,13 @@ export function subscriptionPlansPageTitle(audience: SubscriptionPlansAudience, 
 
 export function subscriptionPlansPageIntro(audience: SubscriptionPlansAudience, resubmit: boolean): string {
     if (resubmit) {
-        return 'Your bank transfer was not approved. Select the plan below, then continue to payment to submit a new slip.';
+        return 'Your bank transfer was not approved. Select the package below, then continue to payment to submit a new slip.';
     }
     switch (audience) {
         case 'sub_account':
             return 'Select a package. After payment you can create a managed profile with its own premium period.';
         case 'matchmaker':
-            return 'Compare Free, Gold, and Diamond — then continue to payment.';
+            return 'Pay for one client account, then create that profile. Add as many accounts as you need — no fixed package limit.';
         default:
             return 'Compare Free and Premium — then continue to payment.';
     }

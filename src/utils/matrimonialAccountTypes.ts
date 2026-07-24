@@ -33,6 +33,12 @@ export function isBasicProfileOnlyAccountType(accountType?: string | null): bool
     return isFamilyParentAccountType(t) || t === 'Matchmaker';
 }
 
+/** Logged-in Self / Parents / Relation (incl. legacy Father/Mother) can convert in-place to Matchmaker. */
+export function canConvertToMatchmakerAccountType(accountType?: string | null): boolean {
+    const t = normalizedAccountType(accountType);
+    return t === 'Self' || isFamilyParentAccountType(t);
+}
+
 /** Display label for account type (maps legacy Father/Mother → Parents). */
 export function displayMatrimonialAccountType(accountType?: string | null): string {
     if (isParentsAccountType(accountType) && normalizedAccountType(accountType) !== 'Parents') {
