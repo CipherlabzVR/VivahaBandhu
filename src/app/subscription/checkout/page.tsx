@@ -17,10 +17,11 @@ import {
     BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE,
     BANK_TRANSFER_SUBMITTED_MESSAGE,
     MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE,
-    PENDING_BANK_PREMIUM_STORAGE_KEY,
-    PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
     SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+    clearBankTransferResultBanner,
+    setPendingBankPremiumFlag,
+    setPendingBankSubAccountFlag,
 } from '../../../constants/premiumActivation';
 import { useMatrimonialNotifications } from '../../../context/MatrimonialNotificationsContext';
 import { sanitizeNameInput } from '../../../utils/nameInput';
@@ -268,13 +269,11 @@ export default function SubscriptionCheckoutPage() {
             const isSlotPlan =
                 subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
                 || subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT;
-            const shouldSendAmount =
-                isSlotPlan || subscriptionPlan.startsWith('matchmaker_');
             const res = await matrimonialService.activateMockSubscription(
                 Number(user.id),
                 mockReference,
                 subscriptionPlan,
-                shouldSendAmount ? parseFloat(amount) : undefined,
+                isSlotPlan ? parseFloat(amount) : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
                 if (isSlotPlan) {
@@ -361,22 +360,24 @@ export default function SubscriptionCheckoutPage() {
                                 ? 'matchmaker'
                                 : 'premium',
                     );
-                    if (res?.statusCode === 200 || res?.statusCode === 1) {
+                    const statusCode = res?.statusCode ?? res?.StatusCode;
+                    if (statusCode === 200 || statusCode === 1) {
                         if (typeof window !== 'undefined') {
+                            clearBankTransferResultBanner();
                             if (isSlotCheckout) {
-                                localStorage.setItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, '1');
+                                setPendingBankSubAccountFlag();
                             } else {
-                                localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
-                                sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
-                                sessionStorage.removeItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY);
+                                setPendingBankPremiumFlag();
                             }
+                            sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+                            sessionStorage.removeItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY);
                         }
                         setSuccess(
                             isMatchmakerClientCheckout
                                 ? 'Slip received! Our team will review your payment and add your client-account slot shortly. Redirecting to profile…'
                                 : isSubAccountCheckout
                                     ? 'Slip received! Our team will review your payment and add your sub-account slot shortly. Redirecting to profile…'
-                                    : 'Slip received! Our admin team will review your payment and activate your subscription shortly. You will be redirected to the home page in a moment.',
+                                    : 'Slip received! Our admin team will review your payment and activate your subscription shortly. Redirecting to profile…',
                         );
                         showToast(
                             isSlotCheckout
@@ -390,7 +391,7 @@ export default function SubscriptionCheckoutPage() {
                         setBankSlipPreview(null);
                         setBankRemarks('');
                         window.setTimeout(() => {
-                            router.replace(isSlotCheckout ? '/profile' : '/');
+                            router.replace('/profile');
                         }, 2000);
                     } else {
                         setError(res?.message || 'Failed to submit bank transfer.');
@@ -569,11 +570,6 @@ export default function SubscriptionCheckoutPage() {
                                     <p className="text-xs text-amber-800 mt-3 leading-relaxed">
                                         Transfer exactly <strong>LKR {amount}</strong> for one client-account slot.
                                         After admin approval you can create that client profile. Buy again anytime for more accounts.
-                                        Transfer exactly{' '}
-                                        <strong>
-                                            {Number(amount).toLocaleString('en-LK')} LKR
-                                        </strong>{' '}
-                                        for this matchmaker plan so admin approval activates the correct package.
                                     </p>
                                 ) : null}
                             </div>

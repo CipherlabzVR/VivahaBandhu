@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react';
 import LoadingScreen from './LoadingScreen';
 
-const MIN_LOAD_TIME_MS = 1200;
-const FADE_OUT_MS = 500;
+const MIN_LOAD_TIME_MS = 450;
+const FADE_OUT_MS = 350;
+const SPLASH_SESSION_KEY = 'mymatch_splash_shown';
 
 export default function LoadingScreenWrapper({
   children,
@@ -16,51 +17,50 @@ export default function LoadingScreenWrapper({
 
   useEffect(() => {
     let mounted = true;
-    const start = Date.now();
 
-    const finish = () => {
-      if (!mounted) return;
-      const elapsed = Date.now() - start;
-      const remaining = Math.max(0, MIN_LOAD_TIME_MS - elapsed);
-      setTimeout(() => {
-        if (mounted) setIsLoading(false);
-      }, remaining);
-    };
-
-    if (document.readyState === 'complete') {
-      finish();
-    } else {
-      window.addEventListener('load', finish);
+    // Repeat visits: skip splash so LCP is not blocked by an opaque overlay.
+    try {
+      if (sessionStorage.getItem(SPLASH_SESSION_KEY) === '1') {
+        setIsLoading(false);
+        setShowOverlay(false);
+        return () => {
+          mounted = false;
+        };
+      }
+      sessionStorage.setItem(SPLASH_SESSION_KEY, '1');
+    } catch {
+      /* private mode */
     }
-    const t = setTimeout(finish, MIN_LOAD_TIME_MS);
+
+    // Do NOT wait for window "load" — that delays until every video/image finishes.
+    const id = window.setTimeout(() => {
+      if (mounted) setIsLoading(false);
+    }, MIN_LOAD_TIME_MS);
 
     return () => {
       mounted = false;
-      window.removeEventListener('load', finish);
-      clearTimeout(t);
+      window.clearTimeout(id);
     };
   }, []);
 
   useEffect(() => {
     if (!isLoading) {
-      const id = setTimeout(() => setShowOverlay(false), FADE_OUT_MS);
-      return () => clearTimeout(id);
+      const id = window.setTimeout(() => setShowOverlay(false), FADE_OUT_MS);
+      return () => window.clearTimeout(id);
     }
   }, [isLoading]);
 
   return (
     <>
-      {/* Keep homepage visible behind transparent loader */}
-      <div
-        className="min-h-full transition-opacity duration-700 ease-out opacity-100"
-      >
+      <div className="min-h-full transition-opacity duration-700 ease-out opacity-100">
         {children}
       </div>
       {showOverlay && (
         <div
-          className={`fixed inset-0 z-[9999] transition-opacity duration-500 ease-out ${
+          className={`fixed inset-0 z-[9999] transition-opacity duration-300 ease-out ${
             !isLoading ? 'opacity-0 pointer-events-none' : 'opacity-100'
           }`}
+          aria-hidden={!isLoading}
         >
           <LoadingScreen />
         </div>

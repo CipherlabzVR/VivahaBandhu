@@ -14,6 +14,7 @@ import {
     normalizeMaritalStatus,
 } from '../../constants/matrimonialMaritalStatus';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
+import ProfileAvatar from '../../components/ProfileAvatar';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, parseNicToDobAndGender } from '../../utils/nicInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, formatStoredPhoneForInput } from '../../utils/sriLankanPhone';
@@ -72,15 +73,55 @@ function OptionMultiSelect({
     );
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
+    const [menuBox, setMenuBox] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        maxHeight: number;
+    } | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+
+    const updateMenuPosition = useCallback(() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        const gap = 4;
+        const spaceBelow = window.innerHeight - rect.bottom - gap - 12;
+        const spaceAbove = rect.top - gap - 12;
+        const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
+        const maxHeight = Math.max(160, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
+        setMenuBox({
+            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
+            left: rect.left,
+            width: rect.width,
+            maxHeight,
+        });
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!open) {
+            setMenuBox(null);
+            return;
+        }
+        updateMenuPosition();
+        const onReposition = () => updateMenuPosition();
+        window.addEventListener('resize', onReposition);
+        window.addEventListener('scroll', onReposition, true);
+        return () => {
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+        };
+    }, [open, updateMenuPosition, selected.length]);
 
     useEffect(() => {
         if (!open) return;
         const onDoc = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-                setOpen(false);
-                setSearch('');
-            }
+            const target = e.target as Node;
+            if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+            setOpen(false);
+            setSearch('');
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
@@ -97,10 +138,126 @@ function OptionMultiSelect({
         return options.filter((o) => !t || o.toLowerCase().includes(t));
     }, [options, search]);
 
+    const panel =
+        open && menuBox != null && typeof document !== 'undefined'
+            ? createPortal(
+                  <div
+                      ref={panelRef}
+                      data-lenis-prevent
+                      data-lenis-prevent-wheel
+                      data-lenis-prevent-touch
+                      onWheel={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                      style={{
+                          position: 'fixed',
+                          top: menuBox.top,
+                          left: menuBox.left,
+                          width: menuBox.width,
+                          maxHeight: menuBox.maxHeight,
+                          zIndex: 10050,
+                          background: '#fff',
+                          border: '1px solid #ddd',
+                          borderRadius: 8,
+                          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                      }}
+                  >
+                      {searchable ? (
+                          <div
+                              style={{
+                                  padding: '0.5rem',
+                                  flexShrink: 0,
+                                  borderBottom: '1px solid #eee',
+                                  background: '#fff',
+                              }}
+                          >
+                              <input
+                                  type="text"
+                                  placeholder="Search..."
+                                  value={search}
+                                  onChange={(e) => setSearch(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                      width: '100%',
+                                      padding: '0.45rem 0.6rem',
+                                      border: '1px solid #ddd',
+                                      borderRadius: 6,
+                                      fontSize: '0.9rem',
+                                  }}
+                              />
+                          </div>
+                      ) : null}
+                      <div
+                          data-lenis-prevent
+                          data-lenis-prevent-wheel
+                          data-lenis-prevent-touch
+                          onWheel={(e) => e.stopPropagation()}
+                          style={{
+                              flex: 1,
+                              minHeight: 0,
+                              overflowY: 'auto',
+                              overflowX: 'hidden',
+                              overscrollBehavior: 'contain',
+                              WebkitOverflowScrolling: 'touch',
+                              padding: '0.25rem 0',
+                          }}
+                      >
+                          {filtered.map((opt) => {
+                              const cid = `${idPrefix}-${opt.replace(/\s+/g, '-')}`;
+                              const isOn = selected.includes(opt);
+                              return (
+                                  <label
+                                      key={opt}
+                                      htmlFor={cid}
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                          display: 'flex',
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          gap: '0.6rem',
+                                          width: '100%',
+                                          margin: 0,
+                                          padding: '0.45rem 0.65rem',
+                                          cursor: 'pointer',
+                                          borderRadius: 4,
+                                          fontWeight: 400,
+                                          background: isOn ? '#f0f4ff' : undefined,
+                                      }}
+                                  >
+                                      <input
+                                          id={cid}
+                                          type="checkbox"
+                                          checked={isOn}
+                                          onChange={() => toggle(opt)}
+                                          style={{
+                                              width: '1rem',
+                                              minWidth: '1rem',
+                                              maxWidth: '1rem',
+                                              height: '1rem',
+                                              padding: 0,
+                                              margin: 0,
+                                              flexShrink: 0,
+                                          }}
+                                      />
+                                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35, textAlign: 'left' }}>
+                                          {opt}
+                                      </span>
+                                  </label>
+                              );
+                          })}
+                      </div>
+                  </div>,
+                  document.body
+              )
+            : null;
+
     return (
         <div className="country-multi-select" ref={wrapRef} style={{ position: 'relative' }}>
             <label>{label}</label>
             <div
+                ref={triggerRef}
                 className="country-multi-trigger"
                 onClick={() => setOpen((o) => !o)}
                 role="button"
@@ -133,80 +290,8 @@ function OptionMultiSelect({
                     <span className="country-multi-placeholder">{placeholder}</span>
                 )}
             </div>
-            {open && (
-                <div className="country-multi-panel">
-                    {searchable && (
-                        <div className="country-multi-search-wrap">
-                            <input
-                                type="text"
-                                className="country-multi-search"
-                                placeholder="Search..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                onClick={(e) => e.stopPropagation()}
-                            />
-                        </div>
-                    )}
-                    <div className="country-multi-list">
-                        {filtered.map((opt) => {
-                            const cid = `${idPrefix}-${opt.replace(/\s+/g, '-')}`;
-                            const isOn = selected.includes(opt);
-                            return (
-                                <label
-                                    key={opt}
-                                    htmlFor={cid}
-                                    className={`country-multi-row ${isOn ? 'selected' : ''}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <input
-                                        id={cid}
-                                        type="checkbox"
-                                        className="country-multi-checkbox"
-                                        checked={isOn}
-                                        onChange={() => toggle(opt)}
-                                    />
-                                    <span className="country-multi-text">{opt}</span>
-                                </label>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            {panel}
             <style jsx>{`
-                .country-multi-select :global(.country-multi-checkbox) {
-                    width: 1rem !important;
-                    min-width: 1rem !important;
-                    max-width: 1rem !important;
-                    height: 1rem !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                    flex-shrink: 0;
-                    align-self: center;
-                }
-                .country-multi-select :global(label.country-multi-row) {
-                    display: flex !important;
-                    flex-direction: row !important;
-                    align-items: center !important;
-                    gap: 0.6rem !important;
-                    width: 100% !important;
-                    margin: 0 !important;
-                    padding: 0.45rem 0.65rem !important;
-                    cursor: pointer;
-                    border-radius: 4px;
-                    font-weight: 400;
-                }
-                .country-multi-select :global(label.country-multi-row):hover {
-                    background: #f7f7fb;
-                }
-                .country-multi-select :global(label.country-multi-row.selected) {
-                    background: #f0f4ff;
-                }
-                .country-multi-select :global(.country-multi-text) {
-                    flex: 1;
-                    min-width: 0;
-                    line-height: 1.35;
-                    text-align: left;
-                }
                 .country-multi-trigger {
                     border: 1px solid #ddd;
                     border-radius: 8px;
@@ -242,40 +327,6 @@ function OptionMultiSelect({
                     line-height: 1;
                     padding: 0 0.15rem;
                     color: inherit;
-                }
-                .country-multi-panel {
-                    position: absolute;
-                    top: calc(100% + 4px);
-                    left: 0;
-                    right: 0;
-                    z-index: 100;
-                    background: #fff;
-                    border: 1px solid #ddd;
-                    border-radius: 8px;
-                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-                    display: flex;
-                    flex-direction: column;
-                    max-height: 280px;
-                    overflow: hidden;
-                }
-                .country-multi-search-wrap {
-                    padding: 0.5rem;
-                    flex-shrink: 0;
-                    border-bottom: 1px solid #eee;
-                    background: #fff;
-                }
-                .country-multi-search {
-                    width: 100%;
-                    padding: 0.45rem 0.6rem;
-                    border: 1px solid #ddd;
-                    border-radius: 6px;
-                    font-size: 0.9rem;
-                }
-                .country-multi-list {
-                    overflow-y: auto;
-                    overflow-x: hidden;
-                    max-height: 220px;
-                    padding: 0.25rem 0;
                 }
             `}</style>
         </div>
@@ -563,15 +614,55 @@ function CountryMultiSelect({
     );
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
+    const [menuBox, setMenuBox] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        maxHeight: number;
+    } | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+
+    const updateMenuPosition = useCallback(() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        const gap = 4;
+        const spaceBelow = window.innerHeight - rect.bottom - gap - 12;
+        const spaceAbove = rect.top - gap - 12;
+        const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
+        const maxHeight = Math.max(160, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
+        setMenuBox({
+            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
+            left: rect.left,
+            width: rect.width,
+            maxHeight,
+        });
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!open) {
+            setMenuBox(null);
+            return;
+        }
+        updateMenuPosition();
+        const onReposition = () => updateMenuPosition();
+        window.addEventListener('resize', onReposition);
+        window.addEventListener('scroll', onReposition, true);
+        return () => {
+            window.removeEventListener('resize', onReposition);
+            window.removeEventListener('scroll', onReposition, true);
+        };
+    }, [open, updateMenuPosition, selected.length]);
 
     useEffect(() => {
         if (!open) return;
         const onDoc = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-                setOpen(false);
-                setSearch('');
-            }
+            const target = e.target as Node;
+            if (wrapRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+            setOpen(false);
+            setSearch('');
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
@@ -588,6 +679,120 @@ function CountryMultiSelect({
         return countries.filter((c) => !t || c.name.toLowerCase().includes(t));
     }, [countries, search]);
 
+    const panel =
+        open && menuBox != null && typeof document !== 'undefined'
+            ? createPortal(
+                  <div
+                      ref={panelRef}
+                      className="country-multi-panel-portal"
+                      data-lenis-prevent
+                      data-lenis-prevent-wheel
+                      data-lenis-prevent-touch
+                      onWheel={(e) => e.stopPropagation()}
+                      onTouchMove={(e) => e.stopPropagation()}
+                      style={{
+                          position: 'fixed',
+                          top: menuBox.top,
+                          left: menuBox.left,
+                          width: menuBox.width,
+                          maxHeight: menuBox.maxHeight,
+                          zIndex: 10050,
+                          background: '#fff',
+                          border: '1px solid #ddd',
+                          borderRadius: 8,
+                          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                      }}
+                  >
+                      <div
+                          style={{
+                              padding: '0.5rem',
+                              flexShrink: 0,
+                              borderBottom: '1px solid #eee',
+                              background: '#fff',
+                          }}
+                      >
+                          <input
+                              type="text"
+                              placeholder="Search countries..."
+                              value={search}
+                              onChange={(e) => setSearch(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{
+                                  width: '100%',
+                                  padding: '0.45rem 0.6rem',
+                                  border: '1px solid #ddd',
+                                  borderRadius: 6,
+                                  fontSize: '0.9rem',
+                              }}
+                          />
+                      </div>
+                      <div
+                          data-lenis-prevent
+                          data-lenis-prevent-wheel
+                          data-lenis-prevent-touch
+                          onWheel={(e) => e.stopPropagation()}
+                          style={{
+                              flex: 1,
+                              minHeight: 0,
+                              overflowY: 'auto',
+                              overflowX: 'hidden',
+                              overscrollBehavior: 'contain',
+                              WebkitOverflowScrolling: 'touch',
+                              padding: '0.25rem 0',
+                          }}
+                      >
+                          {filtered.map((country) => {
+                              const cid = `${idPrefix}-${country.isoCode}`;
+                              const isOn = selected.includes(country.name);
+                              return (
+                                  <label
+                                      key={country.isoCode}
+                                      htmlFor={cid}
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{
+                                          display: 'flex',
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          gap: '0.6rem',
+                                          width: '100%',
+                                          margin: 0,
+                                          padding: '0.45rem 0.65rem',
+                                          cursor: 'pointer',
+                                          borderRadius: 4,
+                                          fontWeight: 400,
+                                          background: isOn ? '#f0f4ff' : undefined,
+                                      }}
+                                  >
+                                      <input
+                                          id={cid}
+                                          type="checkbox"
+                                          checked={isOn}
+                                          onChange={() => toggle(country.name)}
+                                          style={{
+                                              width: '1rem',
+                                              minWidth: '1rem',
+                                              maxWidth: '1rem',
+                                              height: '1rem',
+                                              padding: 0,
+                                              margin: 0,
+                                              flexShrink: 0,
+                                          }}
+                                      />
+                                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35, textAlign: 'left' }}>
+                                          {country.name}
+                                      </span>
+                                  </label>
+                              );
+                          })}
+                      </div>
+                  </div>,
+                  document.body
+              )
+            : null;
+
     return (
         <div className="country-multi-select" ref={wrapRef} style={{ position: 'relative' }}>
             <label>
@@ -595,6 +800,7 @@ function CountryMultiSelect({
                 {hint ? <span className="country-multi-hint"> {hint}</span> : null}
             </label>
             <div
+                ref={triggerRef}
                 className="country-multi-trigger"
                 onClick={() => setOpen((o) => !o)}
                 role="button"
@@ -627,78 +833,8 @@ function CountryMultiSelect({
                     <span className="country-multi-placeholder">Select countries</span>
                 )}
             </div>
-            {open && (
-                <div className="country-multi-panel">
-                    <div className="country-multi-search-wrap">
-                        <input
-                            type="text"
-                            className="country-multi-search"
-                            placeholder="Search countries..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                        />
-                    </div>
-                    <div className="country-multi-list">
-                        {filtered.map((country) => {
-                            const cid = `${idPrefix}-${country.isoCode}`;
-                            const isOn = selected.includes(country.name);
-                            return (
-                                <label
-                                    key={country.isoCode}
-                                    htmlFor={cid}
-                                    className={`country-multi-row ${isOn ? 'selected' : ''}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <input
-                                        id={cid}
-                                        type="checkbox"
-                                        className="country-multi-checkbox"
-                                        checked={isOn}
-                                        onChange={() => toggle(country.name)}
-                                    />
-                                    <span className="country-multi-text">{country.name}</span>
-                                </label>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            {panel}
             <style jsx>{`
-                .country-multi-select :global(.country-multi-checkbox) {
-                    width: 1rem !important;
-                    min-width: 1rem !important;
-                    max-width: 1rem !important;
-                    height: 1rem !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                    flex-shrink: 0;
-                    align-self: center;
-                }
-                .country-multi-select :global(label.country-multi-row) {
-                    display: flex !important;
-                    flex-direction: row !important;
-                    align-items: center !important;
-                    gap: 0.6rem !important;
-                    width: 100% !important;
-                    margin: 0 !important;
-                    padding: 0.45rem 0.65rem !important;
-                    cursor: pointer;
-                    border-radius: 4px;
-                    font-weight: 400;
-                }
-                .country-multi-select :global(label.country-multi-row):hover {
-                    background: #f7f7fb;
-                }
-                .country-multi-select :global(label.country-multi-row.selected) {
-                    background: #f0f4ff;
-                }
-                .country-multi-select :global(.country-multi-text) {
-                    flex: 1;
-                    min-width: 0;
-                    line-height: 1.35;
-                    text-align: left;
-                }
                 .country-multi-hint {
                     font-size: 0.8rem;
                     color: #888;
@@ -739,40 +875,6 @@ function CountryMultiSelect({
                     line-height: 1;
                     padding: 0 0.15rem;
                     color: inherit;
-                }
-                .country-multi-panel {
-                    position: absolute;
-                    top: calc(100% + 4px);
-                    left: 0;
-                    right: 0;
-                    z-index: 100;
-                    background: #fff;
-                    border: 1px solid #ddd;
-                    border-radius: 8px;
-                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-                    display: flex;
-                    flex-direction: column;
-                    max-height: 280px;
-                    overflow: hidden;
-                }
-                .country-multi-search-wrap {
-                    padding: 0.5rem;
-                    flex-shrink: 0;
-                    border-bottom: 1px solid #eee;
-                    background: #fff;
-                }
-                .country-multi-search {
-                    width: 100%;
-                    padding: 0.45rem 0.6rem;
-                    border: 1px solid #ddd;
-                    border-radius: 6px;
-                    font-size: 0.9rem;
-                }
-                .country-multi-list {
-                    overflow-y: auto;
-                    overflow-x: hidden;
-                    max-height: 220px;
-                    padding: 0.25rem 0;
                 }
             `}</style>
         </div>
@@ -877,6 +979,21 @@ export default function ProfileCompletionForm({
         fieldErrors[name] ? { borderColor: '#b91c1c' } : undefined;
     const [uploading, setUploading] = useState<{ [key: string]: boolean }>({});
     const [previewBusters, setPreviewBusters] = useState<Record<string, number>>({});
+    type ClearableUploadField =
+        | 'horoscopeDocument'
+        | 'horoscopeDocument2'
+        | 'horoscopeDocument3'
+        | 'profilePhoto'
+        | 'upload1'
+        | 'upload2'
+        | 'upload3';
+    type RemoveUploadConfirm = {
+        fieldName: ClearableUploadField;
+        title: string;
+        message: string;
+    };
+    const [removeUploadConfirm, setRemoveUploadConfirm] = useState<RemoveUploadConfirm | null>(null);
+    const [isRemovingUpload, setIsRemovingUpload] = useState(false);
     type HoroscopeViewerSlot = null | 'horoscopeDocument' | 'horoscopeDocument2' | 'horoscopeDocument3';
     const [horoscopeViewerSlot, setHoroscopeViewerSlot] = useState<HoroscopeViewerSlot>(null);
     const horoscopeFileInputRef = useRef<HTMLInputElement>(null);
@@ -1894,126 +2011,154 @@ export default function ProfileCompletionForm({
         color: '#333',
     };
 
-    const clearUploadedField = async (
-        fieldName:
-            | 'horoscopeDocument'
-            | 'horoscopeDocument2'
-            | 'horoscopeDocument3'
-            | 'profilePhoto'
-            | 'upload1'
-            | 'upload2'
-            | 'upload3',
-    ) => {
-        if (fieldName === 'upload1' || fieldName === 'upload2' || fieldName === 'upload3') {
-            const cascadeFields =
-                fieldName === 'upload1'
-                    ? (['upload1', 'upload2', 'upload3'] as const)
-                    : fieldName === 'upload2'
-                      ? (['upload2', 'upload3'] as const)
-                      : (['upload3'] as const);
-            const msg =
-                fieldName === 'upload1'
-                    ? 'Remove Gallery Photo 1? Photos 2 and 3 will be removed too, since they depend on this slot.'
-                    : fieldName === 'upload2'
-                      ? 'Remove Gallery Photo 2? Gallery Photo 3 will be removed too.'
-                      : 'Remove Gallery Photo 3?';
-            if (!window.confirm(msg)) return;
+    const removeUploadConfirmCopy = (fieldName: ClearableUploadField): Omit<RemoveUploadConfirm, 'fieldName'> => {
+        switch (fieldName) {
+            case 'upload1':
+                return {
+                    title: 'Remove Gallery Photo 1?',
+                    message:
+                        'Photos 2 and 3 will be removed too, since they depend on this slot.',
+                };
+            case 'upload2':
+                return {
+                    title: 'Remove Gallery Photo 2?',
+                    message: 'Gallery Photo 3 will be removed too.',
+                };
+            case 'upload3':
+                return {
+                    title: 'Remove Gallery Photo 3?',
+                    message: 'This gallery photo will be removed from the profile.',
+                };
+            case 'profilePhoto':
+                return {
+                    title: 'Remove main profile photo?',
+                    message:
+                        'Gallery photos stay on your profile until you change them. You can upload a new main photo afterwards.',
+                };
+            case 'horoscopeDocument':
+                return {
+                    title: 'Remove primary horoscope?',
+                    message:
+                        'Any additional horoscope pages you uploaded will be removed too.',
+                };
+            case 'horoscopeDocument2':
+                return {
+                    title: 'Remove horoscope page 2?',
+                    message: 'Page 3 (if any) will also be removed.',
+                };
+            default:
+                return {
+                    title: 'Remove horoscope page?',
+                    message: 'This additional horoscope page will be removed.',
+                };
+        }
+    };
 
-            setFormData((prev) => {
-                const next = { ...prev };
-                for (const f of cascadeFields) next[f] = '';
-                return next;
-            });
-            setPreviewBusters((prev) => {
-                const next = { ...prev };
-                for (const f of cascadeFields) delete next[f];
-                return next;
-            });
-            setSubmitError('');
-            for (const f of cascadeFields) {
-                await persistFieldUpdate(f, '');
+    const clearUploadedField = (fieldName: ClearableUploadField) => {
+        const copy = removeUploadConfirmCopy(fieldName);
+        setRemoveUploadConfirm({ fieldName, ...copy });
+    };
+
+    const executeClearUploadedField = async (fieldName: ClearableUploadField) => {
+        setIsRemovingUpload(true);
+        try {
+            if (fieldName === 'upload1' || fieldName === 'upload2' || fieldName === 'upload3') {
+                const cascadeFields =
+                    fieldName === 'upload1'
+                        ? (['upload1', 'upload2', 'upload3'] as const)
+                        : fieldName === 'upload2'
+                          ? (['upload2', 'upload3'] as const)
+                          : (['upload3'] as const);
+
+                setFormData((prev) => {
+                    const next = { ...prev };
+                    for (const f of cascadeFields) next[f] = '';
+                    return next;
+                });
+                setPreviewBusters((prev) => {
+                    const next = { ...prev };
+                    for (const f of cascadeFields) delete next[f];
+                    return next;
+                });
+                setSubmitError('');
+                for (const f of cascadeFields) {
+                    await persistFieldUpdate(f, '');
+                }
+                return;
             }
-            return;
-        }
 
-        const msg =
-            fieldName === 'profilePhoto'
-                ? 'Remove your main profile photo? Gallery photos stay on your profile until you change them; you can upload a new main photo afterwards.'
-                : fieldName === 'horoscopeDocument'
-                  ? 'Remove the primary horoscope document? Any additional horoscope pages you uploaded will be removed too.'
-                  : fieldName === 'horoscopeDocument2'
-                    ? 'Remove horoscope page 2? Page 3 (if any) will also be removed.'
-                    : 'Remove the additional horoscope page?';
-        if (!window.confirm(msg)) return;
+            if (fieldName === 'horoscopeDocument') {
+                setFormData((prev) => ({
+                    ...prev,
+                    horoscopeDocument: '',
+                    horoscopeDocument2: '',
+                    horoscopeDocument3: '',
+                }));
+                setPreviewBusters((prev) => {
+                    const next = { ...prev };
+                    delete next.horoscopeDocument;
+                    delete next.horoscopeDocument2;
+                    delete next.horoscopeDocument3;
+                    return next;
+                });
+                setSubmitError('');
+                updateUser({ horoscopeDocument: '', horoscopeDocument2: '', horoscopeDocument3: '' });
+                setHoroscopeViewerSlot(null);
+                await persistFieldUpdate('horoscopeDocument', '');
+                await persistFieldUpdate('horoscopeDocument2', '');
+                await persistFieldUpdate('horoscopeDocument3', '');
+                return;
+            }
 
-        if (fieldName === 'horoscopeDocument') {
-            setFormData((prev) => ({
-                ...prev,
-                horoscopeDocument: '',
-                horoscopeDocument2: '',
-                horoscopeDocument3: '',
-            }));
+            if (fieldName === 'horoscopeDocument2') {
+                setFormData((prev) => ({ ...prev, horoscopeDocument2: '', horoscopeDocument3: '' }));
+                setPreviewBusters((prev) => {
+                    const next = { ...prev };
+                    delete next.horoscopeDocument2;
+                    delete next.horoscopeDocument3;
+                    return next;
+                });
+                setSubmitError('');
+                updateUser({ horoscopeDocument2: '', horoscopeDocument3: '' });
+                setHoroscopeViewerSlot(null);
+                await persistFieldUpdate('horoscopeDocument2', '');
+                await persistFieldUpdate('horoscopeDocument3', '');
+                return;
+            }
+
+            if (fieldName === 'horoscopeDocument3') {
+                setFormData((prev) => ({ ...prev, horoscopeDocument3: '' }));
+                setPreviewBusters((prev) => {
+                    const next = { ...prev };
+                    delete next.horoscopeDocument3;
+                    return next;
+                });
+                setSubmitError('');
+                updateUser({ horoscopeDocument3: '' });
+                setHoroscopeViewerSlot(null);
+                await persistFieldUpdate('horoscopeDocument3', '');
+                return;
+            }
+
+            setFormData((prev) => ({ ...prev, [fieldName]: '' }));
             setPreviewBusters((prev) => {
                 const next = { ...prev };
-                delete next.horoscopeDocument;
-                delete next.horoscopeDocument2;
-                delete next.horoscopeDocument3;
+                delete next[fieldName];
                 return next;
             });
             setSubmitError('');
-            updateUser({ horoscopeDocument: '', horoscopeDocument2: '', horoscopeDocument3: '' });
-            setHoroscopeViewerSlot(null);
-            await persistFieldUpdate('horoscopeDocument', '');
-            await persistFieldUpdate('horoscopeDocument2', '');
-            await persistFieldUpdate('horoscopeDocument3', '');
-            return;
+
+            if (fieldName === 'profilePhoto') {
+                updateUser({ profilePhoto: '' });
+                setManagedPhotoPreview('');
+                setManagedBasic((prev) => ({ ...prev, profilePhotoBase64: '' }));
+            }
+
+            await persistFieldUpdate(fieldName, '');
+        } finally {
+            setIsRemovingUpload(false);
+            setRemoveUploadConfirm(null);
         }
-
-        if (fieldName === 'horoscopeDocument2') {
-            setFormData((prev) => ({ ...prev, horoscopeDocument2: '', horoscopeDocument3: '' }));
-            setPreviewBusters((prev) => {
-                const next = { ...prev };
-                delete next.horoscopeDocument2;
-                delete next.horoscopeDocument3;
-                return next;
-            });
-            setSubmitError('');
-            updateUser({ horoscopeDocument2: '', horoscopeDocument3: '' });
-            setHoroscopeViewerSlot(null);
-            await persistFieldUpdate('horoscopeDocument2', '');
-            await persistFieldUpdate('horoscopeDocument3', '');
-            return;
-        }
-
-        if (fieldName === 'horoscopeDocument3') {
-            setFormData((prev) => ({ ...prev, horoscopeDocument3: '' }));
-            setPreviewBusters((prev) => {
-                const next = { ...prev };
-                delete next.horoscopeDocument3;
-                return next;
-            });
-            setSubmitError('');
-            updateUser({ horoscopeDocument3: '' });
-            setHoroscopeViewerSlot(null);
-            await persistFieldUpdate('horoscopeDocument3', '');
-            return;
-        }
-
-        setFormData((prev) => ({ ...prev, [fieldName]: '' }));
-        setPreviewBusters((prev) => {
-            const next = { ...prev };
-            delete next[fieldName];
-            return next;
-        });
-        setSubmitError('');
-
-        if (fieldName === 'profilePhoto') {
-            updateUser({ profilePhoto: '' });
-            setManagedPhotoPreview('');
-            setManagedBasic((prev) => ({ ...prev, profilePhotoBase64: '' }));
-        }
-
-        await persistFieldUpdate(fieldName, '');
     };
 
     const handleNext = async () => {
@@ -3106,18 +3251,28 @@ export default function ProfileCompletionForm({
                                 />
                                 {uploading['profilePhoto'] && <span style={{ fontSize: '0.8rem', color: 'blue' }}>Uploading...</span>}
                                 <FieldErrorMessage message={fieldErrors.profilePhoto} />
-                                {formData.profilePhoto && (
-                                    <div style={{ marginTop: '0.5rem' }}>
+                                <div style={{ marginTop: '0.5rem' }}>
+                                    {formData.profilePhoto ? (
                                         <img src={previewSrc('profilePhoto', formData.profilePhoto)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }} />
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                            <button
-                                                type="button"
-                                                onClick={() => profilePhotoFileInputRef.current?.click()}
-                                                disabled={uploading['profilePhoto']}
-                                                style={imageActionBtn}
-                                            >
-                                                Replace photo
-                                            </button>
+                                    ) : (
+                                        <ProfileAvatar
+                                            firstName={managedBasic.firstName || user?.firstName}
+                                            lastName={managedBasic.lastName || user?.lastName}
+                                            gender={formData.gender || managedBasic.gender || user?.gender}
+                                            alt="Profile"
+                                            style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #ddd' }}
+                                        />
+                                    )}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => profilePhotoFileInputRef.current?.click()}
+                                            disabled={uploading['profilePhoto']}
+                                            style={imageActionBtn}
+                                        >
+                                            {formData.profilePhoto ? 'Replace photo' : 'Upload photo'}
+                                        </button>
+                                        {formData.profilePhoto ? (
                                             <button
                                                 type="button"
                                                 onClick={() => void clearUploadedField('profilePhoto')}
@@ -3126,9 +3281,9 @@ export default function ProfileCompletionForm({
                                             >
                                                 Remove
                                             </button>
-                                        </div>
+                                        ) : null}
                                     </div>
-                                )}
+                                </div>
                             </div>
 
                             <div className="form-group">
@@ -3321,6 +3476,73 @@ export default function ProfileCompletionForm({
                 src={horoscopeLightboxSrc}
                 onClose={() => setHoroscopeViewerSlot(null)}
             />
+
+            {removeUploadConfirm && typeof document !== 'undefined'
+                ? createPortal(
+                    <div
+                        className="modal-overlay modal-overlay--stacked active"
+                        data-lenis-prevent
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="remove-upload-confirm-title"
+                        style={{ zIndex: 10060 }}
+                        onClick={(e) => {
+                            if (e.target === e.currentTarget && !isRemovingUpload) {
+                                setRemoveUploadConfirm(null);
+                            }
+                        }}
+                    >
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                            <button
+                                type="button"
+                                className="modal-close"
+                                onClick={() => !isRemovingUpload && setRemoveUploadConfirm(null)}
+                                aria-label="Close"
+                                disabled={isRemovingUpload}
+                            >
+                                ✕
+                            </button>
+                            <div className="modal-header">
+                                <h2 id="remove-upload-confirm-title" style={{ color: '#b91c1c' }}>
+                                    {removeUploadConfirm.title}
+                                </h2>
+                            </div>
+                            <div className="modal-body">
+                                <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
+                                    {removeUploadConfirm.message}
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        onClick={() => setRemoveUploadConfirm(null)}
+                                        disabled={isRemovingUpload}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void executeClearUploadedField(removeUploadConfirm.fieldName)}
+                                        disabled={isRemovingUpload}
+                                        style={{
+                                            padding: '0.6rem 1.1rem',
+                                            borderRadius: '8px',
+                                            border: '1px solid #b91c1c',
+                                            background: isRemovingUpload ? '#fecaca' : '#fff',
+                                            color: '#991b1b',
+                                            fontWeight: 600,
+                                            cursor: isRemovingUpload ? 'not-allowed' : 'pointer',
+                                        }}
+                                    >
+                                        {isRemovingUpload ? 'Removing…' : 'Yes, remove'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body,
+                )
+                : null}
         </div>
     );
 }

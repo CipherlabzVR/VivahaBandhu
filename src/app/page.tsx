@@ -1,18 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Header from '../components/Header';
 import Hero from '../components/Hero';
-import Features from '../components/Features';
-import Profiles from '../components/Profiles';
-import HowItWorks from '../components/HowItWorks';
-import Matchmaker from '../components/Matchmaker';
-import TopProfiles from '../components/TopProfiles';
-import Blog from '../components/Blog';
-import FAQ from '../components/FAQ';
-import Pricing from '../components/Pricing';
-import Footer from '../components/Footer';
-import Modals from '../components/Modals';
 import AnimateIn from '../components/AnimateIn';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -21,6 +12,18 @@ import { canConvertToMatchmakerAccountType } from '../utils/matrimonialAccountTy
 import { showToast } from '../utils/toast';
 import { consumePendingSiteHash, endHashScrollGuard, getSiteHashId, prepareSiteHashNavigation } from '../utils/siteHashScroll';
 import { cancelFooterScrollRestore } from '../utils/footerScrollRestore';
+
+/** Below-fold + heavy modals — keep initial JS small for TBT / Speed Index. */
+const Features = dynamic(() => import('../components/Features'));
+const Profiles = dynamic(() => import('../components/Profiles'));
+const HowItWorks = dynamic(() => import('../components/HowItWorks'));
+const Matchmaker = dynamic(() => import('../components/Matchmaker'));
+const TopProfiles = dynamic(() => import('../components/TopProfiles'));
+const Blog = dynamic(() => import('../components/Blog'));
+const FAQ = dynamic(() => import('../components/FAQ'));
+const Pricing = dynamic(() => import('../components/Pricing'));
+const Footer = dynamic(() => import('../components/Footer'));
+const Modals = dynamic(() => import('../components/Modals'));
 
 export default function Home() {
   const { user, updateUser } = useAuth();
@@ -81,31 +84,54 @@ export default function Home() {
       const nextPurchased = Number(
         result.familySubAccountSlotsPurchased ?? result.FamilySubAccountSlotsPurchased ?? 0
       );
+      const nextConsumed = Number(
+        result.familySubAccountSlotsConsumed ?? result.FamilySubAccountSlotsConsumed ?? 0
+      );
+      const apiSubscribed = result.isSubscribed ?? result.IsSubscribed;
+      // Self premium is cleared server-side; Matchmaker is free unless client slots were already bought.
       const mmPaid =
-        nextPurchased > 0
-        || nextTier.toUpperCase() === 'PAYG'
-        || nextTier.toUpperCase() === 'GOLD'
-        || nextTier.toUpperCase() === 'DIAMOND';
+        apiSubscribed === true ||
+        nextPurchased > 0 ||
+        nextTier.toUpperCase() === 'PAYG';
       updateUser({
         accountType: 'Matchmaker',
         isFamilyParentAccount: false,
         isSubscribed: mmPaid,
         isPremiumSelfSubscribed: false,
-        matchmakerTier: nextTier,
+        subscriptionExpiresAt: undefined,
+        subscriptionIsLifetime: false,
+        subscriptionCancelled: false,
+        matchmakerTier: nextTier || 'FREE',
         matchmakerMaxClientProfiles: result.matchmakerMaxClientProfiles ?? result.MatchmakerMaxClientProfiles ?? 0,
         matchmakerClientProfileCount: result.matchmakerClientProfileCount ?? result.MatchmakerClientProfileCount ?? 0,
-        matchmakerCanAddClients: result.matchmakerCanAddClients ?? result.MatchmakerCanAddClients ?? false,
-        matchmakerClientSelectionPending: result.matchmakerClientSelectionPending ?? result.MatchmakerClientSelectionPending ?? false,
-        familySubAccountSlotsPurchased: result.familySubAccountSlotsPurchased ?? result.FamilySubAccountSlotsPurchased,
-        familySubAccountSlotsConsumed: result.familySubAccountSlotsConsumed ?? result.FamilySubAccountSlotsConsumed,
+        matchmakerCanAddClients:
+          result.matchmakerCanAddClients ??
+          result.MatchmakerCanAddClients ??
+          (Number.isFinite(nextPurchased) && Number.isFinite(nextConsumed) && nextPurchased > nextConsumed),
+        matchmakerClientSelectionPending: !!(
+          result.matchmakerClientSelectionPending ?? result.MatchmakerClientSelectionPending
+        ),
+        familySubAccountSlotsPurchased: Number.isFinite(nextPurchased) ? nextPurchased : 0,
+        familySubAccountSlotsConsumed: Number.isFinite(nextConsumed) ? nextConsumed : 0,
         familySubAccountSlotsMaxTotal: result.familySubAccountSlotsMaxTotal ?? result.FamilySubAccountSlotsMaxTotal,
         familySubAccountAdditionalAmountLkr: result.familySubAccountAdditionalAmountLkr ?? result.FamilySubAccountAdditionalAmountLkr,
+        profilePhoto: '',
         horoscopeDocument: '',
         horoscopeDocument2: '',
         horoscopeDocument3: '',
       });
+      try {
+        localStorage.removeItem('mymatch_bank_transfer_result');
+        localStorage.removeItem('mymatch_pending_bank_premium');
+        localStorage.removeItem('mymatch_pending_bank_premium_at');
+        window.dispatchEvent(new Event('mymatch-pending-bank-changed'));
+      } catch {
+        /* ignore storage errors */
+      }
       setShowConvertToMatchmakerConfirm(false);
       showToast(t('convertToMatchmakerSuccess'), 'success', 4000);
+      // Drop stale Self "Premium activated" notices from the bell after conversion.
+      window.location.assign('/profile');
     } catch (err: any) {
       setConvertToMatchmakerError(err?.message || t('convertToMatchmakerFailed'));
     } finally {

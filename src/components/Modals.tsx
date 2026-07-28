@@ -39,7 +39,7 @@ import { HeartIcon, BookmarkIcon, ShareIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge from './PremiumBadge';
 import { premiumBadgeLabelForProfile } from '../constants/subscription';
-import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import ProfileAvatar from './ProfileAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
@@ -4250,12 +4250,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 <div
                                     className={`profile-detail-photo${(selectedProfile.isPremium || selectedProfile.IsPremium) ? ' profile-detail-photo--premium' : ''}`}
                                 >
-                                    <img
-                                        src={selectedProfile.profilePhoto || getDefaultAvatarDataUri({
-                                            firstName: selectedProfile.firstName,
-                                            lastName: selectedProfile.lastName,
-                                            gender: selectedProfile.gender,
-                                        })}
+                                    <ProfileAvatar
+                                        photo={selectedProfile.profilePhoto}
+                                        firstName={selectedProfile.firstName}
+                                        lastName={selectedProfile.lastName}
+                                        gender={selectedProfile.gender}
                                         alt={`${selectedProfile.firstName || 'User'}'s Profile`}
                                     />
                                     {selectedProfile.isVerified && <span className="verified-badge-large">✓ Verified</span>}
@@ -4629,7 +4628,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img
-                                            src="/blog1.png"
+                                            src="/blog1.webp"
                                             alt="How to Discuss Important Topics Before Marriage"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
@@ -4677,7 +4676,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img
-                                            src="/blog2.png"
+                                            src="/blog2.webp"
                                             alt="Top 5 Buddhist Wedding Traditions in Sri Lanka"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />
@@ -4777,7 +4776,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                     <div className="blog-detail-image">
                                         <img
-                                            src="/blog4.png"
+                                            src="/blog4.webp"
                                             alt="First Meeting Tips for Arranged Marriages"
                                             style={{ width: '100%', height: 'auto', borderRadius: '12px' }}
                                         />

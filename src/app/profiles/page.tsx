@@ -8,6 +8,8 @@ import Modals from '../../components/Modals';
 import SearchSection from '../../components/SearchSection';
 import { useAuth } from '../../context/AuthContext';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
+import { clearFooterScrollRestoreIntent } from '../../utils/footerScrollRestore';
+import { smoothScrollTo } from '../../utils/lenisScroll';
 
 function ProfilesPageInner() {
     const { user, loading } = useAuth();
@@ -20,8 +22,13 @@ function ProfilesPageInner() {
     const [selectedProfile, setSelectedProfile] = useState<any | null>(null);
     const viewUserHandled = useRef<string | null>(null);
 
+    // Always open browse at the top (Lenis + footer scroll restore can otherwise land on the footer).
     useEffect(() => {
-        window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        clearFooterScrollRestoreIntent();
+        const toTop = () => smoothScrollTo(0, { immediate: true });
+        toTop();
+        const timers = [50, 150, 350, 700].map((ms) => window.setTimeout(toTop, ms));
+        return () => timers.forEach((id) => window.clearTimeout(id));
     }, []);
 
     useEffect(() => {

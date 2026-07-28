@@ -3,6 +3,7 @@
 import type { ManagedSubAccount } from '../utils/managedSubAccounts';
 import { subAccountDisplayName } from '../utils/managedSubAccounts';
 import ModalScrollArea from './ModalScrollArea';
+import ProfileAvatar from './ProfileAvatar';
 
 export type ManagedSubAccountActionKind = 'interest' | 'message' | 'save' | 'preferredSearch';
 
@@ -153,11 +154,12 @@ export default function ManagedSubAccountActionPicker({
                                         border: '2px solid #f3e8dc',
                                     }}
                                 >
-                                    <img
-                                        src={
-                                            sub.profilePhoto ||
-                                            'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'
-                                        }
+                                    <ProfileAvatar
+                                        photo={sub.profilePhoto}
+                                        firstName={sub.firstName}
+                                        lastName={sub.lastName}
+                                        name={name}
+                                        gender={sub.gender}
                                         alt={name}
                                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                     />

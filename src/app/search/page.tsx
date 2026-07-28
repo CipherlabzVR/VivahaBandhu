@@ -7,7 +7,7 @@ import Footer from '../../components/Footer';
 import Modals from '../../components/Modals';
 import CustomDropdown from '../../components/CustomDropdown';
 import { matrimonialService } from '../../services/matrimonialService';
-import { getDefaultAvatarDataUri } from '../../utils/defaultAvatar';
+import ProfileAvatar from '../../components/ProfileAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
@@ -267,16 +267,17 @@ function SearchContent() {
                 {results.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem' }}>
                         {results.map(profile => {
-                            const placeholderImg = getDefaultAvatarDataUri({
-                                firstName: profile.firstName,
-                                lastName: profile.lastName,
-                                gender: profile.gender,
-                            });
-
                             return (
                                 <div key={profile.id} onClick={() => openModal('profile', undefined, profile)} style={{ background: 'white', borderRadius: '15px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', transition: 'transform 0.3s', cursor: 'pointer' }}>
                                     <div style={{ position: 'relative', height: '300px' }}>
-                                        <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <ProfileAvatar
+                                            photo={profile.profilePhoto}
+                                            firstName={profile.firstName}
+                                            lastName={profile.lastName}
+                                            gender={profile.gender}
+                                            alt="Profile"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '1rem', background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', color: 'white' }}>
                                             <h3 style={{ margin: 0 }}>{profile.firstName || 'User'} {profile.lastName || ''}, {profile.age || 0}</h3>
                                             <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>{profile.occupation || 'Not Specified'}</p>

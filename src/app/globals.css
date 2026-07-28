@@ -52,7 +52,7 @@
 
     /* Sinhala font at reduced size for About page - text only, layout unchanged */
     .font-sinhala-sm {
-        font-family: "Noto Sans Sinhala", sans-serif;
+        font-family: var(--font-sinhala), "Noto Sans Sinhala", sans-serif;
     }
     .font-sinhala-sm .text-xs { font-size: 0.66rem !important; }
     .font-sinhala-sm .text-sm { font-size: 0.77rem !important; }

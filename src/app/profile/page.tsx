@@ -21,7 +21,16 @@ import {
     CHECKOUT_PLAN_MATCHMAKER_CLIENT,
     profilePlanBadgeLabel,
 } from '../../constants/subscription';
-import { PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE } from '../../constants/premiumActivation';
+import {
+    BANK_TRANSFER_APPROVED_BANNER_BODY,
+    BANK_TRANSFER_APPROVED_BANNER_TITLE,
+    BANK_TRANSFER_REJECTED_BANNER_BODY,
+    BANK_TRANSFER_REJECTED_BANNER_TITLE,
+    PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
+    SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+    clearPendingBankSubAccountFlag,
+    setBankTransferResultBanner,
+} from '../../constants/premiumActivation';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../../constants/inputLimits';
 import HoroscopeLightbox from '../../components/HoroscopeLightbox';
 import ModalScrollArea from '../../components/ModalScrollArea';
@@ -60,7 +69,9 @@ import { prepareProfileModalPayload } from '../../utils/profileVisitorActions';
 import { paidMatchmakerPackages } from '../../utils/matchmakerClientLimits';
 
 import ProfileCompletionForm from './ProfileCompletionForm';
+import ProfileAvatar from '../../components/ProfileAvatar';
 import { usePendingBankPremiumApproval } from '../../hooks/usePendingBankPremiumApproval';
+import { useBankTransferResultBanner } from '../../hooks/useBankTransferResultBanner';
 
 /** Matches .NET ApiResponse: property is PascalCase (`StatusCode`) unless server uses camelCase policy. */
 function apiResponseBusinessCode(body: Record<string, unknown> | null | undefined): number | undefined {
@@ -175,13 +186,13 @@ function ManagedSubAccountTabBar({
                                     boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
                                 }}
                             >
-                                {sub.profilePhoto ? (
-                                    <img src={sub.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : (
-                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f3f4f6', color: '#999', fontWeight: 700, fontSize: '0.85rem' }}>
-                                        {(sub.firstName?.[0] || '?')}{(sub.lastName?.[0] || '')}
-                                    </div>
-                                )}
+                                <ProfileAvatar
+                                    photo={sub.profilePhoto}
+                                    firstName={sub.firstName}
+                                    lastName={sub.lastName}
+                                    alt=""
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
                             </div>
                             {badgeCount > 0 && (
                                 <span
@@ -305,6 +316,7 @@ function ProfilePageContent() {
         [user?.id],
     );
     const bankPremiumAwaitingApproval = usePendingBankPremiumApproval(user?.isSubscribed);
+    const { result: bankTransferResult, dismiss: dismissBankTransferResult } = useBankTransferResultBanner();
     const { liveInterestRevision, refreshInterestNotifications, interestNotifications, markInterestNotificationRead } =
         useMatrimonialNotifications();
     const { language, setLanguage, t } = useLanguage();
@@ -1702,8 +1714,9 @@ function ProfilePageContent() {
                 && localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
 
             if (remaining > 0 && hadPending) {
-                localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+                clearPendingBankSubAccountFlag();
                 setBankSubAccountAwaitingApproval(false);
+                setBankTransferResultBanner('approved');
                 showToast(
                     user.accountType === 'Matchmaker'
                         ? 'Client account slot purchased. You can create a client profile now.'
@@ -2114,7 +2127,7 @@ function ProfilePageContent() {
             const remaining = Math.max(0, purchased - consumed);
             const pending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
             if (pending && remaining > 0) {
-                localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+                clearPendingBankSubAccountFlag();
                 setBankSubAccountAwaitingApproval(false);
                 return;
             }
@@ -2640,11 +2653,14 @@ function ProfilePageContent() {
                 <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
                     <div className="profile-header" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2rem', marginBottom: '2rem', paddingBottom: '2rem', borderBottom: '1px solid #eee' }}>
                         <div className="profile-avatar" style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', overflow: 'hidden' }}>
-                            {user.profilePhoto ? (
-                                <img src={user.profilePhoto} alt={`${user.firstName} ${user.lastName}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                                <span>{user.firstName[0]}{user.lastName[0]}</span>
-                            )}
+                            <ProfileAvatar
+                                photo={user.profilePhoto}
+                                firstName={user.firstName}
+                                lastName={user.lastName}
+                                gender={user.gender}
+                                alt={`${user.firstName} ${user.lastName}`}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
                         </div>
                         <div>
                             <h2 style={{ marginBottom: '0.5rem', fontSize: '1.8rem' }}>{user.firstName} {user.lastName}</h2>
@@ -2728,7 +2744,7 @@ function ProfilePageContent() {
                         </div>
                     </div>
 
-                    {bankPremiumAwaitingApproval && (
+                    {bankPremiumAwaitingApproval ? (
                         <div
                             role="status"
                             style={{
@@ -2746,7 +2762,141 @@ function ProfilePageContent() {
                                 you can keep using the site on the free plan until then.
                             </span>
                         </div>
-                    )}
+                    ) : bankTransferResult === 'approved' ? (
+                        <div
+                            role="status"
+                            style={{
+                                position: 'relative',
+                                marginBottom: '1.5rem',
+                                padding: '1rem 2.75rem 1rem 1.25rem',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                                border: '1px solid #6ee7b7',
+                                color: '#065f46',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                aria-label="Dismiss approved bank transfer notice"
+                                onClick={dismissBankTransferResult}
+                                style={{
+                                    position: 'absolute',
+                                    top: '0.65rem',
+                                    right: '0.65rem',
+                                    width: '1.75rem',
+                                    height: '1.75rem',
+                                    border: 'none',
+                                    borderRadius: '999px',
+                                    background: 'rgba(6, 95, 70, 0.12)',
+                                    color: '#065f46',
+                                    cursor: 'pointer',
+                                    fontSize: '1.1rem',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}
+                            >
+                                ×
+                            </button>
+                            <strong style={{ display: 'block', marginBottom: '0.35rem' }}>{BANK_TRANSFER_APPROVED_BANNER_TITLE}</strong>
+                            <span style={{ fontSize: '0.95rem', lineHeight: 1.5 }}>
+                                {BANK_TRANSFER_APPROVED_BANNER_BODY}
+                            </span>
+                        </div>
+                    ) : bankTransferResult === 'rejected' ? (
+                        <div
+                            role="status"
+                            style={{
+                                position: 'relative',
+                                marginBottom: '1.5rem',
+                                padding: '1rem 2.75rem 1rem 1.25rem',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
+                                border: '1px solid #fca5a5',
+                                color: '#991b1b',
+                            }}
+                        >
+                            <button
+                                type="button"
+                                aria-label="Dismiss rejected bank transfer notice"
+                                onClick={dismissBankTransferResult}
+                                style={{
+                                    position: 'absolute',
+                                    top: '0.65rem',
+                                    right: '0.65rem',
+                                    width: '1.75rem',
+                                    height: '1.75rem',
+                                    border: 'none',
+                                    borderRadius: '999px',
+                                    background: 'rgba(153, 27, 27, 0.12)',
+                                    color: '#991b1b',
+                                    cursor: 'pointer',
+                                    fontSize: '1.1rem',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}
+                            >
+                                ×
+                            </button>
+                            <strong style={{ display: 'block', marginBottom: '0.35rem' }}>{BANK_TRANSFER_REJECTED_BANNER_TITLE}</strong>
+                            <span style={{ fontSize: '0.95rem', lineHeight: 1.5, display: 'block' }}>
+                                {BANK_TRANSFER_REJECTED_BANNER_BODY}
+                            </span>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.85rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        dismissBankTransferResult();
+                                        const params = new URLSearchParams({ resubmit: '1', purpose: 'premium' });
+                                        router.push(`/subscription/plans?${params.toString()}`);
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '0.45rem 0.9rem',
+                                        borderRadius: '999px',
+                                        border: 'none',
+                                        background: '#b91c1c',
+                                        color: '#fff',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Submit new slip
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsSettingsOpen(true);
+                                        window.setTimeout(() => {
+                                            document.getElementById('user-settings-panel')
+                                                ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        }, 60);
+                                    }}
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '0.45rem 0.9rem',
+                                        borderRadius: '999px',
+                                        border: '1px solid #fca5a5',
+                                        background: '#fff',
+                                        color: '#991b1b',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Upgrade Premium
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className="profile-details-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem' }}>
                         <div className="detail-group">
@@ -3738,13 +3888,14 @@ function ProfilePageContent() {
                                                 title={`View ${p.firstName} ${p.lastName}'s profile`}
                                             >
                                             <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
-                                                {p.profilePhoto ? (
-                                                    <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                ) : (
-                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
-                                                        {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
-                                                    </div>
-                                                )}
+                                                <ProfileAvatar
+                                                    photo={p.profilePhoto}
+                                                    firstName={p.firstName}
+                                                    lastName={p.lastName}
+                                                    gender={p.gender}
+                                                    alt=""
+                                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                />
                                             </div>
                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
@@ -3909,13 +4060,14 @@ function ProfilePageContent() {
                                                     }}
                                                 >
                                                     <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
-                                                        {p.profilePhoto ? (
-                                                            <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                        ) : (
-                                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
-                                                                {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
-                                                            </div>
-                                                        )}
+                                                        <ProfileAvatar
+                                                            photo={p.profilePhoto}
+                                                            firstName={p.firstName}
+                                                            lastName={p.lastName}
+                                                            gender={p.gender}
+                                                            alt=""
+                                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                        />
                                                     </div>
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
@@ -3998,13 +4150,14 @@ function ProfilePageContent() {
                                                         title={`View ${p.firstName} ${p.lastName}'s profile`}
                                                     >
                                                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
-                                                            {p.profilePhoto ? (
-                                                                <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                            ) : (
-                                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
-                                                                    {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
-                                                                </div>
-                                                            )}
+                                                            <ProfileAvatar
+                                                                photo={p.profilePhoto}
+                                                                firstName={p.firstName}
+                                                                lastName={p.lastName}
+                                                                gender={p.gender}
+                                                                alt=""
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                            />
                                                         </div>
                                                         <div style={{ minWidth: 0, flex: 1 }}>
                                                             <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
@@ -4029,24 +4182,11 @@ function ProfilePageContent() {
                                             Interest{filteredInterestProfiles.length > 0 ? ` (${filteredInterestProfiles.length})` : ''}
                                         </h4>
                                         {filteredInterestProfiles.length === 0 ? (
-                                            <>
-                                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>
-                                                    {showInterestProfileTabs && activeInterestSubAccount
-                                                        ? `No interest sent for ${subAccountDisplayName(activeInterestSubAccount)} yet.`
-                                                        : "You haven't expressed interest in anyone yet."}
-                                                </p>
-                                                {!isManagedSubAccount(user) &&
-                                                    !(filteredSavedProfiles.length === 0 && filteredInterestProfiles.length === 0) && (
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        style={{ marginTop: '0.75rem', width: '100%', justifyContent: 'center' }}
-                                                        onClick={() => router.push('/profiles')}
-                                                    >
-                                                        Browse Profiles
-                                                    </button>
-                                                )}
-                                            </>
+                                            <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>
+                                                {showInterestProfileTabs && activeInterestSubAccount
+                                                    ? `No interest sent for ${subAccountDisplayName(activeInterestSubAccount)} yet.`
+                                                    : "You haven't expressed interest in anyone yet."}
+                                            </p>
                                         ) : (
                                             <div
                                                 style={{
@@ -4092,13 +4232,14 @@ function ProfilePageContent() {
                                                         title={`View ${p.firstName} ${p.lastName}'s profile`}
                                                     >
                                                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
-                                                            {p.profilePhoto ? (
-                                                                <img src={p.profilePhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                                            ) : (
-                                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontWeight: 700 }}>
-                                                                    {(p.firstName?.[0] || 'U')}{(p.lastName?.[0] || '')}
-                                                                </div>
-                                                            )}
+                                                            <ProfileAvatar
+                                                                photo={p.profilePhoto}
+                                                                firstName={p.firstName}
+                                                                lastName={p.lastName}
+                                                                gender={p.gender}
+                                                                alt=""
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                            />
                                                         </div>
                                                         <div style={{ minWidth: 0, flex: 1 }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
@@ -4141,29 +4282,6 @@ function ProfilePageContent() {
                                         )}
                                     </div>
                                 </div>
-                                {!isManagedSubAccount(user) &&
-                                    filteredSavedProfiles.length === 0 &&
-                                    filteredInterestProfiles.length === 0 &&
-                                    !loadingSavedProfiles && (
-                                        <button
-                                            type="button"
-                                            className="btn btn-outline"
-                                            style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
-                                            onClick={() => router.push('/profiles')}
-                                        >
-                                            Browse Profiles
-                                        </button>
-                                    )}
-                                {!isManagedSubAccount(user) && (filteredSavedProfiles.length > 0 || filteredInterestProfiles.length > 0) && (
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline"
-                                        style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
-                                        onClick={() => router.push('/profiles')}
-                                    >
-                                        Browse more profiles
-                                    </button>
-                                )}
                             </>
                         )}
                     </div>

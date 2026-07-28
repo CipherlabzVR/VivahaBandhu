@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
@@ -9,7 +9,7 @@ import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
-import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import ProfileAvatar from './ProfileAvatar';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
 import { excludeSelfFromFeaturedBrowse } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
@@ -22,12 +22,15 @@ import {
     filterProfilesForBrowse,
     viewerUserIdForBrowseGenderFilter,
 } from '../utils/selfAccountBrowseGender';
+import { clearFooterScrollRestoreIntent } from '../utils/footerScrollRestore';
+
 interface TopProfilesProps {
     onOpenProfileDetail: (profile: any) => void;
 }
 
 export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
     const { t } = useLanguage();
+    const router = useRouter();
     const { user } = useAuth();
     const { viewerId, subAccounts } = useOwnedSubAccountsForBrowse();
     const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
@@ -180,13 +183,6 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
             <div className="max-w-[1400px] mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 top-profiles-list">
                 {profiles.map((profile) => {
                     const isManaged = profileHasManagedBadge(profile);
-                    const photoSrc =
-                        profile.profilePhoto ||
-                        getDefaultAvatarDataUri({
-                            firstName: profile.firstName,
-                            lastName: profile.lastName,
-                            gender: profile.gender,
-                        });
                     return (
                         <div
                             key={profile.id}
@@ -219,7 +215,14 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
                                 {isManaged && <ProfileManagedBadge profile={profile} variant="compact" />}
                             </span>
                             <div className="relative">
-                                <img src={photoSrc} alt="" className="w-full h-80 object-cover" />
+                                <ProfileAvatar
+                                    photo={profile.profilePhoto}
+                                    firstName={profile.firstName}
+                                    lastName={profile.lastName}
+                                    gender={profile.gender}
+                                    alt=""
+                                    className="w-full h-80 object-cover"
+                                />
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-white">
                                     <div className="text-xl font-semibold">{profile.firstName || 'User'}</div>
                                     <div className="text-sm opacity-90">
@@ -285,12 +288,16 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
 
             {(!user || !isManagedSubAccount(user)) && (
                 <div className="text-center mt-12">
-                    <Link
-                        href="/profiles"
+                    <button
+                        type="button"
+                        onClick={() => {
+                            clearFooterScrollRestoreIntent();
+                            router.push('/profiles');
+                        }}
                         className="inline-block px-8 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
                     >
                         {t('viewAllProfiles')}
-                    </Link>
+                    </button>
                 </div>
             )}
 

@@ -25,15 +25,21 @@ import {
 import ClientProfileBadge from './ClientProfileBadge';
 import {
     isMatrimonialSubscriptionNotification,
+    isSlotBankTransferReceivedNotification,
     managedProfileUserIdFromNotification,
     notificationDescriptionFallback,
     notificationTitleFallback,
     referenceIdFromNotification,
     shouldShowMessageFromInterestNotification,
 } from '../utils/matrimonialInterestNotifications';
+import {
+    setPendingBankPremiumFlag,
+    setPendingBankSubAccountFlag,
+} from '../constants/premiumActivation';
 import { respondToIncomingInterest } from '../utils/respondToIncomingInterest';
 import { bankTransferRejectPurposeFromDescription } from '../utils/bankTransferResubmit';
 import { type FavoriteActivityRow } from '../utils/messagingMutualInterest';
+import ProfileAvatar from './ProfileAvatar';
 
 interface HeaderProps {
     onOpenLogin: () => void;
@@ -58,14 +64,6 @@ function senderLabelFromDescription(description: string | undefined): string {
     if (sentBack?.[1]) return sentBack[1].trim();
 
     return trimmed;
-}
-
-function initialsFromName(label: string): string {
-    const parts = label.split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return '?';
-    const a = parts[0]?.[0];
-    const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : '';
-    return `${a || ''}${b || ''}`.toUpperCase() || '?';
 }
 
 export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: HeaderProps) {
@@ -344,8 +342,13 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             : 'No new notifications for your profile.';
 
         return (
-            <div className="absolute top-full right-0 mt-2 bg-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-auto border border-gray-200 ring-1 ring-black/5">
-                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200">
+            <div
+                className="absolute top-full right-0 mt-2 bg-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-hidden border border-gray-200 ring-1 ring-black/5 flex flex-col"
+                data-lenis-prevent
+                data-lenis-prevent-wheel
+                data-lenis-prevent-touch
+            >
+                <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200 shrink-0">
                     <span className="text-lg" aria-hidden>{isSubPanel ? '👥' : '👤'}</span>
                     <div className="font-semibold text-sm text-gray-900">
                         {panelTitle}
@@ -367,7 +370,12 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     )}
                 </div>
                 {isSubPanel && showNotificationProfileTabs && (
-                    <div className="flex gap-2 overflow-x-auto overscroll-x-contain pb-3 mb-1 -mx-0.5 px-0.5">
+                    <div
+                        className="flex gap-2 overflow-x-auto overscroll-x-contain pb-3 mb-1 -mx-0.5 px-0.5 shrink-0"
+                        data-lenis-prevent
+                        data-lenis-prevent-wheel
+                        data-lenis-prevent-touch
+                    >
                         {subAccounts.map((sub) => {
                             const isActive = activeNotificationSubAccountId === sub.id;
                             const unread = notificationUnreadBySubAccount[sub.id] ?? 0;
@@ -390,11 +398,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 isActive ? 'border-primary' : 'border-white'
                                             }`}
                                         >
-                                            <img
-                                                src={
-                                                    sub.profilePhoto ||
-                                                    'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100'
-                                                }
+                                            <ProfileAvatar
+                                                photo={sub.profilePhoto}
+                                                firstName={sub.firstName}
+                                                lastName={sub.lastName}
+                                                name={name}
                                                 alt={name}
                                                 className="w-full h-full object-cover"
                                             />
@@ -422,10 +430,15 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 ) : panelNotifications.length === 0 ? (
                     <div className="text-xs text-gray-500 py-6 text-center">{emptyMessage}</div>
                 ) : (
-                    <div className="flex flex-col gap-3">
+                    <div
+                        className="flex flex-col gap-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5"
+                        data-lenis-prevent
+                        data-lenis-prevent-wheel
+                        data-lenis-prevent-touch
+                        onWheel={(e) => e.stopPropagation()}
+                    >
                         {panelNotifications.map((n) => {
                             const senderName = senderLabelFromDescription(n.description);
-                            const initials = initialsFromName(senderName);
                             const rowKey = String(n.id);
                             const isSubscriptionNotification = isMatrimonialSubscriptionNotification(
                                 n as Record<string, unknown>
@@ -472,7 +485,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                             onClick={async () => {
                                                                 await markInterestNotificationRead(n);
                                                                 setOpenNotificationScope(null);
-                                                                router.push('/search');
+                                                                router.push('/profiles');
                                                             }}
                                                             className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
                                                         >
@@ -482,6 +495,16 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                         <button
                                                             type="button"
                                                             onClick={async () => {
+                                                                // Persist pending UI before marking read — profile badge uses localStorage.
+                                                                try {
+                                                                    if (isSlotBankTransferReceivedNotification(n as Record<string, unknown>)) {
+                                                                        setPendingBankSubAccountFlag();
+                                                                    } else {
+                                                                        setPendingBankPremiumFlag();
+                                                                    }
+                                                                } catch {
+                                                                    /* ignore storage errors */
+                                                                }
                                                                 await markInterestNotificationRead(n);
                                                                 setOpenNotificationScope(null);
                                                                 router.push('/profile?settings=open');
@@ -545,10 +568,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                     />
                                     <div className="flex gap-3 pl-4 pr-3 py-3">
                                         <div
-                                            className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-br from-primary/25 via-amber-100/90 to-orange-50 flex items-center justify-center text-[13px] font-bold text-amber-900/90 ring-2 ring-white shadow-sm"
+                                            className="w-12 h-12 shrink-0 rounded-full overflow-hidden ring-2 ring-white shadow-sm"
                                             aria-hidden
                                         >
-                                            {initials}
+                                            <ProfileAvatar
+                                                name={senderName}
+                                                alt={senderName}
+                                                className="w-full h-full object-cover"
+                                            />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-start gap-2">
@@ -632,7 +659,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             <div className="max-w-[1400px] mx-auto px-6 sm:px-8 py-2 flex justify-between items-center">
                 <Link href="/" className="flex items-center h-11 md:h-14">
                     <Image 
-                        src="/logo4.png" 
+                        src="/logo4.webp" 
                         alt="MyMatch.lk Logo" 
                         width={240} 
                         height={120}
@@ -699,14 +726,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                         title="My profile notifications"
                                     >
                                         <span className="absolute inset-0 rounded-full overflow-hidden flex items-center justify-center">
-                                            {user.profilePhoto ? (
-                                                <img src={user.profilePhoto} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <span className="text-xs font-bold text-primary">
-                                                    {user.firstName?.[0]}
-                                                    {user.lastName?.[0]}
-                                                </span>
-                                            )}
+                                            <ProfileAvatar
+                                                photo={user.profilePhoto}
+                                                firstName={user.firstName}
+                                                lastName={user.lastName}
+                                                gender={user.gender}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                            />
                                         </span>
                                         {renderUnreadBadge(mainUnreadCount)}
                                     </button>
@@ -786,11 +813,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                 className="flex items-center gap-2 cursor-pointer"
                             >
                                 <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold overflow-hidden shrink-0">
-                                    {user.profilePhoto ? (
-                                        <img src={user.profilePhoto} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span>{user.firstName[0]}{user.lastName[0]}</span>
-                                    )}
+                                    <ProfileAvatar
+                                        photo={user.profilePhoto}
+                                        firstName={user.firstName}
+                                        lastName={user.lastName}
+                                        gender={user.gender}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                    />
                                 </div>
                                 <span className="font-medium hidden sm:inline">{user.firstName}</span>
                             </div>
@@ -907,11 +937,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         <div className="border-t border-gray-100 pt-4">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-bold overflow-hidden shrink-0">
-                                    {user.profilePhoto ? (
-                                        <img src={user.profilePhoto} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span>{user.firstName[0]}{user.lastName[0]}</span>
-                                    )}
+                                    <ProfileAvatar
+                                        photo={user.profilePhoto}
+                                        firstName={user.firstName}
+                                        lastName={user.lastName}
+                                        gender={user.gender}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                    />
                                 </div>
                                 <div>
                                     <div className="font-medium">{user.firstName} {user.lastName}</div>
