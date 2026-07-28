@@ -1,13 +1,43 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PENDING_BANK_PREMIUM_STORAGE_KEY, PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, PENDING_BANK_TRANSFER_CHANGED_EVENT } from '../constants/premiumActivation';
+import {
+    PENDING_BANK_PREMIUM_STORAGE_KEY,
+    PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
+    PENDING_BANK_TRANSFER_CHANGED_EVENT,
+    hasPendingBankTransferFlag,
+    setPendingBankPremiumFlag,
+    setPendingBankSubAccountFlag,
+} from '../constants/premiumActivation';
+import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
+import {
+    isPendingBankTransferReceivedNotification,
+    isSlotBankTransferReceivedNotification,
+    notificationCreatedAtMs,
+} from '../utils/matrimonialInterestNotifications';
+
+function rehydratePendingFlagsFromNotifications(notifications: Record<string, unknown>[]): boolean {
+    for (const n of notifications) {
+        if (!isPendingBankTransferReceivedNotification(n)) continue;
+        const at = notificationCreatedAtMs(n) || Date.now();
+        if (isSlotBankTransferReceivedNotification(n)) {
+            if (localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) !== '1') {
+                setPendingBankSubAccountFlag(at);
+            }
+        } else if (localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) !== '1') {
+            setPendingBankPremiumFlag(at);
+        }
+    }
+    return hasPendingBankTransferFlag();
+}
 
 /**
- * True when the user submitted a bank slip for premium and we are waiting for admin approval
- * (localStorage flag set at checkout). Clears when subscription becomes active or flag is removed.
+ * True when the user submitted a bank slip for premium and we are waiting for admin approval.
+ * Uses localStorage (set at checkout) and rehydrates from unread "Bank transfer received" notifications
+ * so pending still shows after refresh / if the storage flag was cleared incorrectly.
  */
 export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined): boolean {
+    const { interestNotifications } = useMatrimonialNotifications();
     const [pending, setPending] = useState(false);
 
     useEffect(() => {
@@ -18,10 +48,14 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
                 setPending(false);
                 return;
             }
-            setPending(
-                localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1' ||
-                    localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1'
-            );
+
+            const received = interestNotifications.filter((n) =>
+                isPendingBankTransferReceivedNotification(n as Record<string, unknown>)
+            ) as Record<string, unknown>[];
+
+            const fromStorage = rehydratePendingFlagsFromNotifications(received);
+            const fromNotifications = received.length > 0;
+            setPending(fromStorage || fromNotifications);
         };
 
         read();
@@ -49,7 +83,7 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
             document.removeEventListener('visibilitychange', onVisible);
             window.removeEventListener('focus', onVisible);
         };
-    }, [isSubscribed]);
+    }, [isSubscribed, interestNotifications]);
 
     return pending && isSubscribed !== true;
 }

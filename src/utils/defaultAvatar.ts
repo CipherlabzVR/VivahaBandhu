@@ -32,8 +32,11 @@ function getInitials(firstName?: string | null, lastName?: string | null): strin
     const l = (lastName || '').trim();
     const fi = f ? f[0] : '';
     const li = l ? l[0] : '';
-    const initials = `${fi}${li}`.toUpperCase();
-    return initials || '';
+    if (fi && li) return `${fi}${li}`.toUpperCase();
+    // Single name → first two letters so the avatar still reads as initials.
+    if (f.length >= 2) return f.slice(0, 2).toUpperCase();
+    if (fi) return fi.toUpperCase();
+    return '';
 }
 
 /**

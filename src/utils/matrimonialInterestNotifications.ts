@@ -22,11 +22,28 @@ export function notificationReferenceType(
     return String(notification.referenceType ?? notification.ReferenceType ?? '').trim();
 }
 
+export function notificationTitleLower(
+    notification: Record<string, unknown> | undefined | null
+): string {
+    if (!notification) return '';
+    return String(notification.title ?? notification.Title ?? '').toLowerCase();
+}
+
+export function notificationCreatedAtMs(
+    notification: Record<string, unknown> | undefined | null
+): number {
+    if (!notification) return 0;
+    const raw = notification.createdOn ?? notification.CreatedOn;
+    if (raw == null || String(raw).trim() === '') return 0;
+    const t = new Date(String(raw)).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
+
 export function isMatrimonialSubscriptionNotification(
     notification: Record<string, unknown> | undefined | null
 ): boolean {
     if (notificationReferenceType(notification) === 'MatrimonialSubscription') return true;
-    const title = String(notification?.title ?? notification?.Title ?? '').toLowerCase();
+    const title = notificationTitleLower(notification);
     if (!title) return false;
     if (title.includes('bank transfer')) return true;
     if (title.includes('sub-account slot')) return true;
@@ -40,6 +57,55 @@ export function isMatrimonialSubscriptionNotification(
         return true;
     }
     return false;
+}
+
+/** Unread "Bank transfer received" — slip submitted, awaiting admin review. */
+export function isPendingBankTransferReceivedNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!isMatrimonialSubscriptionNotification(notification)) return false;
+    const title = notificationTitleLower(notification);
+    if (!title.includes('bank transfer') || !title.includes('received')) return false;
+    if (title.includes('not approved') || title.includes('undo') || title.includes('undone')) return false;
+    return true;
+}
+
+/**
+ * Admin rejected a bank transfer. Uses the backend title "Bank transfer not approved".
+ * Must not match "Bank transfer rejection undone".
+ */
+export function isBankTransferRejectedNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!isMatrimonialSubscriptionNotification(notification)) return false;
+    const title = notificationTitleLower(notification);
+    if (title.includes('undo') || title.includes('undone')) return false;
+    return title.includes('bank transfer') && title.includes('not approved');
+}
+
+/** Admin approved a bank transfer (live SignalR or unread list). */
+export function isBankTransferApprovedNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!notification) return false;
+    const desc = String(notification.description ?? notification.Description ?? '').toLowerCase();
+    if (desc.includes('bank transfer was approved')) return true;
+    const title = notificationTitleLower(notification);
+    return title.includes('premium activated') && desc.includes('bank transfer');
+}
+
+/** Infer localStorage pending key purpose from a "bank transfer received" notification body. */
+export function isSlotBankTransferReceivedNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!notification) return false;
+    const desc = String(notification.description ?? notification.Description ?? '').toLowerCase();
+    return (
+        desc.includes('sub-account')
+        || desc.includes('client-account')
+        || desc.includes('client account')
+        || desc.includes('matchmaker')
+    );
 }
 
 export function isMatrimonialInterestNotification(

@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { apiInstantToMs } from '../utils/deviceDateTime';
 import ClientProfileBadge from './ClientProfileBadge';
 import ManagedProfileBadge from './ManagedProfileBadge';
+import ProfileAvatar from './ProfileAvatar';
 import { isManagedSubAccountActive } from '../utils/managedSubAccounts';
 
 type ManagedSubAccountBadgeKind = 'matchmaker-client' | 'family-managed' | 'none';
@@ -149,52 +150,14 @@ export default function ManagedSubAccountActivityCard({
                         position: 'relative',
                     }}
                 >
-                    {subAccount.profilePhoto ? (
-                        <img
-                            src={subAccount.profilePhoto}
-                            alt=""
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                        />
-                    ) : (
-                        <span>
-                            {subAccount.firstName?.[0] || '?'}
-                            {subAccount.lastName?.[0] || ''}
-                        </span>
-                    )}
-                    {badgeKind === 'matchmaker-client' && (
-                        <span
-                            style={{
-                                position: 'absolute',
-                                bottom: '-2px',
-                                right: '-2px',
-                                width: '22px',
-                                height: '22px',
-                                borderRadius: '50%',
-                                background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
-                                border: '2px solid #fff',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
-                            }}
-                            title="Client profile"
-                            aria-hidden
-                        >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width={11}
-                                height={11}
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="#92400e"
-                                strokeWidth={2.5}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            >
-                                <path d="M12 2l2.39 4.84L20 8l-4 3.9.94 5.5L12 14.77 7.06 17.4 8 11.9 4 8l5.61-1.16L12 2z" />
-                            </svg>
-                        </span>
-                    )}
+                    <ProfileAvatar
+                        photo={subAccount.profilePhoto}
+                        firstName={subAccount.firstName}
+                        lastName={subAccount.lastName}
+                        gender={subAccount.gender}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>

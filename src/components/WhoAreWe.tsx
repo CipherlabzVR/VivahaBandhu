@@ -148,7 +148,7 @@ export default function WhoAreWe() {
                         {/* Main Image Container */}
                         <div className="relative w-full h-[400px] md:h-[600px] lg:h-[750px] z-10 overflow-hidden">
                             <Image
-                                src="/who.png"
+                                src="/who.webp"
                                 alt={t('whoAreWe')}
                                 fill
                                 className="object-cover object-center"

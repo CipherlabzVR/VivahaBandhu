@@ -40,9 +40,9 @@ const config: Config = {
         'emilys-candy': ['"Emilys Candy"', 'cursive'],
         'playwrite-cu': ['Playwrite CU', 'cursive'],
         'playwrite-guides': ['Playwrite Guides', 'cursive'],
-        'dancing-script': ['Dancing Script', 'cursive'],
+        'dancing-script': ['var(--font-dancing-script)', 'Dancing Script', 'cursive'],
         'great-vibes': ['Great Vibes', 'cursive'],
-        sinhala: ['"Noto Sans Sinhala"', 'sans-serif'],
+        sinhala: ['var(--font-sinhala)', '"Noto Sans Sinhala"', 'sans-serif'],
       },
       boxShadow: {
         'gold': '0 2px 20px rgba(255, 162, 13, 0.25)',

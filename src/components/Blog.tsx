@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
 interface BlogProps {
@@ -8,88 +10,125 @@ interface BlogProps {
 
 export default function Blog({ onOpenBlogDetail }: BlogProps) {
     const { t } = useLanguage();
+    const sectionRef = useRef<HTMLElement | null>(null);
+    const [loadVideo, setLoadVideo] = useState(false);
+
     const blogs = [
         {
             id: 1,
-            image: '/blog1.png',
+            image: '/blog1.webp',
             category: 'Relationships',
             title: 'How to Discuss Important Topics Before Marriage',
-            excerpt: 'Financial planning, family expectations, and more...'
+            excerpt: 'Financial planning, family expectations, and more...',
         },
         {
             id: 2,
-            image: '/blog2.png',
+            image: '/blog2.webp',
             category: 'Wedding',
             title: 'Top 5 Buddhist Wedding Traditions in Sri Lanka',
-            excerpt: 'Understanding the significance of Poruwa ceremony...'
+            excerpt: 'Understanding the significance of Poruwa ceremony...',
         },
         {
             id: 3,
-            image: 'https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=600',
+            image: 'https://images.unsplash.com/photo-1465495976277-4387d4b0b4c6?w=600&q=75&auto=format',
             category: 'Safety',
             title: 'Online Matrimony Safety Tips',
-            excerpt: 'How to protect yourself while searching for a partner...'
+            excerpt: 'How to protect yourself while searching for a partner...',
         },
         {
             id: 4,
-            image: '/blog4.png',
+            image: '/blog4.webp',
             category: 'Dating',
             title: 'First Meeting Tips for Arranged Marriages',
-            excerpt: 'Making a great first impression and asking the right questions...'
-        }
+            excerpt: 'Making a great first impression and asking the right questions...',
+        },
     ];
 
+    useEffect(() => {
+        const el = sectionRef.current;
+        if (!el) return;
+
+        if (typeof IntersectionObserver === 'undefined') {
+            setLoadVideo(true);
+            return;
+        }
+
+        const io = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((e) => e.isIntersecting)) {
+                    setLoadVideo(true);
+                    io.disconnect();
+                }
+            },
+            { rootMargin: '200px 0px' }
+        );
+        io.observe(el);
+        return () => io.disconnect();
+    }, []);
+
     return (
-        <section id="blog" className="blog-section relative overflow-hidden !bg-transparent">
-            <video
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-                className="absolute inset-0 w-full h-full object-cover"
-                aria-hidden
-            >
-                <source src="/blog.mp4" type="video/mp4" />
-            </video>
+        <section
+            ref={sectionRef}
+            id="blog"
+            className="blog-section relative overflow-hidden !bg-transparent"
+        >
+            {loadVideo ? (
+                <video
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 w-full h-full object-cover"
+                    aria-hidden
+                >
+                    <source src="/blog.mp4" type="video/mp4" />
+                </video>
+            ) : (
+                <div className="absolute inset-0 w-full h-full bg-cream" aria-hidden />
+            )}
             <div className="absolute inset-0 bg-cream/65 z-[1]" aria-hidden />
             <div className="relative z-10">
-            <div className="section-header">
-                <h2>{t('blogAdvice')}</h2>
-                <p>{t('blogAdviceDesc')}</p>
-            </div>
-            <div className="blog-grid">
-                {blogs.map((blog) => (
-                    <div key={blog.id} className="blog-card">
-                        <div className="blog-image">
-                            <img 
-                                src={blog.image} 
-                                alt={blog.title} 
-                                className="blog-img"
-                            />
+                <div className="section-header">
+                    <h2>{t('blogAdvice')}</h2>
+                    <p>{t('blogAdviceDesc')}</p>
+                </div>
+                <div className="blog-grid">
+                    {blogs.map((blog) => (
+                        <div key={blog.id} className="blog-card">
+                            <div className="blog-image relative overflow-hidden">
+                                <Image
+                                    src={blog.image}
+                                    alt={blog.title}
+                                    width={600}
+                                    height={400}
+                                    className="blog-img"
+                                    sizes="(max-width: 768px) 100vw, 25vw"
+                                    loading="lazy"
+                                />
+                            </div>
+                            <div className="blog-content">
+                                <span className="blog-cat">{blog.category}</span>
+                                <h4>{blog.title}</h4>
+                                <p>{blog.excerpt}</p>
+                                <button
+                                    onClick={() => onOpenBlogDetail(blog.id)}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: 'var(--primary)',
+                                        fontWeight: '500',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    {t('readMore')}
+                                </button>
+                            </div>
                         </div>
-                        <div className="blog-content">
-                            <span className="blog-cat">{blog.category}</span>
-                            <h4>{blog.title}</h4>
-                            <p>{blog.excerpt}</p>
-                            <button 
-                                onClick={() => onOpenBlogDetail(blog.id)}
-                                style={{ 
-                                    background: 'none', 
-                                    border: 'none', 
-                                    color: 'var(--primary)', 
-                                    fontWeight: '500',
-                                    cursor: 'pointer',
-                                    padding: 0,
-                                    textAlign: 'left'
-                                }}
-                            >
-                                {t('readMore')}
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
             </div>
         </section>
     );

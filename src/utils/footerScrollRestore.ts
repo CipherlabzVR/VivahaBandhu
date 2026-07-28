@@ -35,6 +35,14 @@ export function cancelFooterScrollRestore(): void {
     endFooterScrollGuard();
 }
 
+/** Clear pending “return to footer on Back” intent (e.g. open Browse Profiles at the top). */
+export function clearFooterScrollRestoreIntent(): void {
+    endFooterScrollGuard();
+    if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(FOOTER_SCROLL_RESTORE_KEY);
+    }
+}
+
 
 
 function startFooterScrollGuard(): void {

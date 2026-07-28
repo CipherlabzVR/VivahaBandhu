@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
@@ -10,7 +10,7 @@ import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
-import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import ProfileAvatar from './ProfileAvatar';
 import { isManagedSubAccount } from '../utils/managedSubAccount';
 import { excludeSelfFromFeaturedBrowse, normalizeBrowseProfiles } from '../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
@@ -24,6 +24,7 @@ import {
     viewerUserIdForBrowseGenderFilter,
 } from '../utils/selfAccountBrowseGender';
 import FreeDailyProfileViewsBanner from './FreeDailyProfileViewsBanner';
+import { clearFooterScrollRestoreIntent } from '../utils/footerScrollRestore';
 
 interface ProfilesProps {
     onOpenSubscription: () => void;
@@ -32,6 +33,7 @@ interface ProfilesProps {
 
 export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: ProfilesProps) {
     const { t } = useLanguage();
+    const router = useRouter();
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const { user } = useAuth();
@@ -205,11 +207,6 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                 {profiles.map((profile) => {
                     const isPremium = !!(profile.isPremium || profile.IsPremium);
                     const isManaged = profileHasManagedBadge(profile);
-                    const photoSrc = profile.profilePhoto || getDefaultAvatarDataUri({
-                        firstName: profile.firstName,
-                        lastName: profile.lastName,
-                        gender: profile.gender,
-                    });
                     return (
                         <div key={profile.id} onClick={() => {
                             if (user?.isVerified === false) {
@@ -226,7 +223,14 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                 </span>
                             )}
                             <div className="relative">
-                                <img src={photoSrc} alt="Profile" className="w-full h-80 object-cover" />
+                                <ProfileAvatar
+                                    photo={profile.profilePhoto}
+                                    firstName={profile.firstName}
+                                    lastName={profile.lastName}
+                                    gender={profile.gender}
+                                    alt="Profile"
+                                    className="w-full h-80 object-cover"
+                                />
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 text-white">
                                     <div className="text-xl font-semibold">{profile.firstName || 'User'}</div>
                                     <div className="text-sm opacity-90">{profile.age || 0} years • {profile.cityOfResidence || 'Unknown'}</div>
@@ -291,7 +295,16 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
 
             {(!user || !isManagedSubAccount(user)) && (
             <div className="text-center mt-12">
-                <Link href="/profiles" className="inline-block px-8 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors">{t('viewAllProfiles')}</Link>
+                <button
+                    type="button"
+                    onClick={() => {
+                        clearFooterScrollRestoreIntent();
+                        router.push('/profiles');
+                    }}
+                    className="inline-block px-8 py-3 border-2 border-primary text-primary rounded-full font-semibold hover:bg-primary hover:text-white transition-colors"
+                >
+                    {t('viewAllProfiles')}
+                </button>
             </div>
             )}
 

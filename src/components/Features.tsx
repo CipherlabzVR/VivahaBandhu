@@ -1,25 +1,58 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { clearFooterScrollRestoreIntent } from '../utils/footerScrollRestore';
+import { smoothScrollTo } from '../utils/lenisScroll';
+import { SITE_HEADER_SCROLL_OFFSET } from '../utils/siteHashScroll';
 
 interface FeaturesProps {
     onOpenRegister?: () => void;
 }
 
+function scrollToProfilesSection(): boolean {
+    const profilesSection = document.getElementById('profiles');
+    if (!profilesSection) return false;
+    const top =
+        profilesSection.getBoundingClientRect().top + window.scrollY - SITE_HEADER_SCROLL_OFFSET;
+    smoothScrollTo(Math.max(0, top), { immediate: false });
+    return true;
+}
+
 export default function Features({ onOpenRegister }: FeaturesProps) {
     const { user } = useAuth();
     const { t } = useLanguage();
+    const router = useRouter();
+
+    // Warm the code-split Profiles chunk + browse route so the first click rarely misses.
+    useEffect(() => {
+        void import('./Profiles');
+        router.prefetch('/profiles');
+    }, [router]);
 
     const handleButtonClick = () => {
         if (user) {
-            // If logged in, scroll to featured profiles section
-            const profilesSection = document.getElementById('profiles');
-            if (profilesSection) {
-                profilesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        } else if (onOpenRegister) {
-            // If not logged in, open register modal
+            // Profiles is code-split — it may not be in the DOM on the first click.
+            // Retry briefly, then hard-navigate so one click always works.
+            if (scrollToProfilesSection()) return;
+
+            const started = Date.now();
+            const tryScroll = () => {
+                if (scrollToProfilesSection()) return;
+                if (Date.now() - started < 1200) {
+                    window.requestAnimationFrame(tryScroll);
+                    return;
+                }
+                clearFooterScrollRestoreIntent();
+                router.push('/profiles');
+            };
+            window.requestAnimationFrame(tryScroll);
+            return;
+        }
+
+        if (onOpenRegister) {
             onOpenRegister();
         }
     };
@@ -29,13 +62,16 @@ export default function Features({ onOpenRegister }: FeaturesProps) {
             {/* Top Section - CTA Button, Heading, and Description */}
             <div className="text-center mb-16">
                 <div className="max-w-3xl mx-auto">
-                    <button 
-                        className="bg-primary text-white border-none px-10 py-4 rounded-full text-base font-semibold cursor-pointer mb-8 transition-all hover:bg-primary-dark hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/30 font-source-sans" 
+                    <button
+                        type="button"
+                        className="bg-primary text-white border-none px-10 py-4 rounded-full text-base font-semibold cursor-pointer mb-8 transition-all hover:bg-primary-dark hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/30 font-source-sans"
                         onClick={handleButtonClick}
                     >
                         {t('findTheOne')}
                     </button>
-                    <h2 className="text-5xl md:text-6xl lg:text-7xl text-text-dark mb-6 font-normal leading-tight font-playfair">{t('findRealConnection')}</h2>
+                    <h2 className="text-5xl md:text-6xl lg:text-7xl text-text-dark mb-6 font-normal leading-tight font-playfair">
+                        {t('findRealConnection')}
+                    </h2>
                     <p className="text-text-light text-lg md:text-xl leading-relaxed max-w-2xl mx-auto">
                         {t('featuresDescription')}
                     </p>
@@ -82,10 +118,14 @@ export default function Features({ onOpenRegister }: FeaturesProps) {
                     </div>
                 </div>
                 <div className="w-full h-full min-h-[500px] rounded-3xl overflow-hidden">
-                    <img 
-                        src="/about.jpg" 
-                        alt="Connection and happiness" 
+                    <img
+                        src="/about.jpg"
+                        alt="Connection and happiness"
                         className="w-full h-full object-cover rounded-3xl"
+                        width={800}
+                        height={500}
+                        loading="lazy"
+                        decoding="async"
                     />
                 </div>
             </div>

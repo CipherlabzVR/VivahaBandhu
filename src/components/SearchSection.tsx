@@ -8,7 +8,7 @@ import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
-import { getDefaultAvatarDataUri } from '../utils/defaultAvatar';
+import ProfileAvatar from './ProfileAvatar';
 import { MATRIMONIAL_RELIGION_OPTIONS } from '../constants/matrimonialReligions';
 import {
     MATRIMONIAL_MARITAL_STATUS_OPTIONS,
@@ -1005,12 +1005,6 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
 
                     <div className="results-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
                         {filteredProfiles.map((profile, index) => {
-                            const placeholderImg = getDefaultAvatarDataUri({
-                                firstName: profile.firstName,
-                                lastName: profile.lastName,
-                                gender: profile.gender,
-                            });
-
                             const isPremium = !!(profile.isPremium || profile.IsPremium);
                             const isManaged = profileHasManagedBadge(profile);
                             const matchScore = preferredSearch ? readProfileMatchScore(profile) : null;
@@ -1060,7 +1054,14 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                                         </span>
                                     )}
                                     <div style={{ position: 'relative', height: '300px' }}>
-                                        <img src={profile.profilePhoto || placeholderImg} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <ProfileAvatar
+                                            photo={profile.profilePhoto}
+                                            firstName={profile.firstName}
+                                            lastName={profile.lastName}
+                                            gender={profile.gender}
+                                            alt="Profile"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
                                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)', padding: '20px 15px', color: 'white' }}>
                                             <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{profile.firstName || 'User'} {profile.lastName || ''}</div>
                                             <div style={{ fontSize: '0.9rem', opacity: 0.9 }}>{profile.age || 0} years • {profile.cityOfResidence || 'Unknown'}</div>
