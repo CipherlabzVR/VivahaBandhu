@@ -87,6 +87,9 @@ function normalizeInboxContact(row: Record<string, unknown>) {
         peerLastName,
         peerProfilePhoto,
         latestMessage: String((row as any).latestMessage ?? (row as any).LatestMessage ?? ''),
+        latestMessageIsDeleted: !!(
+            (row as any).latestMessageIsDeleted ?? (row as any).LatestMessageIsDeleted
+        ),
         sentAt: (row as any).sentAt ?? (row as any).SentAt,
         unreadCount: Number((row as any).unreadCount ?? (row as any).UnreadCount ?? 0),
         peerIsPremium: readPeerIsPremiumFromRow(row) !== false,
@@ -174,21 +177,23 @@ function normalizeChatMessage(raw: Record<string, unknown> | undefined | null) {
     );
     const sentAt = parsed ? parsed.toISOString() : new Date().toISOString();
     const isRead = !!((raw as any).isRead ?? (raw as any).IsRead);
+    const isDeleted = !!((raw as any).isDeleted ?? (raw as any).IsDeleted);
     if (!Number.isFinite(senderId) || !Number.isFinite(receiverId)) return null;
     return {
         id,
         senderId,
         receiverId,
-        content,
+        content: isDeleted ? 'This message was deleted' : content,
         sentAt,
         isRead,
+        isDeleted,
         managedProfileUserId:
             parsedManaged?.managedProfileUserId ??
             readManagedProfileUserId((raw as any).managedProfileUserId ?? (raw as any).ManagedProfileUserId),
         managedProfileName:
             parsedManaged?.managedProfileName ??
             (String((raw as any).managedProfileName ?? (raw as any).ManagedProfileName ?? '').trim() || null),
-        horoscopeShare,
+        horoscopeShare: isDeleted ? null : horoscopeShare,
     };
 }
 
@@ -795,9 +800,16 @@ function MessagesContent() {
             );
         });
 
-        // Message Deleted
+        // Message soft-deleted — keep the row; show placeholder for both users.
         connection.on("MessageDeleted", (deletedMessageId) => {
-            setMessages(prev => prev.filter(m => m.id !== deletedMessageId));
+            const id = Number(deletedMessageId);
+            setMessages((prev) =>
+                prev.map((m) =>
+                    Number(m.id) === id
+                        ? { ...m, isDeleted: true, content: 'This message was deleted', horoscopeShare: null }
+                        : m
+                )
+            );
             refreshInbox();
         });
 
@@ -1032,6 +1044,7 @@ function MessagesContent() {
                     peerLastName: '',
                     peerProfilePhoto: null,
                     latestMessage: '',
+                    latestMessageIsDeleted: false,
                     sentAt: null,
                     unreadCount: 0,
                     // Unknown until GetProfile returns PeerIsPremium / IsPremium.
@@ -1300,12 +1313,19 @@ function MessagesContent() {
 
     const handleDeleteMessage = async (msgId: number) => {
         if (!user) return;
+        const existing = messages.find((m) => Number(m.id) === Number(msgId));
+        if (existing?.isDeleted) return;
         setDeletingMsgId(msgId);
         try {
             const res = await matrimonialService.deleteMessage(msgId, Number(user.id));
             if (res.statusCode === 200 || res.statusCode === 1) {
-                // Optimistically remove from UI
-                setMessages(prev => prev.filter(m => m.id !== msgId));
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        Number(m.id) === Number(msgId)
+                            ? { ...m, isDeleted: true, content: 'This message was deleted', horoscopeShare: null }
+                            : m
+                    )
+                );
                 refreshInbox();
             }
         } catch (err) {
@@ -1318,6 +1338,7 @@ function MessagesContent() {
 
     const handleMessageRightClick = (e: React.MouseEvent, msg: any) => {
         if (Number(msg.senderId) !== Number(user?.id)) return;
+        if (msg.isDeleted) return;
         e.preventDefault();
         e.stopPropagation();
         setContextMenu({ msgId: msg.id, x: e.clientX, y: e.clientY });
@@ -1525,8 +1546,17 @@ function MessagesContent() {
                                                 );
                                             })()}
                                             <div className="flex justify-between items-center">
-                                                <p className={`text-[0.85rem] m-0 truncate ${contact.unreadCount > 0 ? 'text-text-dark font-semibold' : 'text-text-light'}`}>
+                                                <p className={`text-[0.85rem] m-0 truncate ${
+                                                    contact.latestMessageIsDeleted
+                                                        ? 'text-text-light italic'
+                                                        : contact.unreadCount > 0
+                                                          ? 'text-text-dark font-semibold'
+                                                          : 'text-text-light'
+                                                }`}>
                                                     {(() => {
+                                                        if (contact.latestMessageIsDeleted) {
+                                                            return 'This message was deleted';
+                                                        }
                                                         const preview =
                                                             horoscopeSharePreviewText(
                                                                 stripManagedMessagePrefix(contact.latestMessage)
@@ -1627,18 +1657,21 @@ function MessagesContent() {
                                     )}
                                     {messages.map((msg, index) => {
                                         const isMe = Number(msg.senderId) === Number(user.id);
+                                        const isDeleted = !!msg.isDeleted;
                                         const rowKey =
                                             typeof msg.id === 'number' && Number.isInteger(msg.id) ? msg.id : `pending-${index}`;
-                                        const horoscopeShare = msg.horoscopeShare ?? parseHoroscopeShareFromContent(
-                                            stripManagedMessagePrefix(msg.content)
-                                        );
+                                        const horoscopeShare = isDeleted
+                                            ? null
+                                            : (msg.horoscopeShare ?? parseHoroscopeShareFromContent(
+                                                stripManagedMessagePrefix(msg.content)
+                                            ));
                                         return (
                                             <div
                                                 key={`msg-${rowKey}-${index}`}
                                                 className={`flex flex-col max-w-[85%] md:max-w-[70%] group ${isMe ? 'self-end' : 'self-start'}`}
                                                 onContextMenu={(e) => handleMessageRightClick(e, msg)}
                                             >
-                                                {isMe && actingSubAccount && (
+                                                {isMe && actingSubAccount && !isDeleted && (
                                                     <div className="flex items-center gap-1.5 self-end mb-1 pr-1">
                                                         <ProfileAvatar
                                                             photo={actingSubAccount.profilePhoto}
@@ -1654,6 +1687,7 @@ function MessagesContent() {
                                                     </div>
                                                 )}
                                                 {!isMe &&
+                                                    !isDeleted &&
                                                     readManagedProfileUserId(msg.managedProfileUserId) != null &&
                                                     msg.managedProfileName && (
                                                         <span className="text-[0.65rem] text-text-light font-medium mb-1 pl-1">
@@ -1661,11 +1695,20 @@ function MessagesContent() {
                                                         </span>
                                                     )}
                                                 <div className="relative">
-                                                    <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${isMe
-                                                        ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl rounded-tr-sm'
-                                                        : 'bg-white text-text-dark rounded-2xl rounded-tl-sm border border-gold/10'
+                                                    <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${
+                                                        isDeleted
+                                                            ? (isMe
+                                                                ? 'bg-primary/25 text-white/80 rounded-2xl rounded-tr-sm border border-white/15'
+                                                                : 'bg-slate-50 text-text-light rounded-2xl rounded-tl-sm border border-slate-200')
+                                                            : (isMe
+                                                                ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl rounded-tr-sm'
+                                                                : 'bg-white text-text-dark rounded-2xl rounded-tl-sm border border-gold/10')
                                                         }`}>
-                                                        {horoscopeShare ? (
+                                                        {isDeleted ? (
+                                                            <p className="m-0 text-[0.9rem] leading-relaxed italic opacity-90">
+                                                                This message was deleted
+                                                            </p>
+                                                        ) : horoscopeShare ? (
                                                             <div className="flex flex-col gap-2">
                                                                 <p className="m-0 text-[0.95rem] font-semibold leading-relaxed">
                                                                     Horoscope shared
@@ -1695,8 +1738,8 @@ function MessagesContent() {
                                                         )}
                                                     </div>
 
-                                                    {/* Delete button (own messages only) */}
-                                                    {isMe && (
+                                                    {/* Delete button (own non-deleted messages only) */}
+                                                    {isMe && !isDeleted && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -1717,7 +1760,7 @@ function MessagesContent() {
                                                     <span className="text-[0.65rem] text-text-light/70 font-medium">
                                                         {formatDeviceTime(msg.sentAt)}
                                                     </span>
-                                                    {isMe && (
+                                                    {isMe && !isDeleted && (
                                                         <span
                                                             className={`text-[0.6rem] ${msg.isRead ? 'text-sky-500 font-semibold' : 'text-text-light/50'}`}
                                                             title={msg.isRead ? 'Read' : 'Sent'}

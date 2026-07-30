@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import LoadingScreen from './LoadingScreen';
 
-const MIN_LOAD_TIME_MS = 450;
-const FADE_OUT_MS = 350;
+const MIN_LOAD_TIME_MS = 200;
+const FADE_OUT_MS = 200;
 const SPLASH_SESSION_KEY = 'mymatch_splash_shown';
 
 export default function LoadingScreenWrapper({

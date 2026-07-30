@@ -340,17 +340,15 @@ export default function PrivacyPolicyBody() {
                 </p>
                 <div className="rounded-xl border border-orange-100 bg-white p-6 shadow-[0_4px_24px_-8px_rgba(255,162,13,0.2)]">
                     <p className="mb-2 font-semibold text-text-dark">MyMatch.lk</p>
-                    <p className="mb-4 text-sm">
-                        [Your Registered Address, e.g., No. 123, Galle Road, Colombo 03, Sri Lanka]
-                    </p>
+                    <p className="mb-4 text-sm">150/1 Ja-Ela Road, Gampaha, Sri Lanka</p>
                     <ul className="list-none space-y-2 !pl-0 text-sm">
                         <li>
-                            <span className="font-semibold text-text-dark">Privacy:</span>{' '}
+                            <span className="font-semibold text-text-dark">Info:</span>{' '}
                             <a
-                                href="mailto:privacy@mymatch.lk"
+                                href="mailto:info@mymatch.lk"
                                 className="text-primary underline underline-offset-2 hover:text-primary-dark"
                             >
-                                privacy@mymatch.lk
+                                info@mymatch.lk
                             </a>
                         </li>
                         <li>
@@ -363,6 +361,15 @@ export default function PrivacyPolicyBody() {
                             </a>
                         </li>
                         <li>
+                            <span className="font-semibold text-text-dark">Privacy:</span>{' '}
+                            <a
+                                href="mailto:privacy@mymatch.lk"
+                                className="text-primary underline underline-offset-2 hover:text-primary-dark"
+                            >
+                                privacy@mymatch.lk
+                            </a>
+                        </li>
+                        <li>
                             <span className="font-semibold text-text-dark">Legal matters:</span>{' '}
                             <a
                                 href="mailto:legal@mymatch.lk"
@@ -372,13 +379,16 @@ export default function PrivacyPolicyBody() {
                             </a>
                         </li>
                         <li>
-                            <span className="font-semibold text-text-dark">Phone (example):</span> [+94 11 234 5678]
+                            <span className="font-semibold text-text-dark">Phone:</span>{' '}
+                            <a
+                                href="tel:0777718055"
+                                className="text-primary underline underline-offset-2 hover:text-primary-dark"
+                            >
+                                0777718055
+                            </a>
                         </li>
                     </ul>
                 </div>
-                <p className="mt-6 text-sm text-text-light italic">
-                    Replace bracketed placeholders with your official registered address and telephone number when publishing.
-                </p>
             </section>
         </div>
     );

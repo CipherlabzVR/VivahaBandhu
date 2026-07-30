@@ -74,19 +74,51 @@ export function clearBankTransferResultBanner(): void {
     window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
 }
 
-/** Apply admin decision: clear pending slip flags and show the profile result banner in one update. */
+/**
+ * Apply admin bank-transfer decision: clear pending slip flags and show the profile result banner.
+ * Approved banners require an active pending slip flag so card/other activations never look like
+ * bank-transfer approvals. Rejected banners also require pending (stale reject notices are ignored).
+ */
 export function applyBankTransferDecision(result: BankTransferResultBanner): void {
     if (typeof window === 'undefined') return;
-    const hadPending =
-        localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1' ||
-        localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+    const hadPending = hasPendingBankTransferFlag();
     const prev = localStorage.getItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+
     localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
     localStorage.removeItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY);
     localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
     localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY);
+
+    // Never surface bank-transfer result UI unless the user actually submitted a slip.
+    if (!hadPending) {
+        if (prev) {
+            localStorage.removeItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+            window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
+        }
+        return;
+    }
+
     localStorage.setItem(BANK_TRANSFER_RESULT_STORAGE_KEY, result);
-    if (hadPending || prev !== result) {
+    window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
+}
+
+/** Clear pending slip flags and any bank-transfer result banner (card pay / cancel / non-bank paths). */
+export function clearBankTransferUiState(): void {
+    if (typeof window === 'undefined') return;
+    const hadPending = hasPendingBankTransferFlag();
+    const hadResult = !!localStorage.getItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY);
+    localStorage.removeItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+    try {
+        sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+        sessionStorage.removeItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY);
+    } catch {
+        /* ignore */
+    }
+    if (hadPending || hadResult) {
         window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
     }
 }

@@ -1102,6 +1102,7 @@ export default function ProfileCompletionForm({
         partnerQualificationLevel: '',
         partnerReligion: '',
         partnerEthnicity: '',
+        partnerComplexion: '',
         partnerCountryOfOrigin: '',
         partnerCountryOfResidence: '',
         partnerAdditionalRequirements: '',
@@ -1293,6 +1294,7 @@ export default function ProfileCompletionForm({
     const eatingHabitOptions = ['Vegetarian', 'Non-Veg', 'Vegan'];
     const drinkingHabitOptions = ['Never', 'Occasionally', 'Frequently'];
     const smokingHabitOptions = ['Never', 'Occasionally', 'Frequently'];
+    const complexionOptions = ['Fair', 'Medium', 'Dark', 'Very Fair', 'Wheatish'];
 
     const safeDate = (val: string | undefined | null): string => {
         if (!val) return '';
@@ -1370,6 +1372,7 @@ export default function ProfileCompletionForm({
                 partnerQualificationLevel: v('partnerQualificationLevel') || prev.partnerQualificationLevel,
                 partnerReligion: v('partnerReligion') || prev.partnerReligion,
                 partnerEthnicity: v('partnerEthnicity') || prev.partnerEthnicity,
+                partnerComplexion: vOpt('partnerComplexion') || prev.partnerComplexion,
                 partnerCountryOfOrigin: vOpt('partnerCountryOfOrigin') || prev.partnerCountryOfOrigin,
                 partnerCountryOfResidence: vOpt('partnerCountryOfResidence') || prev.partnerCountryOfResidence,
                 partnerAdditionalRequirements: v('partnerAdditionalRequirements') || prev.partnerAdditionalRequirements,
@@ -1807,6 +1810,7 @@ export default function ProfileCompletionForm({
         'partnerEatingHabits',
         'partnerDrinkingHabits',
         'partnerSmokingHabits',
+        'partnerComplexion',
         'partnerCountryOfResidence',
         'partnerCountryOfOrigin',
     ] as const;
@@ -2350,7 +2354,7 @@ export default function ProfileCompletionForm({
                         lineHeight: 1.5,
                     }}
                 >
-                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Premium payment â€” awaiting approval</strong>
+                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Premium payment — awaiting approval</strong>
                     Your bank transfer slip was received and is being reviewed. You can finish your profile below; premium
                     features will unlock once the payment is approved.
                 </div>
@@ -2508,7 +2512,7 @@ export default function ProfileCompletionForm({
             <div
                 ref={wizardStepsAnchorRef}
                 className="steps-indicator"
-                style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem', padding: '0 1rem' }}
+                style={{ display: 'flex', marginBottom: '2rem' }}
             >
                 {[1, 2, 3, 4, 5, 6].map(i => (
                     <button
@@ -3099,9 +3103,9 @@ export default function ProfileCompletionForm({
                     <div className="step-content" ref={activeStepContentRef}>
                         <h3>Partner Preferences</h3>
                         <div className="form-grid">
-                            <div className="form-group">
+                            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                 <label>Age Range (Years)*</label>
-                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
                                     <input
                                         type="text"
                                         inputMode="numeric"
@@ -3111,7 +3115,7 @@ export default function ProfileCompletionForm({
                                         placeholder="Min (18+)"
                                         maxLength={3}
                                         required
-                                        style={{ width: '50%', ...fieldInputStyle('partnerMinAge') }}
+                                        style={{ flex: 1, minWidth: 0, width: 'auto', ...fieldInputStyle('partnerMinAge') }}
                                     />
                                     <input
                                         type="text"
@@ -3122,7 +3126,7 @@ export default function ProfileCompletionForm({
                                         placeholder="Max (greater than Min)"
                                         maxLength={3}
                                         required
-                                        style={{ width: '50%', ...fieldInputStyle('partnerMaxAge') }}
+                                        style={{ flex: 1, minWidth: 0, width: 'auto', ...fieldInputStyle('partnerMaxAge') }}
                                     />
                                 </div>
                                 <FieldErrorMessage message={fieldErrors.partnerMinAge} />
@@ -3154,6 +3158,15 @@ export default function ProfileCompletionForm({
                                 <select name="partnerSmokingHabits" value={formData.partnerSmokingHabits} onChange={handleChange}>
                                     <option value="">Any</option>
                                     {smokingHabitOptions.map((item) => (
+                                        <option key={item} value={item}>{item}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="form-group">
+                                <label>Skin Complexion</label>
+                                <select name="partnerComplexion" value={formData.partnerComplexion} onChange={handleChange}>
+                                    <option value="">Any</option>
+                                    {complexionOptions.map((item) => (
                                         <option key={item} value={item}>{item}</option>
                                     ))}
                                 </select>
@@ -3435,16 +3448,29 @@ export default function ProfileCompletionForm({
 
             <style jsx>{`
                 .profile-completion-form {
-                    padding: 1rem;
+                    padding: 0.25rem 0 0.5rem;
+                    width: 100%;
+                    max-width: 100%;
+                    box-sizing: border-box;
                 }
                 .form-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-                    gap: 1.5rem;
+                    grid-template-columns: 1fr;
+                    gap: 1.25rem 1.5rem;
+                    width: 100%;
+                    align-items: start;
+                }
+                @media (min-width: 640px) {
+                    .form-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
                 }
                 .form-group {
                     display: flex;
                     flex-direction: column;
+                    min-width: 0;
+                    width: 100%;
+                    box-sizing: border-box;
                 }
                 .form-group label {
                     margin-bottom: 0.5rem;
@@ -3452,6 +3478,9 @@ export default function ProfileCompletionForm({
                     color: #555;
                 }
                 .form-group input, .form-group select, .form-group textarea {
+                    width: 100%;
+                    max-width: 100%;
+                    box-sizing: border-box;
                     padding: 0.8rem;
                     border: 1px solid #ddd;
                     border-radius: 6px;
@@ -3461,6 +3490,18 @@ export default function ProfileCompletionForm({
                 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
                     outline: none;
                     border-color: var(--primary);
+                }
+                .steps-indicator {
+                    gap: 0.5rem;
+                    flex-wrap: wrap;
+                    justify-content: center !important;
+                    padding: 0 !important;
+                }
+                @media (min-width: 640px) {
+                    .steps-indicator {
+                        justify-content: space-between !important;
+                        flex-wrap: nowrap;
+                    }
                 }
                 h3 {
                     border-bottom: 1px solid #eee;

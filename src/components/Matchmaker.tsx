@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -21,11 +22,14 @@ export default function Matchmaker({ onOpenRegister }: MatchmakerProps) {
             <div className="max-w-[1400px] mx-auto grid lg:grid-cols-2 gap-12 items-center">
                 {/* Image on the left */}
                 <div className="order-2 lg:order-1">
-                    <div className="relative rounded-3xl overflow-hidden shadow-2xl">
-                        <img 
-                            src="/match.jpg" 
-                            alt="Professional Matchmaker" 
-                            className="w-full h-full object-cover"
+                    <div className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-2xl">
+                        <Image
+                            src="/match.jpg"
+                            alt="Professional Matchmaker"
+                            fill
+                            sizes="(max-width: 1024px) 100vw, 50vw"
+                            className="object-cover"
+                            loading="lazy"
                         />
                     </div>
                 </div>

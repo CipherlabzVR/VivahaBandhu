@@ -5,57 +5,43 @@ import {
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PENDING_BANK_TRANSFER_CHANGED_EVENT,
+    clearBankTransferUiState,
     hasPendingBankTransferFlag,
-    setPendingBankPremiumFlag,
-    setPendingBankSubAccountFlag,
 } from '../constants/premiumActivation';
-import { useMatrimonialNotifications } from '../context/MatrimonialNotificationsContext';
-import {
-    isPendingBankTransferReceivedNotification,
-    isSlotBankTransferReceivedNotification,
-    notificationCreatedAtMs,
-} from '../utils/matrimonialInterestNotifications';
-
-function rehydratePendingFlagsFromNotifications(notifications: Record<string, unknown>[]): boolean {
-    for (const n of notifications) {
-        if (!isPendingBankTransferReceivedNotification(n)) continue;
-        const at = notificationCreatedAtMs(n) || Date.now();
-        if (isSlotBankTransferReceivedNotification(n)) {
-            if (localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) !== '1') {
-                setPendingBankSubAccountFlag(at);
-            }
-        } else if (localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) !== '1') {
-            setPendingBankPremiumFlag(at);
-        }
-    }
-    return hasPendingBankTransferFlag();
-}
 
 /**
- * True when the user submitted a bank slip for premium and we are waiting for admin approval.
- * Uses localStorage (set at checkout) and rehydrates from unread "Bank transfer received" notifications
- * so pending still shows after refresh / if the storage flag was cleared incorrectly.
+ * True when the user submitted a bank slip and we are waiting for admin approval.
+ * Driven only by checkout localStorage flags — not by unrelated premium notifications —
+ * so card activation / cancel never show "bank transfer under review".
  */
 export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined): boolean {
-    const { interestNotifications } = useMatrimonialNotifications();
     const [pending, setPending] = useState(false);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
         const read = () => {
-            if (isSubscribed === true) {
+            const premiumPending = localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
+            const slotPending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
+
+            // Already premium with a leftover premium-slip flag → not a bank-wait UI state.
+            if (isSubscribed === true && premiumPending && !slotPending) {
+                clearBankTransferUiState();
                 setPending(false);
                 return;
             }
 
-            const received = interestNotifications.filter((n) =>
-                isPendingBankTransferReceivedNotification(n as Record<string, unknown>)
-            ) as Record<string, unknown>[];
+            // Slot bank review can continue while the manager is already premium.
+            if (slotPending) {
+                setPending(true);
+                return;
+            }
 
-            const fromStorage = rehydratePendingFlagsFromNotifications(received);
-            const fromNotifications = received.length > 0;
-            setPending(fromStorage || fromNotifications);
+            if (isSubscribed === true) {
+                setPending(false);
+                return;
+            }
+            setPending(hasPendingBankTransferFlag());
         };
 
         read();
@@ -83,7 +69,7 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
             document.removeEventListener('visibilitychange', onVisible);
             window.removeEventListener('focus', onVisible);
         };
-    }, [isSubscribed, interestNotifications]);
+    }, [isSubscribed]);
 
-    return pending && isSubscribed !== true;
+    return pending;
 }

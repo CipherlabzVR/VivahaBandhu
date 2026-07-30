@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
@@ -117,15 +118,14 @@ export default function Features({ onOpenRegister }: FeaturesProps) {
                         <p className="text-text-light text-base leading-relaxed m-0">{t('personalMatchmakingDesc')}</p>
                     </div>
                 </div>
-                <div className="w-full h-full min-h-[500px] rounded-3xl overflow-hidden">
-                    <img
+                <div className="relative w-full h-full min-h-[500px] rounded-3xl overflow-hidden">
+                    <Image
                         src="/about.jpg"
                         alt="Connection and happiness"
-                        className="w-full h-full object-cover rounded-3xl"
-                        width={800}
-                        height={500}
+                        fill
+                        sizes="(max-width: 1024px) 100vw, 50vw"
+                        className="object-cover rounded-3xl"
                         loading="lazy"
-                        decoding="async"
                     />
                 </div>
             </div>

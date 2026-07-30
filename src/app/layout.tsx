@@ -9,10 +9,8 @@ import CorsBootstrap from '../components/CorsBootstrap';
 import DeferredChrome from '../components/DeferredChrome';
 import GlobalToast from '../components/GlobalToast';
 import SmoothScroll from '../components/SmoothScroll';
+import { HERO_LCP_IMG_DESKTOP, HERO_LCP_IMG_MOBILE } from '../constants/heroLcp';
 import "./globals.css";
-
-const HERO_LCP_IMG =
-  "https://res.cloudinary.com/df52tya8p/image/upload/f_auto,q_auto:good,w_960,c_limit/v1777957492/Picsart_26-05-05_10-30-47-506_gxogmo.webp";
 
 const playfair = Playfair_Display({
   subsets: ["latin"],
@@ -26,11 +24,13 @@ const sourceSans = Source_Sans_3({
   display: "swap",
 });
 
+// WelcomePopup only — do not preload on every page (cuts render-blocking).
 const pacifico = Pacifico({
   subsets: ["latin"],
   weight: "400",
   variable: "--font-pacifico",
   display: "swap",
+  preload: false,
 });
 
 const dancingScript = Dancing_Script({
@@ -40,11 +40,13 @@ const dancingScript = Dancing_Script({
   display: "swap",
 });
 
+// Loaded when language is Sinhala; avoid competing with LCP on default EN.
 const notoSinhala = Noto_Sans_Sinhala({
   subsets: ["sinhala"],
   weight: ["400", "600", "700"],
   variable: "--font-sinhala",
   display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -69,7 +71,15 @@ export default function RootLayout({
         <link
           rel="preload"
           as="image"
-          href={HERO_LCP_IMG}
+          href={HERO_LCP_IMG_MOBILE}
+          media="(max-width: 767px)"
+          fetchPriority="high"
+        />
+        <link
+          rel="preload"
+          as="image"
+          href={HERO_LCP_IMG_DESKTOP}
+          media="(min-width: 768px)"
           fetchPriority="high"
         />
       </head>

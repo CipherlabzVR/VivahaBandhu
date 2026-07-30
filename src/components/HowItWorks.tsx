@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
 const HEART_PATH =
@@ -47,15 +48,19 @@ export default function HowItWorks() {
             ref={sectionRef}
             className="py-24 px-4 relative bg-cream overflow-hidden"
             id="how-it-works"
-            style={{
-                backgroundImage: 'url(/how.png)',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat'
-            }}
         >
+            <Image
+                src="/how.png"
+                alt=""
+                fill
+                sizes="100vw"
+                className="object-cover object-center"
+                loading="lazy"
+                aria-hidden
+                priority={false}
+            />
             {/* Overlay for better text readability */}
-            <div className="absolute inset-0 bg-primary/70 z-0"></div>
+            <div className="absolute inset-0 bg-primary/70 z-[1]"></div>
 
             {/* Line-drawn hearts - same layout as footer (sides + bottom), white animated */}
             <div className="absolute inset-0 z-[5] pointer-events-none flex items-center justify-center overflow-hidden">

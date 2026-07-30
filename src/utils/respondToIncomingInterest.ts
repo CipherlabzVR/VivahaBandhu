@@ -1,19 +1,16 @@
 import { matrimonialService } from '../services/matrimonialService';
-import { notifyMatrimonialInteractionsChanged } from './messagingMutualInterest';
-
-function parseFavoriteTargetIds(raw: unknown): number[] {
-    if (!Array.isArray(raw)) return [];
-    return raw
-        .map((x: unknown) =>
-            typeof x === 'number' ? x : (x as { favoriteProfileId?: number; profileId?: number; id?: number })?.favoriteProfileId ?? (x as { profileId?: number })?.profileId ?? (x as { id?: number })?.id
-        )
-        .filter((x) => Number.isFinite(Number(x)))
-        .map((x) => Number(x));
-}
+import {
+    hasFavoritedTargetForManagedActor,
+    notifyMatrimonialInteractionsChanged,
+    type FavoriteActivityRow,
+} from './messagingMutualInterest';
 
 /**
  * Accept incoming interest: create reciprocal favorite (or notify if already favorited).
  * Used from header notifications and profile "Interested in you".
+ *
+ * Favorite state is scoped per managed sub-account — another sub's mutual with the
+ * sender must not skip creating this sub's own reciprocal favorite.
  */
 export async function respondToIncomingInterest(
     userId: number,
@@ -22,9 +19,16 @@ export async function respondToIncomingInterest(
 ): Promise<{ ok: boolean; message: string }> {
     const managedIdForApi = managedProfileUserId ?? undefined;
     const interactionsRes = await matrimonialService.getUserInteractions(userId);
-    const favorites = interactionsRes?.result?.Favorites ?? interactionsRes?.result?.favorites ?? [];
-    const favoriteIds = parseFavoriteTargetIds(favorites);
-    const alreadyFavoursSender = favoriteIds.includes(senderUserId);
+    const favActRaw =
+        interactionsRes?.result?.FavoriteActivity ??
+        interactionsRes?.result?.favoriteActivity ??
+        [];
+    const favoriteActivity: FavoriteActivityRow[] = Array.isArray(favActRaw) ? favActRaw : [];
+    const alreadyFavoursSender = hasFavoritedTargetForManagedActor(
+        favoriteActivity,
+        senderUserId,
+        managedIdForApi ?? null,
+    );
 
     if (alreadyFavoursSender) {
         const res = await matrimonialService.notifyInterestBack(userId, senderUserId, managedIdForApi);
