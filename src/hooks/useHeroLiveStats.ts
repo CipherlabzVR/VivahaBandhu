@@ -113,7 +113,7 @@ export function useHeroLiveStats(initial: HeroStatsState): { stats: HeroStatsSta
             cancelIdleCallback?: (id: number) => void;
         };
         let idleId: number | undefined;
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let timeoutId: number | undefined;
         if (typeof w.requestIdleCallback === 'function') {
             idleId = w.requestIdleCallback(startLiveStats, { timeout: 4000 });
         } else {

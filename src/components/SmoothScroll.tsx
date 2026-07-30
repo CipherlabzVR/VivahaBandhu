@@ -72,7 +72,7 @@ export default function SmoothScroll({ children }: { children: ReactNode }) {
             cancelIdleCallback?: (id: number) => void;
         };
         let idleId: number | undefined;
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        let timeoutId: number | undefined;
         if (typeof w.requestIdleCallback === 'function') {
             idleId = w.requestIdleCallback(start, { timeout: 3500 });
         } else {
