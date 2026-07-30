@@ -88,17 +88,6 @@ function browseOwnerKey(user: { id: string } | null | undefined): string {
     return user?.id != null && user.id !== '' ? `user:${user.id}` : 'anon';
 }
 
-function sameBrowseFields(a: BrowseFilterFields, b: BrowseFilterFields): boolean {
-    return (
-        a.gender === b.gender &&
-        a.minAge === b.minAge &&
-        a.maxAge === b.maxAge &&
-        a.religion === b.religion &&
-        a.maritalStatus === b.maritalStatus &&
-        a.sortBy === b.sortBy
-    );
-}
-
 function loadSavedBrowseFields(ownerKey: string): BrowseFilterFields | null {
     if (typeof window === 'undefined') return null;
     try {
@@ -187,6 +176,9 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
     const [preferredSearchProfileId, setPreferredSearchProfileId] = useState<number | null>(null);
     const [showPreferredProfilePicker, setShowPreferredProfilePicker] = useState(false);
     const [pickerDraftProfileId, setPickerDraftProfileId] = useState<number | null>(null);
+    /** Preferred Search blocked until partner preferences are filled (API flag / message). */
+    const [partnerPreferencesRequired, setPartnerPreferencesRequired] = useState(false);
+    const [partnerPreferencesGateMessage, setPartnerPreferencesGateMessage] = useState('');
 
     const [draftFilters, setDraftFilters] = useState<BrowseFilterFields>(defaultBrowseFields);
     const [activeFilters, setActiveFilters] = useState<ActiveBrowseFilters>(() => ({
@@ -524,9 +516,15 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
         setLoading(true);
         try {
             const usePreferred = !!(preferredSearch && user?.id);
+            if (!usePreferred) {
+                setPartnerPreferencesRequired(false);
+                setPartnerPreferencesGateMessage('');
+            }
             if (usePreferred && isManagedParent && !preferredSearchProfileId) {
                 setProfiles([]);
                 setTotalCount(0);
+                setPartnerPreferencesRequired(false);
+                setPartnerPreferencesGateMessage('');
                 return;
             }
             const apiGender = effectiveBrowseGenderForUser(user, activeFilters.gender, subAccounts) || null;
@@ -571,9 +569,27 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                         ? Math.max(0, (res.result.totalCount || res.result.TotalCount || 0) - (raw.length - filtered.length))
                         : res.result.totalCount || res.result.TotalCount || 0
                 );
+                const prefsRequired = !!(
+                    res.result.partnerPreferencesRequired ?? res.result.PartnerPreferencesRequired
+                );
+                const apiMsg =
+                    (typeof res.message === 'string' && res.message.trim()) ||
+                    (typeof res.Message === 'string' && res.Message.trim()) ||
+                    '';
+                if (usePreferred && (prefsRequired || (filtered.length === 0 && /partner preference/i.test(apiMsg)))) {
+                    setPartnerPreferencesRequired(true);
+                    setPartnerPreferencesGateMessage(
+                        apiMsg || 'Please fill partner preferences to show results.'
+                    );
+                } else {
+                    setPartnerPreferencesRequired(false);
+                    setPartnerPreferencesGateMessage('');
+                }
             } else {
                 setProfiles([]);
                 setTotalCount(0);
+                setPartnerPreferencesRequired(false);
+                setPartnerPreferencesGateMessage('');
                 const msg = typeof res.message === 'string' && res.message.trim() ? res.message : null;
                 if (msg) showToast(msg, 'error');
             }
@@ -668,11 +684,6 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
         setActiveFilters({ ...cleared, pageNumber: 1, pageSize: 99 });
         setPersistedFilters(null);
     };
-
-    const filtersDirty = useMemo(() => {
-        const baseline = persistedFilters ?? defaultBrowseFieldsForUser(user, subAccounts);
-        return !sameBrowseFields(activeCriteria, baseline);
-    }, [activeCriteria, persistedFilters, user, subAccounts]);
 
     const handleToggleFavorite = (e: React.MouseEvent, profileId: number) => {
         e.stopPropagation();
@@ -860,14 +871,9 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                     </div>
 
                     <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
-                        <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#666' }}>
+                        <p style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#666' }}>
                             Results update as you change filters. Click <strong>Save</strong> to remember this search for next time.
                         </p>
-                        {filtersDirty && (
-                            <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#b45309' }}>
-                                Current filters are not saved yet — click Save to keep them for your next visit.
-                            </p>
-                        )}
                         <button
                             type="button"
                             onClick={handleSaveBrowseFilters}
@@ -986,7 +992,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                         </p>
                     </div>
                     
-                    {preferredSearch && (
+                    {preferredSearch && !partnerPreferencesRequired && (
                         <div style={{ marginBottom: '15px', padding: '12px 16px', backgroundColor: '#fdf8f3', borderRadius: '10px', border: '1px solid #f0e0c0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px' }}>
                             <span style={{ fontSize: '1.2rem' }}>💡</span>
                             <p style={{ margin: 0, fontSize: '0.9rem', color: '#666', flex: '1 1 220px' }}>
@@ -995,15 +1001,9 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                                         Showing matches for{' '}
                                         <strong>{subAccountDisplayName(preferredSearchSubAccount)}</strong>
                                         &apos;s partner preferences.
-                                        {subAccounts.length > 1 ? (
-                                            <> Complete that profile&apos;s partner preferences for better results.</>
-                                        ) : null}
                                     </>
                                 ) : (
-                                    <>
-                                        Showing profiles that match your partner preferences. Complete your{' '}
-                                        <strong>Detailed Profile</strong> partner preferences for better results.
-                                    </>
+                                    <>Showing profiles that match your partner preferences.</>
                                 )}
                             </p>
                             {isManagedParent && subAccounts.length > 1 ? (
@@ -1028,8 +1028,57 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                         </div>
                     )}
 
+                    {preferredSearch && partnerPreferencesRequired && !loading && (
+                        <div
+                            style={{
+                                marginBottom: '20px',
+                                padding: '28px 24px',
+                                backgroundColor: '#fffbeb',
+                                borderRadius: '12px',
+                                border: '1px solid #fde68a',
+                                textAlign: 'center',
+                            }}
+                        >
+                            <p style={{ margin: '0 0 8px', fontSize: '1.05rem', fontWeight: 600, color: '#92400e' }}>
+                                {partnerPreferencesGateMessage || 'Please fill partner preferences to show results.'}
+                            </p>
+                            <p style={{ margin: '0 0 16px', fontSize: '0.9rem', color: '#78716c' }}>
+                                {isManagedParent && preferredSearchSubAccount
+                                    ? `Open Detailed Profile for ${subAccountDisplayName(preferredSearchSubAccount)} and complete the Partner Preferences section.`
+                                    : 'Open your Detailed Profile and complete the Partner Preferences section.'}
+                            </p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'center' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-primary"
+                                    onClick={() => router.push('/profile')}
+                                    style={{ padding: '10px 20px', borderRadius: '8px', fontWeight: 600 }}
+                                >
+                                    Go to profile
+                                </button>
+                                {isManagedParent && subAccounts.length > 1 ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleChangePreferredProfile}
+                                        style={{
+                                            padding: '10px 16px',
+                                            borderRadius: '8px',
+                                            border: '1px solid #e8cfa8',
+                                            background: 'white',
+                                            color: 'var(--primary, #c8922a)',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        Change profile
+                                    </button>
+                                ) : null}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="results-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                        {filteredProfiles.map((profile, index) => {
+                        {!partnerPreferencesRequired && filteredProfiles.map((profile, index) => {
                             const isPremium = !!(profile.isPremium || profile.IsPremium);
                             const isManaged = profileHasManagedBadge(profile);
                             const matchScore = preferredSearch ? readProfileMatchScore(profile) : null;
@@ -1146,7 +1195,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                         })}
                     </div>
 
-                    {filteredProfiles.length === 0 && !loading && (
+                    {filteredProfiles.length === 0 && !loading && !partnerPreferencesRequired && (
                         <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
                             <p>{searchTerm ? `No profiles match “${searchTerm}” in the current results.` : 'No profiles found matching your criteria.'}</p>
                         </div>

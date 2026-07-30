@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     BANK_TRANSFER_RESULT_STORAGE_KEY,
     PENDING_BANK_TRANSFER_CHANGED_EVENT,
@@ -16,15 +16,13 @@ import {
     isBankTransferRejectedNotification,
 } from '../utils/matrimonialInterestNotifications';
 
-/** Approved / rejected result banners auto-dismiss after this duration. */
-const BANK_TRANSFER_RESULT_BANNER_AUTO_DISMISS_MS = 4000;
-
 function isDecisionNotification(n: Record<string, unknown>): boolean {
     return isBankTransferApprovedNotification(n) || isBankTransferRejectedNotification(n);
 }
 
 /**
  * Dismissible profile banner after admin approves/rejects a bank transfer.
+ * Stays visible until the user closes it (× or “Submit new slip”).
  * Only shown when the user had a pending bank slip (localStorage) — never for card
  * activation, cancel, or unrelated premium notifications.
  */
@@ -106,18 +104,6 @@ export function useBankTransferResultBanner(): {
             }
         }
     }, [interestNotifications, markInterestNotificationRead]);
-
-    const dismissRef = useRef(dismiss);
-    dismissRef.current = dismiss;
-
-    // Auto-close approved/rejected banners so they don't stay on the profile page.
-    useEffect(() => {
-        if (result !== 'approved' && result !== 'rejected') return;
-        const timer = window.setTimeout(() => {
-            dismissRef.current();
-        }, BANK_TRANSFER_RESULT_BANNER_AUTO_DISMISS_MS);
-        return () => window.clearTimeout(timer);
-    }, [result]);
 
     return { result, dismiss };
 }

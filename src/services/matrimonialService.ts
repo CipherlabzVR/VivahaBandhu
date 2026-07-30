@@ -619,6 +619,32 @@ export const matrimonialService = {
         }
     },
 
+    /** Lean list cards for many user ids (saved / interest) — one round-trip. */
+    async getProfileCards(userIds: number[], viewerUserId?: number): Promise<any> {
+        const ids = Array.from(new Set(userIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))).slice(0, 100);
+        if (ids.length === 0) {
+            return { statusCode: 200, result: { profiles: [] } };
+        }
+        try {
+            const query = new URLSearchParams({
+                userIds: ids.join(','),
+                ...(viewerUserId ? { viewerUserId: String(viewerUserId) } : {}),
+            });
+            const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfileCards?${query.toString()}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || `Failed to fetch profile cards: ${response.statusText}`);
+            }
+            return await response.json();
+        } catch (error) {
+            if (error instanceof Error) throw error;
+            throw new Error('An unexpected error occurred while fetching profile cards');
+        }
+    },
+
     /** Remaining free daily profile views for the logged-in user. */
     async getDailyProfileViewStatus(userId: number): Promise<any> {
         try {

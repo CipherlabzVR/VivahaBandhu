@@ -12,7 +12,7 @@ import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, NIC_PASSPORT_HINT, parseNicToDobAndGender } from '../../utils/nicInput';
 import { sanitizeNameInput } from '../../utils/nameInput';
-import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, canonicalSriLankanPhoneDigits } from '../../utils/sriLankanPhone';
+import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid } from '../../utils/sriLankanPhone';
 import { getStoredToken } from '../../utils/authStorage';
 import { showToast } from '../../utils/toast';
 import {
@@ -723,12 +723,6 @@ function ProfilePageContent() {
     };
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    /** Canonical 94… digits for the phone saved when Edit Basic Details was opened; used to require OTP when the number changes. */
-    const [editModalPhoneBaselineCanonical, setEditModalPhoneBaselineCanonical] = useState('');
-    const [phoneChangeCode, setPhoneChangeCode] = useState('');
-    const [phoneChangeBusy, setPhoneChangeBusy] = useState<'send' | 'confirm' | null>(null);
-    /** After successful ConfirmPhoneChange, canonical digits that are allowed without re-verify until the field changes again. */
-    const [phoneVerifiedCanonical, setPhoneVerifiedCanonical] = useState<string | null>(null);
     /** URL for HoroscopeLightbox — primary or secondary document. */
     const [horoscopeViewSrc, setHoroscopeViewSrc] = useState<string | null>(null);
     const profileCompletionModalScrollRef = useRef<HTMLDivElement>(null);
@@ -1033,47 +1027,77 @@ function ProfilePageContent() {
 
                 const formatListTime = (v: unknown): string =>
                     formatDeviceDateTime(v, { dateStyle: 'short', timeStyle: 'short' });
-                const details =
-                    uniqueIds.length === 0
-                        ? []
-                        : await Promise.all(
-                              uniqueIds.map(async (profileId) => {
-                                  try {
-                                      const profileRes = await matrimonialService.getProfile(profileId);
-                                      if (profileRes?.statusCode === 200 && profileRes?.result) {
-                                          const p = profileRes.result;
-                                          const resolvedUserId = p.UserId || p.userId || profileId;
-                                          return {
-                                              requestedId: profileId,
-                                              id: resolvedUserId,
-                                              userId: resolvedUserId,
-                                              firstName: p.FirstName || p.firstName || 'User',
-                                              lastName: p.LastName || p.lastName || '',
-                                              age: p.Age || p.age || 0,
-                                              cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
-                                              profilePhoto:
-                                                  p.ProfilePhoto ||
-                                                  p.profilePhoto ||
-                                                  p.ProfilePhotoFromProfile ||
-                                                  p.profilePhotoFromProfile ||
-                                                  '',
-                                              phoneNumber: p.PhoneNumber || p.phoneNumber || '',
-                                          };
-                                      }
-                                  } catch {
-                                      // Ignore one-off profile fetch failures.
-                                  }
-                                  return null;
-                              })
-                          );
 
-                const filled = details.filter(Boolean) as any[];
+                const mapCard = (p: Record<string, unknown>, requestedId?: number) => {
+                    const resolvedUserId = Number(p.UserId ?? p.userId ?? p.Id ?? p.id ?? requestedId ?? 0);
+                    if (!Number.isFinite(resolvedUserId) || resolvedUserId <= 0) return null;
+                    return {
+                        requestedId: requestedId ?? resolvedUserId,
+                        id: resolvedUserId,
+                        userId: resolvedUserId,
+                        firstName: String(p.FirstName ?? p.firstName ?? 'User'),
+                        lastName: String(p.LastName ?? p.lastName ?? ''),
+                        age: Number(p.Age ?? p.age ?? 0) || 0,
+                        cityOfResidence: String(p.CityOfResidence ?? p.cityOfResidence ?? 'Unknown'),
+                        profilePhoto: String(
+                            p.ProfilePhoto ??
+                                p.profilePhoto ??
+                                p.ProfilePhotoFromProfile ??
+                                p.profilePhotoFromProfile ??
+                                ''
+                        ),
+                        phoneNumber: String(p.PhoneNumber ?? p.phoneNumber ?? ''),
+                        gender: String(p.Gender ?? p.gender ?? ''),
+                    };
+                };
 
                 const byUserId = new Map<number, any>();
                 const byRequestedId = new Map<number, any>();
-                for (const pr of filled) {
-                    if (pr?.userId != null) byUserId.set(Number(pr.userId), pr);
-                    if (pr?.requestedId != null) byRequestedId.set(Number(pr.requestedId), pr);
+                if (uniqueIds.length > 0) {
+                    try {
+                        const cardsRes = await matrimonialService.getProfileCards(
+                            uniqueIds,
+                            Number(user.id)
+                        );
+                        const rawCards =
+                            cardsRes?.result?.profiles ??
+                            cardsRes?.result?.Profiles ??
+                            cardsRes?.Profiles ??
+                            [];
+                        if (Array.isArray(rawCards)) {
+                            for (const raw of rawCards) {
+                                const pr = mapCard(raw as Record<string, unknown>);
+                                if (!pr) continue;
+                                byUserId.set(pr.userId, pr);
+                                byRequestedId.set(pr.userId, pr);
+                                byRequestedId.set(pr.requestedId, pr);
+                            }
+                        }
+                    } catch {
+                        // Fall back below if batch endpoint unavailable.
+                    }
+                }
+                // Fallback: only fetch ids still missing (legacy servers without GetProfileCards).
+                const stillMissing = uniqueIds.filter((id) => !byUserId.has(id) && !byRequestedId.has(id));
+                if (stillMissing.length > 0) {
+                    const details = await Promise.all(
+                        stillMissing.map(async (profileId) => {
+                            try {
+                                const profileRes = await matrimonialService.getProfile(profileId);
+                                if (profileRes?.statusCode === 200 && profileRes?.result) {
+                                    return mapCard(profileRes.result as Record<string, unknown>, profileId);
+                                }
+                            } catch {
+                                // Ignore one-off profile fetch failures.
+                            }
+                            return null;
+                        })
+                    );
+                    for (const pr of details.filter(Boolean) as any[]) {
+                        byUserId.set(Number(pr.userId), pr);
+                        byRequestedId.set(Number(pr.requestedId), pr);
+                        byRequestedId.set(Number(pr.userId), pr);
+                    }
                 }
 
                 const toMs = (v: unknown): number => apiInstantToMs(v);
@@ -1161,43 +1185,55 @@ function ProfilePageContent() {
                         isInterestBack: isInterestBackNotification(n as Record<string, unknown>),
                     });
                 }
-                const missingIncomingIds = incomingRowsMeta.map((m) => m.refId).filter((id) => !byUserId.has(id));
+                const missingIncomingIds = incomingRowsMeta
+                    .map((m) => m.refId)
+                    .filter((id) => !byUserId.has(id) && !byRequestedId.has(id));
                 if (missingIncomingIds.length > 0) {
-                    const extraIncoming = await Promise.all(
-                        missingIncomingIds.map(async (profileId) => {
-                            try {
-                                const profileRes = await matrimonialService.getProfile(profileId);
-                                if (profileRes?.statusCode === 200 && profileRes?.result) {
-                                    const p = profileRes.result;
-                                    const resolvedUserId = p.UserId || p.userId || profileId;
-                                    return {
-                                        requestedId: profileId,
-                                        id: resolvedUserId,
-                                        userId: resolvedUserId,
-                                        firstName: p.FirstName || p.firstName || 'User',
-                                        lastName: p.LastName || p.lastName || '',
-                                        age: p.Age || p.age || 0,
-                                        cityOfResidence: p.CityOfResidence || p.cityOfResidence || 'Unknown',
-                                        profilePhoto:
-                                            p.ProfilePhoto ||
-                                            p.profilePhoto ||
-                                            p.ProfilePhotoFromProfile ||
-                                            p.profilePhotoFromProfile ||
-                                            '',
-                                    };
-                                }
-                            } catch {
-                                // ignore single profile failure
+                    try {
+                        const cardsRes = await matrimonialService.getProfileCards(
+                            missingIncomingIds,
+                            Number(user.id)
+                        );
+                        const rawCards =
+                            cardsRes?.result?.profiles ??
+                            cardsRes?.result?.Profiles ??
+                            [];
+                        if (Array.isArray(rawCards)) {
+                            for (const raw of rawCards) {
+                                const pr = mapCard(raw as Record<string, unknown>);
+                                if (!pr) continue;
+                                byUserId.set(pr.userId, pr);
+                                byRequestedId.set(pr.userId, pr);
+                                byRequestedId.set(pr.requestedId, pr);
                             }
-                            return null;
-                        })
+                        }
+                    } catch {
+                        // ignore batch failure for incoming extras
+                    }
+                    const stillMissingIncoming = missingIncomingIds.filter(
+                        (id) => !byUserId.has(id) && !byRequestedId.has(id)
                     );
-                    for (const pr of extraIncoming.filter(Boolean) as any[]) {
-                        if (pr?.userId != null) byUserId.set(Number(pr.userId), pr);
-                        if (pr?.requestedId != null) {
-                            const rid = Number(pr.requestedId);
-                            byRequestedId.set(rid, pr);
-                            byUserId.set(rid, pr);
+                    if (stillMissingIncoming.length > 0) {
+                        const extraIncoming = await Promise.all(
+                            stillMissingIncoming.map(async (profileId) => {
+                                try {
+                                    const profileRes = await matrimonialService.getProfile(profileId);
+                                    if (profileRes?.statusCode === 200 && profileRes?.result) {
+                                        return mapCard(
+                                            profileRes.result as Record<string, unknown>,
+                                            profileId
+                                        );
+                                    }
+                                } catch {
+                                    // ignore single profile failure
+                                }
+                                return null;
+                            })
+                        );
+                        for (const pr of extraIncoming.filter(Boolean) as any[]) {
+                            byUserId.set(Number(pr.userId), pr);
+                            byRequestedId.set(Number(pr.requestedId), pr);
+                            byUserId.set(Number(pr.requestedId), pr);
                         }
                     }
                 }
@@ -2082,29 +2118,7 @@ function ProfilePageContent() {
             ...prev,
             [name]: nextValue
         }));
-        if (name === 'phone') {
-            setPhoneVerifiedCanonical((prev) => {
-                if (prev == null) return null;
-                return canonicalSriLankanPhoneDigits(nextValue) === prev ? prev : null;
-            });
-        }
     };
-
-    /** Tracks whether Edit Basic Details is already open so we only reset OTP state when the modal opens, not when user.phone updates after verify. */
-    const editModalWasOpenRef = useRef(false);
-
-    useEffect(() => {
-        if (isEditModalOpen) {
-            if (!editModalWasOpenRef.current) {
-                setEditModalPhoneBaselineCanonical(canonicalSriLankanPhoneDigits(user?.phone || ''));
-                setPhoneChangeCode('');
-                setPhoneVerifiedCanonical(null);
-            }
-            editModalWasOpenRef.current = true;
-        } else {
-            editModalWasOpenRef.current = false;
-        }
-    }, [isEditModalOpen, user?.phone]);
 
     useEffect(() => {
         if (!isCreateSubAccountModalOpen) return;
@@ -2402,16 +2416,6 @@ function ProfilePageContent() {
                                             return;
                                         }
 
-                                        const canonicalNow = canonicalSriLankanPhoneDigits(editForm.phone);
-                                        const phoneNeedsVerify = canonicalNow !== editModalPhoneBaselineCanonical;
-                                        if (phoneNeedsVerify && phoneVerifiedCanonical !== canonicalNow) {
-                                            showToast(
-                                                'Verify your new phone number with the WhatsApp code sent to that number before saving.',
-                                                'error'
-                                            );
-                                            return;
-                                        }
-
                                         const token = getStoredToken();
                                         if (!token || !user?.id) {
                                             throw new Error('Please login again to save changes');
@@ -2573,78 +2577,6 @@ function ProfilePageContent() {
                                     <div className="form-group">
                                         <label>Phone Number</label>
                                         <input type="tel" name="phone" value={editForm.phone} onChange={handleEditChange} />
-                                        {(() => {
-                                            const cNow = canonicalSriLankanPhoneDigits(editForm.phone);
-                                            const needsVerify = cNow !== editModalPhoneBaselineCanonical;
-                                            if (!needsVerify || !editForm.phone.trim()) return null;
-                                            const verified = phoneVerifiedCanonical === cNow;
-                                            const phoneInvalid = !!sriLankanPhoneFormatErrorIfInvalid(editForm.phone, 'Phone number');
-                                            return (
-                                                <div style={{ marginTop: '0.6rem', padding: '0.75rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                                    <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: '#334155' }}>
-                                                        {verified
-                                                            ? 'New number verified. You can save your changes.'
-                                                            : 'A 6-digit code is sent to this number on WhatsApp. Confirm it before you save.'}
-                                                    </p>
-                                                    {!verified && (
-                                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                                                            <button
-                                                                type="button"
-                                                                className="btn btn-secondary"
-                                                                disabled={phoneChangeBusy !== null || phoneInvalid}
-                                                                onClick={async () => {
-                                                                    setPhoneChangeBusy('send');
-                                                                    try {
-                                                                        await matrimonialService.requestPhoneChangeOtp(editForm.phone);
-                                                                        showToast('Code sent to the new number on WhatsApp.', 'success');
-                                                                    } catch (err) {
-                                                                        showToast(err instanceof Error ? err.message : 'Could not send code', 'error');
-                                                                    } finally {
-                                                                        setPhoneChangeBusy(null);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {phoneChangeBusy === 'send' ? 'Sending…' : 'Send WhatsApp code'}
-                                                            </button>
-                                                            <input
-                                                                type="text"
-                                                                inputMode="numeric"
-                                                                autoComplete="one-time-code"
-                                                                placeholder="6-digit code"
-                                                                value={phoneChangeCode}
-                                                                onChange={(e) => setPhoneChangeCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                                                style={{ width: '7.5rem', padding: '0.35rem 0.5rem' }}
-                                                            />
-                                                            <button
-                                                                type="button"
-                                                                className="btn btn-primary"
-                                                                disabled={phoneChangeBusy !== null || phoneChangeCode.length !== 6}
-                                                                onClick={async () => {
-                                                                    setPhoneChangeBusy('confirm');
-                                                                    try {
-                                                                        const res = await matrimonialService.confirmPhoneChange(phoneChangeCode);
-                                                                        const raw = res.result?.phoneNumber ?? '';
-                                                                        setPhoneVerifiedCanonical(canonicalSriLankanPhoneDigits(raw || editForm.phone));
-                                                                        if (raw) {
-                                                                            setEditForm((p) => ({ ...p, phone: raw }));
-                                                                        }
-                                                                        updateUser({ phone: raw || editForm.phone });
-                                                                        showToast(res.message || 'Phone number verified.', 'success');
-                                                                        setPhoneChangeCode('');
-                                                                    } catch (err) {
-                                                                        showToast(err instanceof Error ? err.message : 'Invalid code', 'error');
-                                                                    } finally {
-                                                                        setPhoneChangeBusy(null);
-                                                                    }
-                                                                }}
-                                                            >
-                                                                {phoneChangeBusy === 'confirm' ? 'Checking…' : 'Confirm'}
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
                                     </div>
                                     <div className="form-group">
                                         <label>WhatsApp Number</label>
@@ -3973,16 +3905,6 @@ function ProfilePageContent() {
                                         </div>
                                     );})}
                                 </div>
-                                {!isManagedSubAccount(user) && (
-                                    <button
-                                        type="button"
-                                        className="btn btn-outline"
-                                        style={{ marginTop: '1rem', width: '100%', justifyContent: 'center' }}
-                                        onClick={() => router.push('/profiles')}
-                                    >
-                                        Browse profiles
-                                    </button>
-                                )}
                             </>
                         )}
                     </div>
@@ -4108,24 +4030,11 @@ function ProfilePageContent() {
                                             Saved{filteredSavedProfiles.length > 0 ? ` (${filteredSavedProfiles.length})` : ''}
                                         </h4>
                                         {filteredSavedProfiles.length === 0 ? (
-                                            <>
-                                                <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>
-                                                    {showInterestProfileTabs && activeInterestSubAccount
-                                                        ? `No saved profiles for ${subAccountDisplayName(activeInterestSubAccount)} yet.`
-                                                        : "You haven't saved any profiles yet."}
-                                                </p>
-                                                {!isManagedSubAccount(user) &&
-                                                    !(filteredSavedProfiles.length === 0 && filteredInterestProfiles.length === 0) && (
-                                                    <button
-                                                        type="button"
-                                                        className="btn btn-outline"
-                                                        style={{ marginTop: '0.75rem', width: '100%', justifyContent: 'center' }}
-                                                        onClick={() => router.push('/profiles')}
-                                                    >
-                                                        Browse Profiles
-                                                    </button>
-                                                )}
-                                            </>
+                                            <p style={{ color: '#666', fontSize: '0.9rem', marginTop: 0 }}>
+                                                {showInterestProfileTabs && activeInterestSubAccount
+                                                    ? `No saved profiles for ${subAccountDisplayName(activeInterestSubAccount)} yet.`
+                                                    : "You haven't saved any profiles yet."}
+                                            </p>
                                         ) : (
                                             <div
                                                 style={{

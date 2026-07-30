@@ -1220,7 +1220,12 @@ function MessagesContent() {
                 refreshInbox();
                 const normalized = normalizeChatMessage(res.result as Record<string, unknown>);
                 if (normalized) {
-                    setMessages((prev) => [...prev, normalized]);
+                    // SignalR may already have echoed this message to the sender — upsert by id.
+                    setMessages((prev) => {
+                        const id = Number(normalized.id);
+                        if (id > 0 && prev.some((m) => Number(m.id) === id)) return prev;
+                        return [...prev, normalized];
+                    });
                     scrollToBottom();
                 }
                 showToast('Horoscope shared', 'success');
@@ -1698,14 +1703,14 @@ function MessagesContent() {
                                                     <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${
                                                         isDeleted
                                                             ? (isMe
-                                                                ? 'bg-primary/25 text-white/80 rounded-2xl rounded-tr-sm border border-white/15'
+                                                                ? 'bg-primary/15 text-slate-600 rounded-2xl rounded-tr-sm border border-primary/25'
                                                                 : 'bg-slate-50 text-text-light rounded-2xl rounded-tl-sm border border-slate-200')
                                                             : (isMe
                                                                 ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl rounded-tr-sm'
                                                                 : 'bg-white text-text-dark rounded-2xl rounded-tl-sm border border-gold/10')
                                                         }`}>
                                                         {isDeleted ? (
-                                                            <p className="m-0 text-[0.9rem] leading-relaxed italic opacity-90">
+                                                            <p className="m-0 text-[0.9rem] leading-relaxed italic">
                                                                 This message was deleted
                                                             </p>
                                                         ) : horoscopeShare ? (

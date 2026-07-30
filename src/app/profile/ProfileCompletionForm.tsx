@@ -74,7 +74,8 @@ function OptionMultiSelect({
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [menuBox, setMenuBox] = useState<{
-        top: number;
+        top?: number;
+        bottom?: number;
         left: number;
         width: number;
         maxHeight: number;
@@ -92,12 +93,17 @@ function OptionMultiSelect({
         const spaceAbove = rect.top - gap - 12;
         const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
         const maxHeight = Math.max(160, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
-        setMenuBox({
-            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
-            left: rect.left,
-            width: rect.width,
-            maxHeight,
-        });
+        // Anchor with bottom when opening above so short lists stay flush with the trigger.
+        setMenuBox(
+            preferBelow
+                ? { top: rect.bottom + gap, left: rect.left, width: rect.width, maxHeight }
+                : {
+                      bottom: window.innerHeight - rect.top + gap,
+                      left: rect.left,
+                      width: rect.width,
+                      maxHeight,
+                  }
+        );
     }, []);
 
     useLayoutEffect(() => {
@@ -151,6 +157,7 @@ function OptionMultiSelect({
                       style={{
                           position: 'fixed',
                           top: menuBox.top,
+                          bottom: menuBox.bottom,
                           left: menuBox.left,
                           width: menuBox.width,
                           maxHeight: menuBox.maxHeight,
@@ -366,7 +373,13 @@ function CityAutocomplete({
     disabled?: boolean;
 }) {
     const [open, setOpen] = useState(false);
-    const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+    const [menuBox, setMenuBox] = useState<{
+        top?: number;
+        bottom?: number;
+        left: number;
+        width: number;
+        maxHeight: number;
+    } | null>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
@@ -381,12 +394,17 @@ function CityAutocomplete({
         const spaceAbove = rect.top - gap - 12;
         const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
         const maxHeight = Math.max(140, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
-        setMenuBox({
-            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
-            left: rect.left,
-            width: rect.width,
-            maxHeight,
-        });
+        // Anchor with bottom when opening above so short suggestion lists stay flush with the input.
+        setMenuBox(
+            preferBelow
+                ? { top: rect.bottom + gap, left: rect.left, width: rect.width, maxHeight }
+                : {
+                      bottom: window.innerHeight - rect.top + gap,
+                      left: rect.left,
+                      width: rect.width,
+                      maxHeight,
+                  }
+        );
     }, []);
 
     useLayoutEffect(() => {
@@ -471,6 +489,7 @@ function CityAutocomplete({
                   style={{
                       position: 'fixed',
                       top: menuBox.top,
+                      bottom: menuBox.bottom,
                       left: menuBox.left,
                       width: menuBox.width,
                       zIndex: 10050,
@@ -615,7 +634,8 @@ function CountryMultiSelect({
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [menuBox, setMenuBox] = useState<{
-        top: number;
+        top?: number;
+        bottom?: number;
         left: number;
         width: number;
         maxHeight: number;
@@ -633,12 +653,17 @@ function CountryMultiSelect({
         const spaceAbove = rect.top - gap - 12;
         const preferBelow = spaceBelow >= 160 || spaceBelow >= spaceAbove;
         const maxHeight = Math.max(160, Math.min(280, preferBelow ? spaceBelow : spaceAbove));
-        setMenuBox({
-            top: preferBelow ? rect.bottom + gap : Math.max(8, rect.top - gap - maxHeight),
-            left: rect.left,
-            width: rect.width,
-            maxHeight,
-        });
+        // Anchor with bottom when opening above so short search results stay flush with the trigger.
+        setMenuBox(
+            preferBelow
+                ? { top: rect.bottom + gap, left: rect.left, width: rect.width, maxHeight }
+                : {
+                      bottom: window.innerHeight - rect.top + gap,
+                      left: rect.left,
+                      width: rect.width,
+                      maxHeight,
+                  }
+        );
     }, []);
 
     useLayoutEffect(() => {
@@ -693,6 +718,7 @@ function CountryMultiSelect({
                       style={{
                           position: 'fixed',
                           top: menuBox.top,
+                          bottom: menuBox.bottom,
                           left: menuBox.left,
                           width: menuBox.width,
                           maxHeight: menuBox.maxHeight,
