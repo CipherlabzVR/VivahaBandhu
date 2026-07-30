@@ -28,6 +28,7 @@ import {
     BANK_TRANSFER_REJECTED_BANNER_TITLE,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+    clearBankTransferUiState,
     clearPendingBankSubAccountFlag,
     setBankTransferResultBanner,
 } from '../../constants/premiumActivation';
@@ -1101,11 +1102,18 @@ function ProfilePageContent() {
                 const sortedFav = Array.isArray(favAct)
                     ? [...favAct].sort((a, b) => toMs(b.createdAt ?? b.CreatedAt) - toMs(a.createdAt ?? a.CreatedAt))
                     : [];
-                const mutualByTargetUserId = new Map<number, boolean>();
+                // Key mutual by managed sub + target so sibling sub-accounts stay independent.
+                const mutualByManagedAndTarget = new Map<string, boolean>();
                 for (const row of sortedFav) {
                     const uid = Number(row.profileUserId ?? row.ProfileUserId);
                     if (!Number.isFinite(uid)) continue;
-                    mutualByTargetUserId.set(uid, !!(row.isMutual ?? row.IsMutual));
+                    const managedRaw = Number(row.managedProfileUserId ?? row.ManagedProfileUserId);
+                    const managedKey =
+                        Number.isFinite(managedRaw) && managedRaw > 0 ? String(managedRaw) : 'self';
+                    mutualByManagedAndTarget.set(
+                        `${managedKey}-${uid}`,
+                        !!(row.isMutual ?? row.IsMutual),
+                    );
                 }
                 const interestList: any[] = [];
                 for (const row of sortedFav) {
@@ -1197,12 +1205,18 @@ function ProfilePageContent() {
                 for (const row of incomingRowsMeta) {
                     const pr = byUserId.get(row.refId) ?? byRequestedId.get(row.refId);
                     if (!pr) continue;
+                    const managedKey =
+                        row.managedProfileUserId != null &&
+                        Number.isFinite(Number(row.managedProfileUserId)) &&
+                        Number(row.managedProfileUserId) > 0
+                            ? String(Number(row.managedProfileUserId))
+                            : 'self';
                     incomingInterestList.push({
                         ...pr,
                         managedProfileUserId: row.managedProfileUserId,
                         interestedAtLabel: row.atLabel,
                         isInterestBack: row.isInterestBack,
-                        isMutual: mutualByTargetUserId.get(row.refId) ?? false,
+                        isMutual: mutualByManagedAndTarget.get(`${managedKey}-${row.refId}`) ?? false,
                     });
                 }
                 setIncomingInterestProfiles(incomingInterestList);
@@ -1813,6 +1827,7 @@ function ProfilePageContent() {
             setIsCancellingSubscription(true);
             const res = await matrimonialService.cancelSubscription(Number(user.id));
             if (res?.statusCode === 200 || res?.statusCode === 1) {
+                clearBankTransferUiState();
                 updateUser?.({
                     isSubscribed: false,
                     subscriptionCancelled: false,
@@ -4270,11 +4285,13 @@ function ProfilePageContent() {
                                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>Interest sent {p.interestedAtLabel}</div>
                                                             ) : null}
                                                         </div>
-                                                        <ProfileListRemoveButton
-                                                            ariaLabel={`Remove interest in ${p.firstName} ${p.lastName}`}
-                                                            removing={removingInteractionKey === `interest-${interactionProfileId(p)}`}
-                                                            onRemove={(e) => handleRemoveFromInterest(e, p)}
-                                                        />
+                                                        {!p.isMutual ? (
+                                                            <ProfileListRemoveButton
+                                                                ariaLabel={`Remove interest in ${p.firstName} ${p.lastName}`}
+                                                                removing={removingInteractionKey === `interest-${interactionProfileId(p)}`}
+                                                                onRemove={(e) => handleRemoveFromInterest(e, p)}
+                                                            />
+                                                        ) : null}
                                                         <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
                                                     </div>
                                                 );})}

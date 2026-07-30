@@ -20,6 +20,7 @@ import {
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
     SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
     clearBankTransferResultBanner,
+    clearBankTransferUiState,
     setPendingBankPremiumFlag,
     setPendingBankSubAccountFlag,
 } from '../../../constants/premiumActivation';
@@ -276,6 +277,8 @@ export default function SubscriptionCheckoutPage() {
                 isSlotPlan ? parseFloat(amount) : undefined,
             );
             if (res?.statusCode === 200 || res?.statusCode === 1) {
+                // Card/other paid paths must never leave bank-transfer banners or pending flags.
+                clearBankTransferUiState();
                 if (isSlotPlan) {
                     const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
                     applySubAccountSlotPatch(r);
@@ -384,7 +387,7 @@ export default function SubscriptionCheckoutPage() {
                                 ? BANK_TRANSFER_SUB_ACCOUNT_SUBMITTED_MESSAGE
                                 : BANK_TRANSFER_SUBMITTED_MESSAGE,
                             'success',
-                            5500,
+                            4000,
                         );
                         void refreshInterestNotifications();
                         setBankSlipFile(null);

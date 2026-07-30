@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { canConvertToMatchmakerAccountType } from '../utils/matrimonialAccountTypes';
+import { hasPendingBankTransferFlag } from '../constants/premiumActivation';
 import { showToast } from '../utils/toast';
 import { consumePendingSiteHash, endHashScrollGuard, getSiteHashId, prepareSiteHashNavigation } from '../utils/siteHashScroll';
 import { cancelFooterScrollRestore } from '../utils/footerScrollRestore';
@@ -53,6 +54,10 @@ export default function Home() {
     const parentId = user?.parentUserId != null ? Number(user.parentUserId) : 0;
     const isManagedProfile = Number.isFinite(parentId) && parentId > 0;
     if (user && !isManagedProfile && canConvertToMatchmakerAccountType(user.accountType)) {
+      if (hasPendingBankTransferFlag()) {
+        showToast(t('convertToMatchmakerPendingBank'), 'error', 5000);
+        return;
+      }
       setConvertToMatchmakerError(null);
       setShowConvertToMatchmakerConfirm(true);
       return;
@@ -72,6 +77,10 @@ export default function Home() {
     const userId = Number(user.id);
     if (!Number.isFinite(userId) || userId <= 0) {
       setConvertToMatchmakerError(t('convertToMatchmakerFailed'));
+      return;
+    }
+    if (hasPendingBankTransferFlag()) {
+      setConvertToMatchmakerError(t('convertToMatchmakerPendingBank'));
       return;
     }
 

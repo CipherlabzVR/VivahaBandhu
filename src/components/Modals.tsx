@@ -43,6 +43,7 @@ import ProfileAvatar from './ProfileAvatar';
 import { setStoredToken, getStoredToken } from '../utils/authStorage';
 import { PasswordVisibilityToggle, modalPasswordToggleStyle } from './PasswordVisibilityToggle';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
+import { clearBankTransferUiState } from '../constants/premiumActivation';
 import { REGISTER_MATRIMONIAL_ACCOUNT_TYPES } from '../utils/matrimonialAccountTypes';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import ManagedSubAccountActionPicker from './ManagedSubAccountActionPicker';
@@ -58,6 +59,8 @@ import {
 } from '../utils/profileVisitorActions';
 import {
     type FavoriteActivityRow,
+    applyFavoriteToggleToActivity,
+    hasFavoritedTargetForManagedActor,
     mutualInterestBlockMessage,
     resolveManagedProfileIdsWithMutualInterest,
     resolveMutualInterestState,
@@ -774,7 +777,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 showToast(res?.message || 'Could not switch to the free plan.', 'error');
                 return false;
             }
-            const r = (res?.result ?? {}) as Record<string, unknown>;
+            clearBankTransferUiState();
             updateUser?.({
                 isSubscribed: false,
                 subscriptionCancelled: false,
@@ -1017,8 +1020,28 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         () => viewerProfileUserId(selectedProfile),
         [selectedProfile]
     );
-    const isInterestExpressed =
-        interestTargetUserId !== null && interactionFavoriteIds.includes(interestTargetUserId);
+    // Multi-sub managers act per client — don't treat sibling interest as already expressed.
+    const isInterestExpressed = (() => {
+        if (interestTargetUserId == null) return false;
+        if (managedActionPicker.needsManagedPicker) {
+            const activeSubs = managedActionPicker.activeSubAccounts;
+            if (activeSubs.length === 0) return false;
+            if (activeSubs.length === 1) {
+                return hasFavoritedTargetForManagedActor(
+                    interactionFavoriteActivity,
+                    interestTargetUserId,
+                    activeSubs[0]!.id,
+                );
+            }
+            // Multiple subs: interest is per-sub via the picker — keep the CTA as Express Interest.
+            return false;
+        }
+        return hasFavoritedTargetForManagedActor(
+            interactionFavoriteActivity,
+            interestTargetUserId,
+            null,
+        );
+    })();
     const isShortlisted =
         interestTargetUserId !== null && interactionShortlistIds.includes(interestTargetUserId);
 
@@ -2102,18 +2125,35 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         managedActionPicker.runWithManagedAccount('interest', async (managedProfileUserId) => {
             setExpressInterestLoading(true);
             try {
+                const managedId = managedProfileUserIdForApi(managedProfileUserId) ?? null;
+                const wasAlreadyInterested = hasFavoritedTargetForManagedActor(
+                    interactionFavoriteActivity,
+                    targetProfileUserId,
+                    managedId,
+                );
                 const res = await matrimonialService.toggleFavorite(
                     Number(user.id),
                     targetProfileUserId,
-                    managedProfileUserIdForApi(managedProfileUserId)
+                    managedId ?? undefined
                 );
                 if (res.statusCode === 200) {
-                    const wasAlreadyInterested = interactionFavoriteIds.includes(targetProfileUserId);
-                    setInteractionFavoriteIds((prev) =>
-                        wasAlreadyInterested
-                            ? prev.filter((id) => id !== targetProfileUserId)
-                            : [...prev, targetProfileUserId]
+                    const nextActivity = applyFavoriteToggleToActivity(
+                        interactionFavoriteActivity,
+                        targetProfileUserId,
+                        managedId,
+                        wasAlreadyInterested,
                     );
+                    setInteractionFavoriteActivity(nextActivity);
+                    setInteractionFavoriteIds((prev) => {
+                        const stillAny = nextActivity.some(
+                            (row) => Number(row.profileUserId ?? row.ProfileUserId) === targetProfileUserId
+                        );
+                        return stillAny
+                            ? prev.includes(targetProfileUserId)
+                                ? prev
+                                : [...prev, targetProfileUserId]
+                            : prev.filter((id) => id !== targetProfileUserId);
+                    });
                     notifyMatrimonialInteractionsChanged();
                     showInterestToggleToastFromResponse(res?.result ?? res?.Result, wasAlreadyInterested);
                 } else {
@@ -4522,6 +4562,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             <div className="info-item"><label>Smoking Habits</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerSmokingHabits ?? selectedProfile.PartnerSmokingHabits)}</span></div>
                                             <div className="info-item"><label>Religion</label><span>{partnerPreferenceListDisplay(selectedProfile.partnerReligion ?? selectedProfile.PartnerReligion)}</span></div>
                                             <div className="info-item"><label>Ethnicity</label><span>{partnerPreferenceListDisplay(selectedProfile.partnerEthnicity ?? selectedProfile.PartnerEthnicity)}</span></div>
+                                            <div className="info-item"><label>Skin Complexion</label><span>{partnerPreferenceHabitDisplay(selectedProfile.partnerComplexion ?? selectedProfile.PartnerComplexion)}</span></div>
                                             <div className="info-item"><label>Education</label><span>{selectedProfile.partnerQualificationLevel || selectedProfile.PartnerQualificationLevel || 'Not Specified'}</span></div>
                                             <div className="info-item"><label>Country of Origin</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfOrigin ?? selectedProfile.PartnerCountryOfOrigin} /></span></div>
                                             <div className="info-item"><label>Country of Residence</label><span><CountryResidenceDisplay value={selectedProfile.partnerCountryOfResidence ?? selectedProfile.PartnerCountryOfResidence} /></span></div>

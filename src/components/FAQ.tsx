@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function FAQ() {
@@ -28,9 +29,15 @@ export default function FAQ() {
             </div>
 
             <div className="max-w-[1400px] mx-auto grid lg:grid-cols-2 gap-12 items-start">
-                <div>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src="https://images.unsplash.com/photo-1555421689-d68471e189f2?w=400" alt="FAQ" className="w-full rounded-2xl" />
+                <div className="relative w-full aspect-[4/3] overflow-hidden rounded-2xl">
+                    <Image
+                        src="https://images.unsplash.com/photo-1555421689-d68471e189f2?w=800&q=75&auto=format"
+                        alt="FAQ"
+                        fill
+                        sizes="(max-width: 1024px) 100vw, 50vw"
+                        className="object-cover"
+                        loading="lazy"
+                    />
                 </div>
 
                 <div>

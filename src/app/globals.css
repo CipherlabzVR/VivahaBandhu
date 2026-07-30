@@ -1427,18 +1427,18 @@
         .modal-overlay.managed-profile-modal-overlay {
             align-items: center;
             justify-content: center;
-            padding: 1.5rem;
+            padding: 0.75rem;
             backdrop-filter: blur(6px);
             -webkit-backdrop-filter: blur(6px);
         }
 
         .modal.managed-profile-modal {
             max-width: 920px;
-            width: min(920px, calc(100vw - 2rem));
-            max-height: min(90vh, 960px);
+            width: min(920px, calc(100vw - 1.5rem));
+            max-height: min(92vh, 960px);
             height: auto;
             margin: 0;
-            border-radius: 24px;
+            border-radius: 20px;
             box-shadow:
                 0 0 0 1px rgba(0, 0, 0, 0.04),
                 0 20px 25px -5px rgba(0, 0, 0, 0.1),
@@ -1456,21 +1456,22 @@
 
         .modal.managed-profile-modal .modal-header {
             text-align: left;
-            padding: 1.75rem 2rem 1rem;
+            padding: 1.25rem 1.25rem 0.85rem;
             flex-shrink: 0;
             border-bottom: 1px solid #f0ebe3;
             background: linear-gradient(180deg, #fffcf9 0%, #ffffff 100%);
         }
 
         .modal.managed-profile-modal .modal-header h2 {
-            font-size: 1.65rem;
+            font-size: 1.35rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
             letter-spacing: -0.02em;
+            padding-right: 2rem;
         }
 
         .modal.managed-profile-modal .modal-header p {
-            font-size: 0.925rem;
+            font-size: 0.875rem;
             line-height: 1.55;
             max-width: 72ch;
         }
@@ -1481,7 +1482,68 @@
             min-height: 0;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 1.25rem 2rem 2rem;
+            padding: 1rem 1.25rem 1.5rem;
+        }
+
+        .modal.managed-profile-modal .profile-completion-form {
+            padding: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .modal.managed-profile-modal .form-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.1rem 1.25rem;
+            width: 100%;
+            align-items: start;
+        }
+
+        .modal.managed-profile-modal .form-group {
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .modal.managed-profile-modal .form-group input,
+        .modal.managed-profile-modal .form-group select,
+        .modal.managed-profile-modal .form-group textarea {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        @media (min-width: 640px) {
+            .modal-overlay.managed-profile-modal-overlay {
+                padding: 1.5rem;
+            }
+
+            .modal.managed-profile-modal {
+                width: min(920px, calc(100vw - 2rem));
+                border-radius: 24px;
+            }
+
+            .modal.managed-profile-modal .modal-header {
+                padding: 1.75rem 2rem 1rem;
+            }
+
+            .modal.managed-profile-modal .modal-header h2 {
+                font-size: 1.65rem;
+            }
+
+            .modal.managed-profile-modal .modal-header p {
+                font-size: 0.925rem;
+            }
+
+            .modal.managed-profile-modal .modal-body,
+            .modal.managed-profile-modal .modal-scroll-area.modal-body {
+                padding: 1.25rem 2rem 2rem;
+            }
+
+            .modal.managed-profile-modal .form-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         .modal.profile-completion-modal-full .modal-scroll-area.modal-body {

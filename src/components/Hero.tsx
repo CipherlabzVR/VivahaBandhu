@@ -26,6 +26,7 @@ import {
 } from '../utils/browseFiltersFromQuickSearch';
 import { showToast } from '../utils/toast';
 import { clearFooterScrollRestoreIntent } from '../utils/footerScrollRestore';
+import { HERO_LCP_IMG_DESKTOP, HERO_LCP_IMG_MOBILE } from '../constants/heroLcp';
 
 const DEFAULT_HERO_STATS = {
     verifiedProfiles: 50_000,
@@ -35,10 +36,7 @@ const DEFAULT_HERO_STATS = {
 
 /** Eco-quality + width cap so the hero video is not a multi‑MB LCP competitor. */
 const HERO_BG_VIDEO =
-    'https://res.cloudinary.com/dbyuqt5xh/video/upload/q_auto:eco,vc_auto,w_1280,c_limit/v1777450897/Animate_flakes_move_river_202604291348_rszmkk.mp4';
-/** Sized for the couple column — matches layout preload for LCP. */
-const HERO_COUPLE_IMG =
-    'https://res.cloudinary.com/df52tya8p/image/upload/f_auto,q_auto:good,w_960,c_limit/v1777957492/Picsart_26-05-05_10-30-47-506_gxogmo.webp';
+    'https://res.cloudinary.com/dbyuqt5xh/video/upload/q_auto:eco,vc_auto,w_960,c_limit/v1777450897/Animate_flakes_move_river_202604291348_rszmkk.mp4';
 
 interface HeroProps {
     onOpenRegister: () => void;
@@ -372,17 +370,20 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                     <div className="relative z-0 flex min-h-[min(76vh,820px)] items-end justify-center lg:-ml-4 lg:min-h-0 lg:justify-end xl:-ml-8">
                         <div className="relative w-full max-w-3xl translate-x-6 translate-y-12 sm:translate-x-8 sm:translate-y-16 lg:max-w-[min(56rem,100%)] lg:translate-x-8 lg:translate-y-14 xl:max-w-[min(72rem,100%)] xl:translate-x-12 xl:translate-y-12">
                             <div className="pointer-events-none absolute -inset-8 -z-10 rounded-[40%] bg-black/25 blur-3xl lg:-inset-12" aria-hidden />
-                            {/* Plain img (not next/image) so preload href matches the real LCP request. */}
-                            <img
-                                src={HERO_COUPLE_IMG}
-                                alt=""
-                                width={960}
-                                height={1280}
-                                fetchPriority="high"
-                                decoding="async"
-                                className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.14] md:scale-[1.2] lg:scale-[1.28]"
-                                draggable={false}
-                            />
+                            {/* Plain img + picture so preload href matches the real LCP request. */}
+                            <picture>
+                                <source media="(max-width: 767px)" srcSet={HERO_LCP_IMG_MOBILE} />
+                                <img
+                                    src={HERO_LCP_IMG_DESKTOP}
+                                    alt=""
+                                    width={960}
+                                    height={1280}
+                                    fetchPriority="high"
+                                    decoding="async"
+                                    className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.14] md:scale-[1.2] lg:scale-[1.28]"
+                                    draggable={false}
+                                />
+                            </picture>
                             <div className="absolute bottom-4 right-2 z-[1] max-w-[min(100%,280px)] rounded-2xl border border-white/30 bg-text-dark/75 px-4 py-3 shadow-2xl backdrop-blur-md sm:right-4">
                                 <div className="flex items-start gap-3">
                                     <ShieldIcon className="mt-0.5 h-8 w-8 shrink-0 text-primary" />

@@ -19,6 +19,11 @@ import {
     useManagedSubAccountActionPicker,
 } from '../hooks/useManagedSubAccountActionPicker';
 import {
+    applyFavoriteToggleToActivity,
+    hasFavoritedTargetForManagedActor,
+    type FavoriteActivityRow,
+} from '../utils/messagingMutualInterest';
+import {
     filterProfilesForBrowse,
     viewerUserIdForBrowseGenderFilter,
 } from '../utils/selfAccountBrowseGender';
@@ -41,6 +46,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
         Favorites: [],
         Shortlists: [],
     });
+    const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const [actionToast, setActionToast] = useState('');
 
     useEffect(() => {
@@ -86,6 +92,8 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
                         Favorites: res.result.Favorites || res.result.favorites || [],
                         Shortlists: res.result.Shortlists || res.result.shortlists || [],
                     });
+                    const favAct = res.result.FavoriteActivity || res.result.favoriteActivity || [];
+                    setFavoriteActivity(Array.isArray(favAct) ? favAct : []);
                 }
             } catch (error) {
                 console.error('Failed to load interactions', error);
@@ -108,20 +116,37 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
         }
         managedActionPicker.runWithManagedAccount('interest', async (managedProfileUserId) => {
             try {
+                const managedId = managedProfileUserIdForApi(managedProfileUserId) ?? null;
+                const wasAlreadyInterested = hasFavoritedTargetForManagedActor(
+                    favoriteActivity,
+                    profileId,
+                    managedId,
+                );
                 const res = await matrimonialService.toggleFavorite(
                     Number(user.id),
                     profileId,
-                    managedProfileUserIdForApi(managedProfileUserId)
+                    managedId ?? undefined
                 );
                 if (res.statusCode === 200) {
-                    const wasAlreadyInterested = (interactions.Favorites || []).includes(profileId);
+                    const nextActivity = applyFavoriteToggleToActivity(
+                        favoriteActivity,
+                        profileId,
+                        managedId,
+                        wasAlreadyInterested,
+                    );
+                    setFavoriteActivity(nextActivity);
                     setInteractions((prev) => {
+                        const stillAny = nextActivity.some(
+                            (row) => Number(row.profileUserId ?? row.ProfileUserId) === profileId
+                        );
                         const currentFavorites = prev.Favorites || [];
                         return {
                             ...prev,
-                            Favorites: wasAlreadyInterested
-                                ? currentFavorites.filter((id) => id !== profileId)
-                                : [...currentFavorites, profileId],
+                            Favorites: stillAny
+                                ? currentFavorites.includes(profileId)
+                                    ? currentFavorites
+                                    : [...currentFavorites, profileId]
+                                : currentFavorites.filter((id) => id !== profileId),
                         };
                     });
                     showInterestToggleToastFromResponse(res?.result ?? res?.Result, wasAlreadyInterested);

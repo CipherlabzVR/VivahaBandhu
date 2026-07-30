@@ -39,6 +39,7 @@ function parseStatsPayload(payload: unknown): HeroStatsState | null {
 /**
  * Load public hero counters from the API, subscribe to SignalR `ReceiveHeroStatsUpdate`,
  * and refetch periodically if the hub is unavailable.
+ * Network work is deferred until after idle so it does not compete with LCP.
  */
 export function useHeroLiveStats(initial: HeroStatsState): { stats: HeroStatsState } {
     const [stats, setStats] = useState<HeroStatsState>(initial);
@@ -47,6 +48,7 @@ export function useHeroLiveStats(initial: HeroStatsState): { stats: HeroStatsSta
     useEffect(() => {
         let cancelled = false;
         let connection: HubConnection | null = null;
+        let interval: ReturnType<typeof setInterval> | null = null;
 
         const apply = (payload: unknown) => {
             const parsed = parseStatsPayload(payload);
@@ -65,42 +67,64 @@ export function useHeroLiveStats(initial: HeroStatsState): { stats: HeroStatsSta
             setStats(parsed);
         };
 
-        (async () => {
-            try {
-                const res = await matrimonialService.getPublicHeroStats();
-                const r =
-                    (res as { result?: unknown; Result?: unknown }).result ??
-                    (res as { Result?: unknown }).Result;
-                if (r) apply(r);
-            } catch {
-                /* keep initial marketing defaults */
-            }
-        })();
+        const startLiveStats = () => {
+            if (cancelled) return;
 
-        (async () => {
-            try {
-                connection = await connectMatrimonialHub(DEFAULT_API_BASE);
-                connection.on('ReceiveHeroStatsUpdate', apply);
-            } catch {
-                /* polling fallback only */
-            }
-        })();
+            void (async () => {
+                try {
+                    const res = await matrimonialService.getPublicHeroStats();
+                    const r =
+                        (res as { result?: unknown; Result?: unknown }).result ??
+                        (res as { Result?: unknown }).Result;
+                    if (r) apply(r);
+                } catch {
+                    /* keep initial marketing defaults */
+                }
+            })();
 
-        const interval = setInterval(async () => {
-            try {
-                const res = await matrimonialService.getPublicHeroStats();
-                const r =
-                    (res as { result?: unknown; Result?: unknown }).result ??
-                    (res as { Result?: unknown }).Result;
-                if (r) apply(r);
-            } catch {
-                /* ignore */
-            }
-        }, 45000);
+            void (async () => {
+                try {
+                    connection = await connectMatrimonialHub(DEFAULT_API_BASE);
+                    if (cancelled) {
+                        await connection.stop().catch(() => {});
+                        return;
+                    }
+                    connection.on('ReceiveHeroStatsUpdate', apply);
+                } catch {
+                    /* polling fallback only */
+                }
+            })();
+
+            interval = setInterval(async () => {
+                try {
+                    const res = await matrimonialService.getPublicHeroStats();
+                    const r =
+                        (res as { result?: unknown; Result?: unknown }).result ??
+                        (res as { Result?: unknown }).Result;
+                    if (r) apply(r);
+                } catch {
+                    /* ignore */
+                }
+            }, 45000);
+        };
+
+        const w = window as Window & {
+            requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+            cancelIdleCallback?: (id: number) => void;
+        };
+        let idleId: number | undefined;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        if (typeof w.requestIdleCallback === 'function') {
+            idleId = w.requestIdleCallback(startLiveStats, { timeout: 4000 });
+        } else {
+            timeoutId = window.setTimeout(startLiveStats, 2500);
+        }
 
         return () => {
             cancelled = true;
-            clearInterval(interval);
+            if (idleId != null) w.cancelIdleCallback?.(idleId);
+            if (timeoutId != null) window.clearTimeout(timeoutId);
+            if (interval) clearInterval(interval);
             if (connection) {
                 connection.off('ReceiveHeroStatsUpdate');
                 connection.stop().catch(() => {});

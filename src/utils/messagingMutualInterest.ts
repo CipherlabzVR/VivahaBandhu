@@ -41,10 +41,47 @@ function findFavoriteRow(
     });
 }
 
-function stateFromRow(row: FavoriteActivityRow | undefined): MutualInterestState | null {
-    if (!row) return null;
-    if (rowIsMutual(row)) return 'mutual';
-    return 'waiting_for_accept';
+/**
+ * Whether this managed actor (or main account when managed is null) already favorited the target.
+ * Sibling sub-accounts are independent — Sub A's interest does not count for Sub B.
+ */
+export function hasFavoritedTargetForManagedActor(
+    favoriteActivity: FavoriteActivityRow[],
+    targetUserId: number,
+    managedProfileUserId?: number | null,
+): boolean {
+    const target = Number(targetUserId);
+    if (!Number.isFinite(target) || target <= 0) return false;
+    const managedId = readManagedProfileUserId(managedProfileUserId);
+    return favoriteActivity.some((row) => {
+        if (favoriteTargetUserId(row) !== target) return false;
+        return favoriteManagedProfileUserId(row) === managedId;
+    });
+}
+
+/** Optimistic local update after toggleFavorite for a specific managed actor. */
+export function applyFavoriteToggleToActivity(
+    favoriteActivity: FavoriteActivityRow[],
+    targetUserId: number,
+    managedProfileUserId: number | null | undefined,
+    wasAlreadyInterested: boolean,
+): FavoriteActivityRow[] {
+    const target = Number(targetUserId);
+    const managedId = readManagedProfileUserId(managedProfileUserId);
+    if (wasAlreadyInterested) {
+        return favoriteActivity.filter((row) => {
+            if (favoriteTargetUserId(row) !== target) return true;
+            return favoriteManagedProfileUserId(row) !== managedId;
+        });
+    }
+    return [
+        ...favoriteActivity,
+        {
+            profileUserId: target,
+            managedProfileUserId: managedId,
+            isMutual: false,
+        },
+    ];
 }
 
 /**
@@ -68,22 +105,18 @@ export function resolveMutualInterestState(
     if (exact) candidates.push(exact);
 
     if (managedId != null) {
-        const subSelfRow = findFavoriteRow(favoriteActivity, managedId, null);
-        if (subSelfRow) candidates.push(subSelfRow);
-
+        // Only count this managed sub's own rows — never sibling subs or unscoped legacy rows.
         const parentActingRow = findFavoriteRow(favoriteActivity, contact, managedId);
         if (parentActingRow && parentActingRow !== exact) candidates.push(parentActingRow);
-    }
-
-    for (const row of favoriteActivity) {
-        if (!rowIsMutual(row)) continue;
-        const targetId = favoriteTargetUserId(row);
-        const rowManagedId = favoriteManagedProfileUserId(row);
-        if (targetId === contact && (managedId == null || rowManagedId === managedId || rowManagedId == null)) {
-            candidates.push(row);
-        }
-        if (managedId != null && targetId === managedId && rowManagedId == null) {
-            candidates.push(row);
+    } else {
+        // Main / Self account: also accept unscoped rows, and legacy mutuals for this contact.
+        for (const row of favoriteActivity) {
+            if (!rowIsMutual(row)) continue;
+            const targetId = favoriteTargetUserId(row);
+            const rowManagedId = favoriteManagedProfileUserId(row);
+            if (targetId === contact && rowManagedId == null) {
+                candidates.push(row);
+            }
         }
     }
 

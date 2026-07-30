@@ -664,7 +664,6 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         width={240} 
                         height={120}
                         className="h-full w-auto object-contain"
-                        priority
                     />
                 </Link>
                 <nav className="hidden md:flex gap-8 items-center">

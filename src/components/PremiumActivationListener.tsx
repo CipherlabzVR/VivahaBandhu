@@ -12,17 +12,14 @@ import {
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
     applyBankTransferDecision,
+    clearBankTransferUiState,
     getPendingBankTransferSubmittedAt,
     hasPendingBankTransferFlag,
-    setPendingBankPremiumFlag,
-    setPendingBankSubAccountFlag,
 } from '../constants/premiumActivation';
 import { isMatchmakerPaidTier } from '../constants/subscription';
 import {
     isBankTransferApprovedNotification,
     isBankTransferRejectedNotification,
-    isPendingBankTransferReceivedNotification,
-    isSlotBankTransferReceivedNotification,
     notificationCreatedAtMs,
 } from '../utils/matrimonialInterestNotifications';
 
@@ -91,24 +88,10 @@ async function fetchMatrimonialSubscriptionSnapshot(
     };
 }
 
-function rehydratePendingFlagsFromNotifications(notifications: Record<string, unknown>[]): void {
-    for (const n of notifications) {
-        if (!isPendingBankTransferReceivedNotification(n)) continue;
-        const at = notificationCreatedAtMs(n) || Date.now();
-        if (isSlotBankTransferReceivedNotification(n)) {
-            setPendingBankSubAccountFlag(at);
-        } else {
-            setPendingBankPremiumFlag(at);
-        }
-    }
-}
-
-function shouldClearPendingForRejections(rejected: Record<string, unknown>[]): boolean {
+function shouldApplyPendingRejection(rejected: Record<string, unknown>[]): boolean {
     if (rejected.length === 0) return false;
-    if (!hasPendingBankTransferFlag()) {
-        // Still show rejected banner from a live reject even if local pending flag was lost.
-        return true;
-    }
+    // Only when the user actually submitted a slip (checkout sets localStorage).
+    if (!hasPendingBankTransferFlag()) return false;
     const pendingAt = getPendingBankTransferSubmittedAt();
     if (pendingAt <= 0) return true;
     const newestReject = Math.max(...rejected.map((n) => notificationCreatedAtMs(n)));
@@ -159,7 +142,7 @@ export default function PremiumActivationListener() {
                 sessionStorage.getItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY) !== '1'
             ) {
                 sessionStorage.setItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY, '1');
-                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
+                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 4000);
             }
         },
         [refreshInterestNotifications, syncSubscriptionFromServer]
@@ -170,7 +153,7 @@ export default function PremiumActivationListener() {
         void refreshInterestNotifications();
         if (sessionStorage.getItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY) !== '1') {
             sessionStorage.setItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY, '1');
-            showToast(BANK_TRANSFER_REJECTED_MESSAGE, 'error', 6500);
+            showToast(BANK_TRANSFER_REJECTED_MESSAGE, 'error', 4000);
         }
     }, [refreshInterestNotifications]);
 
@@ -186,6 +169,9 @@ export default function PremiumActivationListener() {
             String(user?.matchmakerTier ?? 'FREE').toUpperCase() === 'FREE';
         if (isFreeMatchmaker) return;
 
+        // Bank-transfer UI only when a slip is pending — ignore card/other premium events.
+        if (!hasPendingBankTransferFlag()) return;
+
         const approved = interestNotifications.filter((n) =>
             isBankTransferApprovedNotification(n as Record<string, unknown>)
         );
@@ -194,8 +180,7 @@ export default function PremiumActivationListener() {
             if (!handledDecisionIdsRef.current.has(`a:${key}`)) {
                 handledDecisionIdsRef.current.add(`a:${key}`);
                 const fromPendingPremium =
-                    localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1' ||
-                    user?.isSubscribed !== true;
+                    localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
                 void applyApprovedDecision(fromPendingPremium);
             }
             return;
@@ -204,20 +189,12 @@ export default function PremiumActivationListener() {
         const rejected = interestNotifications.filter((n) =>
             isBankTransferRejectedNotification(n as Record<string, unknown>)
         ) as Record<string, unknown>[];
-        if (rejected.length > 0 && shouldClearPendingForRejections(rejected)) {
+        if (rejected.length > 0 && shouldApplyPendingRejection(rejected)) {
             const key = String(rejected[0].id ?? rejected[0].Id ?? 'rejected');
             if (!handledDecisionIdsRef.current.has(`r:${key}`)) {
                 handledDecisionIdsRef.current.add(`r:${key}`);
                 applyRejectedDecision();
             }
-            return;
-        }
-
-        const pendingReceived = interestNotifications.filter((n) =>
-            isPendingBankTransferReceivedNotification(n as Record<string, unknown>)
-        );
-        if (pendingReceived.length > 0 && user?.isSubscribed !== true) {
-            rehydratePendingFlagsFromNotifications(pendingReceived as Record<string, unknown>[]);
         }
     }, [
         interestNotifications,
@@ -243,10 +220,20 @@ export default function PremiumActivationListener() {
 
             if (!hasPendingBankTransferFlag()) return;
 
+            const hadPremiumPending = localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
+            // Slot bank transfers are confirmed via slot-count refresh / approve notifications —
+            // never infer approval from isSubscribed alone (user may already be premium).
+            if (!hadPremiumPending) return;
+
             const snap = await fetchMatrimonialSubscriptionSnapshot(Number(uid), token);
             if (!snap?.isSubscribed) return;
 
-            const hadPremiumPending = localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
+            // Already premium before this poll → activated via card/other path, not bank approval.
+            if (wasPaidBeforePoll) {
+                clearBankTransferUiState();
+                return;
+            }
+
             applyBankTransferDecision('approved');
             updateUser({
                 isSubscribed: snap.isSubscribed,
@@ -263,13 +250,9 @@ export default function PremiumActivationListener() {
                 ...(snap.subscriptionExpiresAt ? { subscriptionExpiresAt: snap.subscriptionExpiresAt } : {}),
             });
 
-            if (
-                hadPremiumPending &&
-                !wasPaidBeforePoll &&
-                sessionStorage.getItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY) !== '1'
-            ) {
+            if (sessionStorage.getItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY) !== '1') {
                 sessionStorage.setItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY, '1');
-                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
+                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 4000);
             }
         } catch {
             /* ignore transient network errors */
