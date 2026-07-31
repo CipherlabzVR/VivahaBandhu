@@ -3435,13 +3435,22 @@
 
         .profile-actions-row {
             display: flex;
-            gap: 1rem;
+            align-items: center;
+            gap: 0.65rem;
             margin-bottom: 1rem;
         }
 
         .profile-actions-row .btn {
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
+            padding: calc(0.35rem + 7.5px) 0.85rem;
+            font-size: 0.82rem;
+            line-height: 1.2;
+            min-height: 0;
+            white-space: nowrap;
+            gap: 0.3rem;
+        }
+
+        .profile-actions-row .btn-outline {
+            border-width: 1.5px;
         }
 
         .match-score {

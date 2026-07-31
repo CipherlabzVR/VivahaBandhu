@@ -515,15 +515,49 @@ function RegisterErrorBox({
         borderRadius: '4px',
     };
     const lower = message.toLowerCase();
-    if (!lower.includes('already in progress') || !message.includes(PENDING_REG_CONTINUE_PHRASE)) {
+    const canResume =
+        message.includes(PENDING_REG_CONTINUE_PHRASE) ||
+        lower.includes('already in progress') ||
+        lower.includes('already exists') ||
+        lower.includes('not verified');
+
+    if (!canResume) {
         return <div style={boxStyle}>{message}</div>;
     }
-    const idx = message.indexOf(PENDING_REG_CONTINUE_PHRASE);
-    const before = message.slice(0, idx);
-    const after = message.slice(idx + PENDING_REG_CONTINUE_PHRASE.length);
+
+    if (message.includes(PENDING_REG_CONTINUE_PHRASE)) {
+        const idx = message.indexOf(PENDING_REG_CONTINUE_PHRASE);
+        const before = message.slice(0, idx);
+        const after = message.slice(idx + PENDING_REG_CONTINUE_PHRASE.length);
+        return (
+            <div style={boxStyle}>
+                {before}
+                <button
+                    type="button"
+                    onClick={onContinuePending}
+                    disabled={continueLoading}
+                    style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        color: '#b45309',
+                        fontWeight: 700,
+                        textDecoration: 'underline',
+                        cursor: continueLoading ? 'wait' : 'pointer',
+                        font: 'inherit',
+                    }}
+                >
+                    {PENDING_REG_CONTINUE_PHRASE}
+                </button>
+                {after}
+            </div>
+        );
+    }
+
     return (
         <div style={boxStyle}>
-            {before}
+            <div style={{ marginBottom: '0.5rem' }}>{message}</div>
             <button
                 type="button"
                 onClick={onContinuePending}
@@ -542,7 +576,6 @@ function RegisterErrorBox({
             >
                 {PENDING_REG_CONTINUE_PHRASE}
             </button>
-            {after}
         </div>
     );
 }
@@ -1396,11 +1429,16 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             });
             const resultAny = response.result as Record<string, unknown> | undefined;
             const regSid = resultAny?.registrationSessionId ?? resultAny?.RegistrationSessionId;
+            const resumeUserIdRaw = resultAny?.userId ?? resultAny?.UserId;
+            const resumeUserId =
+                resumeUserIdRaw != null && Number.isFinite(Number(resumeUserIdRaw)) && Number(resumeUserIdRaw) > 0
+                    ? Number(resumeUserIdRaw)
+                    : null;
             const statusCode = response.statusCode;
             const ok =
                 (statusCode === 200 || statusCode === 1) &&
-                !!regSid &&
-                !!resultAny;
+                !!resultAny &&
+                (!!regSid || !!resumeUserId);
 
             if (!ok) {
                 setRegisterError(
@@ -1411,9 +1449,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             }
 
             const resumeFn = (resultAny.firstName ?? resultAny.FirstName) as string | undefined;
-            setRegisteredFirstName(resumeFn && resumeFn.trim().length > 0 ? resumeFn.trim() : firstName);
-            setRegistrationSessionId(String(regSid));
-            setRegisteredUserId(null);
+            setRegisteredFirstName(resumeFn && String(resumeFn).trim().length > 0 ? String(resumeFn).trim() : firstName);
+            setRegistrationSessionId(regSid ? String(regSid) : null);
+            setRegisteredUserId(regSid ? null : resumeUserId);
             setShowVerification(true);
             setCodeSent(false);
             setVerificationMethod('');
@@ -1473,22 +1511,31 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             console.log('Registration check - statusCode:', statusCode, 'hasResult:', hasResult, 'registrationSessionId:', regSid);
 
+            const resumeUserIdRaw = resultAny?.userId ?? resultAny?.UserId;
+            const resumeUserId =
+                resumeUserIdRaw != null && Number.isFinite(Number(resumeUserIdRaw)) && Number(resumeUserIdRaw) > 0
+                    ? Number(resumeUserIdRaw)
+                    : null;
+            const resumeVerification =
+                resultAny?.resumeVerification === true ||
+                resultAny?.ResumeVerification === true ||
+                resultAny?.requiresVerification === true ||
+                resultAny?.RequiresVerification === true;
+
             const isSuccess =
-                (statusCode === 200 || statusCode === 1 || (hasResult && regSid)) &&
+                (statusCode === 200 || statusCode === 1) &&
                 hasResult &&
-                !!regSid;
+                (!!regSid || (!!resumeUserId && resumeVerification));
 
             if (isSuccess) {
-                // Pending registration — verify OTP before account is created on server
-                console.log('Registration pending verification, session:', regSid);
-                const resumeVerification =
-                    resultAny?.resumeVerification === true || resultAny?.ResumeVerification === true;
+                // Pending registration or unverified account — continue OTP before (or to finish) account setup
+                console.log('Registration pending verification, session:', regSid, 'userId:', resumeUserId);
                 const resumeFn = (resultAny?.firstName ?? resultAny?.FirstName) as string | undefined;
                 setRegisteredFirstName(
                     resumeFn && String(resumeFn).trim().length > 0 ? String(resumeFn).trim() : firstName,
                 );
-                setRegistrationSessionId(String(regSid));
-                setRegisteredUserId(null);
+                setRegistrationSessionId(regSid ? String(regSid) : null);
+                setRegisteredUserId(regSid ? null : resumeUserId);
                 setShowVerification(true);
                 setCodeSent(false); // Reset code sent state - user must select method first
                 setVerificationMethod(''); // Reset verification method
@@ -1508,8 +1555,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 // User must select a verification method - no code is sent automatically
             } else {
                 console.error('Registration failed or missing userId. Response:', response);
-                setRegisterError(response.message || 'Registration failed. Please try again.');
+                const failMsg = response.message || 'Registration failed. Please try again.';
+                setRegisterError(failMsg);
                 setShowVerification(false); // Ensure verification screen is not shown on error
+                // Verified "already exists" — offer resume lookup in case a pending session still exists.
+                if (/already exists/i.test(failMsg)) {
+                    setLoginTab('register');
+                }
             }
         } catch (error) {
             // Extract error message properly
@@ -1577,7 +1629,61 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
 
             const statusOk = Number(response.statusCode) === 200 || Number(response.statusCode) === 1;
             if (statusOk && response.result) {
-                // Login successful
+                const resultAny = response.result as unknown as Record<string, unknown>;
+                const needsVerification =
+                    resultAny.requiresVerification === true ||
+                    resultAny.RequiresVerification === true ||
+                    resultAny.resumeVerification === true ||
+                    resultAny.ResumeVerification === true;
+                const resumeSessionId = resultAny.registrationSessionId ?? resultAny.RegistrationSessionId;
+                const resumeUserIdRaw = resultAny.userId ?? resultAny.UserId;
+                const resumeUserId =
+                    resumeUserIdRaw != null &&
+                    Number.isFinite(Number(resumeUserIdRaw)) &&
+                    Number(resumeUserIdRaw) > 0
+                        ? Number(resumeUserIdRaw)
+                        : null;
+
+                // Incomplete signup / unverified account — open verification instead of "no account".
+                if (needsVerification && (resumeSessionId || resumeUserId)) {
+                    const resumeFn = String(resultAny.firstName ?? resultAny.FirstName ?? '').trim();
+                    setRegisteredFirstName(resumeFn || loginEmail.split('@')[0] || '');
+                    setRegistrationSessionId(resumeSessionId ? String(resumeSessionId) : null);
+                    setRegisteredUserId(resumeSessionId ? null : resumeUserId);
+                    setEmail(String(resultAny.email ?? resultAny.Email ?? loginEmail).trim());
+                    setLoginTab('register');
+                    setShowForgotPassword(false);
+                    setShowVerification(true);
+                    setCodeSent(false);
+                    setVerificationMethod('');
+                    setVerificationDigits(EMPTY_VERIFY_DIGITS());
+                    setVerifyResendUnlockAtMs(null);
+                    setVerifyResendTick(0);
+                    setVerificationError(null);
+                    setSendCodeError(null);
+                    setLoginError(null);
+                    setLoginEmailError(null);
+                    setLoginPasswordError(null);
+                    setVerificationResumeHint(
+                        String(response.message || '').trim() ||
+                            'Your account is not verified yet. Choose a method to receive a code and finish verification.',
+                    );
+                    return;
+                }
+
+                // Login successful — require a real signed-in user id + token shape
+                if (resultAny.id == null && resultAny.Id == null) {
+                    const msg = String(response.message || (response as { Message?: string }).Message || '').trim();
+                    applySignInMessageToLoginErrors(
+                        msg || 'Sign-in failed. Please try again.',
+                        setLoginEmailError,
+                        setLoginPasswordError,
+                        setLoginError,
+                        setLoginLockoutUntilMs,
+                    );
+                    return;
+                }
+
                 console.log('Login API response:', response.result);
                 const loginParentId = parentUserIdFromLoginResult(response.result);
                 const signInExtras = mapUserFieldsFromSignInResult(response.result as unknown as Record<string, unknown>);
