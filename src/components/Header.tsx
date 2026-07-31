@@ -343,14 +343,14 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
         return (
             <div
-                className="absolute top-full right-0 mt-2 bg-white p-3 rounded-xl shadow-xl z-[1000] w-[360px] max-h-[min(420px,70vh)] overflow-hidden border border-gray-200 ring-1 ring-black/5 flex flex-col"
+                className="absolute top-full right-0 mt-2 bg-white p-3 rounded-xl shadow-xl z-[1000] w-[min(360px,calc(100vw-1.5rem))] max-h-[min(560px,80vh)] overflow-hidden border border-gray-200 ring-1 ring-black/5 flex flex-col"
                 data-lenis-prevent
                 data-lenis-prevent-wheel
                 data-lenis-prevent-touch
             >
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200 shrink-0">
                     <span className="text-lg" aria-hidden>{isSubPanel ? '👥' : '👤'}</span>
-                    <div className="font-semibold text-sm text-gray-900">
+                    <div className="font-semibold text-sm text-gray-900 min-w-0">
                         {panelTitle}
                         {isSubPanel && showNotificationProfileTabs && activeNotificationSubAccount ? (
                             <span className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -364,7 +364,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         ) : null}
                     </div>
                     {panelNotifications.length > 0 && (
-                        <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-white bg-primary px-2 py-0.5 rounded-full">
+                        <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-white bg-primary px-2 py-0.5 rounded-full shrink-0">
                             {panelNotifications.length} new
                         </span>
                     )}
@@ -426,12 +426,16 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     </div>
                 )}
                 {loadingNotifications ? (
-                    <div className="text-xs text-gray-500 py-6 text-center">Loading...</div>
+                    <div className="text-xs text-gray-500 py-6 text-center shrink-0">Loading...</div>
                 ) : panelNotifications.length === 0 ? (
-                    <div className="text-xs text-gray-500 py-6 text-center">{emptyMessage}</div>
+                    <div className="text-xs text-gray-500 py-6 text-center shrink-0">{emptyMessage}</div>
                 ) : (
                     <div
-                        className="flex flex-col gap-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-0.5"
+                        className={`header-notifications-scroll${
+                            panelNotifications.length >= 3
+                                ? ' header-notifications-scroll--scrollable'
+                                : ''
+                        }`}
                         data-lenis-prevent
                         data-lenis-prevent-wheel
                         data-lenis-prevent-touch
@@ -461,7 +465,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                 return (
                                     <div
                                         key={rowKey}
-                                        className="relative overflow-hidden rounded-xl border border-amber-300 bg-amber-50/60 shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-amber-200 transition-shadow"
+                                        className="relative shrink-0 rounded-xl border border-amber-300 bg-amber-50/60 shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-amber-200 transition-shadow overflow-hidden"
                                     >
                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-l-xl" aria-hidden />
                                         <div className="flex gap-3 pl-4 pr-3 py-3">
@@ -472,10 +476,10 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 👑
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-semibold text-gray-900 leading-tight">
+                                                <div className="text-sm font-semibold text-gray-900 leading-tight break-words">
                                                     {title}
                                                 </div>
-                                                <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                                <p className="text-xs text-gray-600 mt-1 leading-relaxed break-words whitespace-pre-wrap">
                                                     {n.description}
                                                 </p>
                                                 <div className="flex flex-wrap gap-2 mt-3">
@@ -560,7 +564,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                             return (
                                 <div
                                     key={rowKey}
-                                    className="relative overflow-hidden rounded-xl border border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15 transition-shadow"
+                                    className="relative shrink-0 rounded-xl border border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15 transition-shadow overflow-hidden"
                                 >
                                     <div
                                         className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl"
@@ -583,11 +587,11 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                     className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(255,162,13,0.25)]"
                                                     title="New"
                                                 />
-                                                <div>
-                                                    <div className="text-sm font-semibold text-gray-900 leading-tight">
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold text-gray-900 leading-tight break-words">
                                                         {n.title || notificationTitleFallback(n)}
                                                     </div>
-                                                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                                                    <p className="text-xs text-gray-600 mt-1 leading-relaxed break-words whitespace-pre-wrap">
                                                         {n.description ||
                                                             notificationDescriptionFallback(n)}
                                                     </p>

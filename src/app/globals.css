@@ -772,6 +772,48 @@
             box-shadow: 0 15px 40px var(--shadow);
         }
 
+        /* Header notification dropdown: with 3+ items, cap height and show a scrollbar */
+        .header-notifications-scroll {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            min-height: 0;
+            flex: 1 1 auto;
+            overflow-x: hidden;
+            overflow-y: visible;
+            padding-right: 0.15rem;
+            padding-bottom: 0.15rem;
+        }
+
+        .header-notifications-scroll--scrollable {
+            /* ~2 notification cards visible; 3+ requires scroll */
+            max-height: min(340px, 48vh);
+            overflow-y: scroll;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            scrollbar-color: #d4c4b0 #f8f4ef;
+            padding-right: 0.35rem;
+        }
+
+        .header-notifications-scroll--scrollable::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .header-notifications-scroll--scrollable::-webkit-scrollbar-track {
+            background: #f8f4ef;
+            border-radius: 999px;
+        }
+
+        .header-notifications-scroll--scrollable::-webkit-scrollbar-thumb {
+            background: #d4c4b0;
+            border-radius: 999px;
+        }
+
+        .header-notifications-scroll--scrollable::-webkit-scrollbar-thumb:hover {
+            background: #c4b09a;
+        }
+
         /* Managed / matchmaker sub-account lists: show ~3 cards, scroll for more */
         .managed-sub-accounts-scroll {
             display: flex;

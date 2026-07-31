@@ -46,6 +46,7 @@ import {
 } from '@/utils/horoscopeMessageContent';
 import {
     type FavoriteActivityRow,
+    type MutualInterestQuery,
     mutualInterestBlockMessage,
     resolveManagedProfileIdsWithMutualInterest,
     resolveMutualInterestState,
@@ -615,18 +616,22 @@ function MessagesContent() {
         };
     }, [user?.id, selectedContact?.contactId, selectedContact?.managedProfileUserId]);
 
-    const mutualCheckManagedProfileUserId = useMemo(() => {
-        const fromContact = readManagedProfileUserId(selectedContact?.managedProfileUserId);
-        if (fromContact != null) return fromContact;
-        if (isManagedParent && showSubAccountTabs && activeSubAccountId != null) {
-            return activeSubAccountId;
-        }
-        return null;
-    }, [
+    const viewerManagedProfileUserIds = useMemo(
+        () => subAccounts.map((s) => s.id),
+        [subAccounts]
+    );
+
+    const mutualCheckQuery = useMemo<MutualInterestQuery>(() => ({
+        threadManagedProfileUserId: readManagedProfileUserId(selectedContact?.managedProfileUserId),
+        actingManagedProfileUserId:
+            isManagedParent && showSubAccountTabs ? activeSubAccountId : null,
+        viewerManagedProfileUserIds,
+    }), [
         selectedContact?.managedProfileUserId,
         isManagedParent,
         showSubAccountTabs,
         activeSubAccountId,
+        viewerManagedProfileUserIds,
     ]);
 
     const selectedMutualInterestState = useMemo(() => {
@@ -634,9 +639,9 @@ function MessagesContent() {
         return resolveMutualInterestState(
             favoriteActivity,
             selectedContact.contactId,
-            mutualCheckManagedProfileUserId,
+            mutualCheckQuery,
         );
-    }, [selectedContact, favoriteActivity, mutualCheckManagedProfileUserId]);
+    }, [selectedContact, favoriteActivity, mutualCheckQuery]);
 
     const hasMutualInterest = selectedMutualInterestState === 'mutual';
     const mutualInterestNotice = useMemo(() => {

@@ -85,6 +85,60 @@ export function applyFavoriteToggleToActivity(
 }
 
 /**
+ * A managed thread's sub-profile can belong to either side of the conversation, and each side
+ * changes which favorite row proves mutual interest:
+ *  - viewer's own sub  -> the viewer favorited the peer login while acting as that sub
+ *  - peer's sub        -> the viewer favorited the sub itself, and the inbox contact id is the
+ *                         peer's parent login, so the sub is the target rather than the actor
+ */
+export type MutualInterestQuery = {
+    /** Sub-profile attached to the thread; may be owned by the viewer or by the peer. */
+    threadManagedProfileUserId?: number | null;
+    /** Sub-profile the viewer is acting as, used when the thread's sub belongs to the peer. */
+    actingManagedProfileUserId?: number | null;
+    /** Every sub-profile user id the viewer owns; decides whose sub the thread belongs to. */
+    viewerManagedProfileUserIds?: readonly number[];
+};
+
+type FavoriteLookupPair = { targetUserId: number; actorManagedProfileUserId: number | null };
+
+function mutualInterestLookupPairs(
+    contact: number,
+    query: number | null | undefined | MutualInterestQuery,
+): FavoriteLookupPair[] {
+    if (query == null || typeof query === 'number' || typeof query === 'string') {
+        // Legacy signature: the id is always a sub-profile the viewer is acting as.
+        return [{ targetUserId: contact, actorManagedProfileUserId: readManagedProfileUserId(query) }];
+    }
+
+    const threadManagedId = readManagedProfileUserId(query.threadManagedProfileUserId);
+    const actingManagedId = readManagedProfileUserId(query.actingManagedProfileUserId);
+    if (threadManagedId == null) {
+        return [{ targetUserId: contact, actorManagedProfileUserId: actingManagedId }];
+    }
+
+    const ownedIds = (query.viewerManagedProfileUserIds ?? [])
+        .map((id) => readManagedProfileUserId(id))
+        .filter((id): id is number => id != null);
+
+    const viewerSidePair: FavoriteLookupPair = {
+        targetUserId: contact,
+        actorManagedProfileUserId: threadManagedId,
+    };
+    // Peer's sub: the viewer favorited the sub directly, acting as themselves or as their own sub.
+    const peerSidePairs: FavoriteLookupPair[] = [
+        { targetUserId: threadManagedId, actorManagedProfileUserId: actingManagedId },
+        { targetUserId: contact, actorManagedProfileUserId: actingManagedId },
+    ];
+
+    if (ownedIds.length === 0) {
+        // Ownership unknown — accept either shape rather than falsely blocking the thread.
+        return [viewerSidePair, ...peerSidePairs];
+    }
+    return ownedIds.includes(threadManagedId) ? [viewerSidePair] : peerSidePairs;
+}
+
+/**
  * Whether the viewer has mutual interest with a contact for the given managed thread.
  * Handles managed sub-profiles where inbox contact id is the parent login but favorites
  * target the sub profile (or vice versa).
@@ -92,38 +146,26 @@ export function applyFavoriteToggleToActivity(
 export function resolveMutualInterestState(
     favoriteActivity: FavoriteActivityRow[],
     contactId: number,
-    managedProfileUserId?: number | null,
+    managedProfileUserId?: number | null | MutualInterestQuery,
 ): MutualInterestState {
     const contact = Number(contactId);
     if (!Number.isFinite(contact) || contact <= 0) return 'needs_connection';
 
-    const managedId = readManagedProfileUserId(managedProfileUserId);
-
     const candidates: FavoriteActivityRow[] = [];
-
-    const exact = findFavoriteRow(favoriteActivity, contact, managedId);
-    if (exact) candidates.push(exact);
-
-    if (managedId != null) {
-        // Only count this managed sub's own rows — never sibling subs or unscoped legacy rows.
-        const parentActingRow = findFavoriteRow(favoriteActivity, contact, managedId);
-        if (parentActingRow && parentActingRow !== exact) candidates.push(parentActingRow);
-    } else {
-        // Main / Self account: also accept unscoped rows, and legacy mutuals for this contact.
-        for (const row of favoriteActivity) {
-            if (!rowIsMutual(row)) continue;
-            const targetId = favoriteTargetUserId(row);
-            const rowManagedId = favoriteManagedProfileUserId(row);
-            if (targetId === contact && rowManagedId == null) {
-                candidates.push(row);
-            }
-        }
+    for (const pair of mutualInterestLookupPairs(contact, managedProfileUserId)) {
+        if (!Number.isFinite(pair.targetUserId) || pair.targetUserId <= 0) continue;
+        // Only this actor's own rows count — never sibling subs or unscoped legacy rows,
+        // except for the main account which owns the unscoped rows.
+        const row = findFavoriteRow(
+            favoriteActivity,
+            pair.targetUserId,
+            pair.actorManagedProfileUserId,
+        );
+        if (row && !candidates.includes(row)) candidates.push(row);
     }
 
     if (candidates.some(rowIsMutual)) return 'mutual';
-
-    const waiting = candidates.find((row) => row && !rowIsMutual(row));
-    if (waiting) return 'waiting_for_accept';
+    if (candidates.length > 0) return 'waiting_for_accept';
 
     return 'needs_connection';
 }
