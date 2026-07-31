@@ -93,6 +93,17 @@ function interactionProfileId(p: { userId?: number; id?: number; requestedId?: n
     return Number(p.userId ?? p.id ?? p.requestedId);
 }
 
+function interestRemoveKey(p: {
+    userId?: number;
+    id?: number;
+    managedProfileUserId?: number | null;
+    ManagedProfileUserId?: number | null;
+}): string {
+    const managed = Number(p.managedProfileUserId ?? p.ManagedProfileUserId);
+    const managedPart = Number.isFinite(managed) && managed > 0 ? managed : 'self';
+    return `interest-${managedPart}-${interactionProfileId(p)}`;
+}
+
 function ProfileListRemoveButton({
     ariaLabel,
     removing,
@@ -1428,14 +1439,28 @@ function ProfilePageContent() {
         if (!user?.id) return;
         const profileId = interactionProfileId(p);
         if (!Number.isFinite(profileId) || profileId <= 0) return;
-        const key = `interest-${profileId}`;
-        setRemovingInteractionKey(key);
+        const managedRaw = p.managedProfileUserId ?? p.ManagedProfileUserId;
+        const managedId =
+            managedRaw != null && Number.isFinite(Number(managedRaw)) && Number(managedRaw) > 0
+                ? Number(managedRaw)
+                : undefined;
+        setRemovingInteractionKey(interestRemoveKey(p));
         try {
-            const managedId = p.managedProfileUserId ?? p.ManagedProfileUserId ?? undefined;
             const res = await matrimonialService.toggleFavorite(Number(user.id), profileId, managedId);
             if (res?.statusCode === 200) {
-                setInterestProfiles((prev) => prev.filter((x) => interactionProfileId(x) !== profileId));
-                showToast('Interest removed successfully', 'warning');
+                setInterestProfiles((prev) =>
+                    prev.filter((x) => {
+                        if (interactionProfileId(x) !== profileId) return true;
+                        const xManaged = Number(x.managedProfileUserId ?? x.ManagedProfileUserId);
+                        const xKey =
+                            Number.isFinite(xManaged) && xManaged > 0 ? xManaged : undefined;
+                        return xKey !== managedId;
+                    })
+                );
+                showToast(
+                    p.isMutual ? 'Mutual connection removed.' : 'Interest removed successfully',
+                    'warning'
+                );
             } else {
                 showToast(res?.message || 'Could not remove interest.', 'error');
             }
@@ -1918,6 +1943,11 @@ function ProfilePageContent() {
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
     const [showSubAccountPackageModal, setShowSubAccountPackageModal] = useState(false);
+    const [subAccountPendingDelete, setSubAccountPendingDelete] = useState<{
+        id: number;
+        firstName?: string;
+        lastName?: string;
+    } | null>(null);
     const handleDeleteOwnAccount = async () => {
         if (!user?.id) return;
         if (deleteAccountConfirm.trim().toUpperCase() !== 'DELETE') {
@@ -1946,13 +1976,15 @@ function ProfilePageContent() {
     };
     // ─────────────────────────────────────────────────────────────────────────────
 
-    const handleDeleteSubAccount = async (subAccount: { id: number; firstName?: string; lastName?: string }) => {
+    const handleDeleteSubAccount = (subAccount: { id: number; firstName?: string; lastName?: string }) => {
         if (!user?.id || !subAccount?.id) return;
+        setSubAccountPendingDelete(subAccount);
+    };
+
+    const handleConfirmDeleteSubAccount = async () => {
+        if (!user?.id || !subAccountPendingDelete?.id) return;
+        const subAccount = subAccountPendingDelete;
         const fullName = `${subAccount.firstName || ''} ${subAccount.lastName || ''}`.trim() || 'this profile';
-        const confirmed = typeof window !== 'undefined' && window.confirm(
-            `Delete ${fullName}?\n\nThis will permanently remove the profile, photos, messages and saved interactions. This action cannot be undone.`
-        );
-        if (!confirmed) return;
 
         try {
             setDeletingSubAccountId(subAccount.id);
@@ -1989,6 +2021,7 @@ function ProfilePageContent() {
                     }
                 }
                 showToast(`${fullName} has been removed.`, 'success');
+                setSubAccountPendingDelete(null);
             } else {
                 showToast(res?.message || 'Failed to delete profile.', 'error');
             }
@@ -3416,6 +3449,65 @@ function ProfilePageContent() {
                     </div>
                 )}
 
+                {/* Delete managed/sub-account confirmation modal */}
+                {subAccountPendingDelete && (
+                    <div
+                        className="modal-overlay active"
+                        data-lenis-prevent
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="delete-sub-account-title"
+                        style={{ zIndex: 1100 }}
+                    >
+                        <div className="modal" style={{ maxWidth: '480px', width: '95%', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                            <button
+                                type="button"
+                                className="modal-close"
+                                onClick={() => !deletingSubAccountId && setSubAccountPendingDelete(null)}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                            <div className="modal-header">
+                                <h2 id="delete-sub-account-title" style={{ color: '#b91c1c' }}>
+                                    {`Delete ${`${subAccountPendingDelete.firstName || ''} ${subAccountPendingDelete.lastName || ''}`.trim() || 'this profile'}?`}
+                                </h2>
+                            </div>
+                            <ModalScrollArea className="modal-body">
+                                <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
+                                    This will permanently remove the profile, photos, messages and saved interactions. This action cannot be undone.
+                                </p>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    <button
+                                        type="button"
+                                        className="btn btn-outline"
+                                        onClick={() => setSubAccountPendingDelete(null)}
+                                        disabled={!!deletingSubAccountId}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleConfirmDeleteSubAccount()}
+                                        disabled={!!deletingSubAccountId}
+                                        style={{
+                                            padding: '0.6rem 1.1rem',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: deletingSubAccountId ? '#fca5a5' : '#b91c1c',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            cursor: deletingSubAccountId ? 'not-allowed' : 'pointer',
+                                        }}
+                                    >
+                                        {deletingSubAccountId ? 'Deleting…' : 'Delete forever'}
+                                    </button>
+                                </div>
+                            </ModalScrollArea>
+                        </div>
+                    </div>
+                )}
+
                 <SubAccountPackagePickerModal
                     open={showSubAccountPackageModal}
                     onClose={() => setShowSubAccountPackageModal(false)}
@@ -4010,6 +4102,11 @@ function ProfilePageContent() {
                                                         <div style={{ fontWeight: 600, color: '#333' }}>{p.firstName} {p.lastName}</div>
                                                         <div style={{ fontSize: '0.82rem', color: '#047857' }}>Mutual interest — you can message each other</div>
                                                     </div>
+                                                    <ProfileListRemoveButton
+                                                        ariaLabel={`Remove mutual connection with ${p.firstName} ${p.lastName}`}
+                                                        removing={removingInteractionKey === interestRemoveKey(p)}
+                                                        onRemove={(e) => handleRemoveFromInterest(e, p)}
+                                                    />
                                                     <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
                                                 </div>
                                             ))}
@@ -4194,13 +4291,15 @@ function ProfilePageContent() {
                                                                 <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.2rem' }}>Interest sent {p.interestedAtLabel}</div>
                                                             ) : null}
                                                         </div>
-                                                        {!p.isMutual ? (
-                                                            <ProfileListRemoveButton
-                                                                ariaLabel={`Remove interest in ${p.firstName} ${p.lastName}`}
-                                                                removing={removingInteractionKey === `interest-${interactionProfileId(p)}`}
-                                                                onRemove={(e) => handleRemoveFromInterest(e, p)}
-                                                            />
-                                                        ) : null}
+                                                        <ProfileListRemoveButton
+                                                            ariaLabel={
+                                                                p.isMutual
+                                                                    ? `Remove mutual connection with ${p.firstName} ${p.lastName}`
+                                                                    : `Remove interest in ${p.firstName} ${p.lastName}`
+                                                            }
+                                                            removing={removingInteractionKey === interestRemoveKey(p)}
+                                                            onRemove={(e) => handleRemoveFromInterest(e, p)}
+                                                        />
                                                         <span style={{ color: '#bbb', fontSize: '1.1rem', flexShrink: 0 }} aria-hidden>›</span>
                                                     </div>
                                                 );})}

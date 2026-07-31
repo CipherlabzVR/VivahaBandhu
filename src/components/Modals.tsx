@@ -81,6 +81,20 @@ function partnerPreferenceHabitDisplay(v: unknown): string {
 
 }
 
+/** Height is stored in cm (number). Accept camelCase / PascalCase; 0 / missing → empty. */
+function profileHeightCm(profile: Record<string, unknown> | null | undefined): number | null {
+    if (!profile) return null;
+    const raw = profile.height ?? profile.Height;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return n;
+}
+
+function formatProfileHeight(profile: Record<string, unknown> | null | undefined, emptyLabel = 'Not Specified'): string {
+    const cm = profileHeightCm(profile);
+    return cm != null ? `${Math.round(cm)} cm` : emptyLabel;
+}
+
 /** Comma-separated partner preference lists (religion, ethnicity). */
 function partnerPreferenceListDisplay(v: unknown): string {
     const s = v != null ? String(v).trim() : '';
@@ -911,17 +925,19 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                             requesterForFetch,
                             applyViewLimit
                         );
-                        if (res.statusCode === 200 && res.result) {
+                        const statusCode = res?.statusCode ?? res?.StatusCode;
+                        const detail = res?.result ?? res?.Result;
+                        if (statusCode === 200 && detail) {
                             setIsProfileLockedByDailyLimit(false);
                             const subjectLimit =
-                                res.result.isSubjectToDailyProfileViewLimit ??
-                                res.result.IsSubjectToDailyProfileViewLimit;
+                                detail.isSubjectToDailyProfileViewLimit ??
+                                detail.IsSubjectToDailyProfileViewLimit;
                             const remViews =
-                                res.result.remainingDailyProfileViews ??
-                                res.result.RemainingDailyProfileViews;
+                                detail.remainingDailyProfileViews ??
+                                detail.RemainingDailyProfileViews;
                             const viewLimit =
-                                res.result.dailyProfileViewLimit ??
-                                res.result.DailyProfileViewLimit;
+                                detail.dailyProfileViewLimit ??
+                                detail.DailyProfileViewLimit;
                             if (subjectLimit === true || remViews != null) {
                                 updateUser({
                                     isSubjectToDailyProfileViewLimit:
@@ -932,31 +948,61 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         remViews != null ? Number(remViews) : undefined,
                                 });
                             }
+                            const heightCm = profileHeightCm(detail);
                             setSelectedProfile((prev: any) => ({
                                 ...prev,
-                                ...res.result,
+                                ...detail,
                                 userId:
                                     prev?.userId ??
-                                    res.result.userId ??
-                                    res.result.UserId ??
-                                    viewerProfileUserId(res.result),
+                                    detail.userId ??
+                                    detail.UserId ??
+                                    viewerProfileUserId(detail),
                                 viewAsOthers: prev?.viewAsOthers,
                                 disableVisitorActions: prev?.disableVisitorActions,
-                                firstName: prev?.firstName || res.result.firstName,
-                                lastName: prev?.lastName || res.result.lastName,
-                                profilePhoto: prev?.profilePhoto || res.result.profilePhoto,
-                                dateOfBirth: res.result.dateOfBirth ?? res.result.DateOfBirth ?? prev?.dateOfBirth,
-                                educationLevel: res.result.qualificationLevel || prev?.educationLevel,
-                                aboutMe: res.result.remarks || res.result.Remarks || prev?.aboutMe,
-                                bio: res.result.remarks || res.result.Remarks || prev?.bio,
-                                diet: res.result.eatingHabits || prev?.diet,
-                                smoking: res.result.smokingHabits || prev?.smoking,
-                                drinking: res.result.drinkingHabits || prev?.drinking,
-                                partnerPreferences: res.result.partnerAdditionalRequirements || prev?.partnerPreferences,
+                                firstName: detail.firstName || detail.FirstName || prev?.firstName,
+                                lastName: detail.lastName || detail.LastName || prev?.lastName,
+                                profilePhoto:
+                                    detail.profilePhoto ||
+                                    detail.ProfilePhoto ||
+                                    prev?.profilePhoto,
+                                dateOfBirth:
+                                    detail.dateOfBirth ?? detail.DateOfBirth ?? prev?.dateOfBirth,
+                                age: detail.age ?? detail.Age ?? prev?.age,
+                                height: heightCm ?? profileHeightCm(prev) ?? 0,
+                                gender: detail.gender || detail.Gender || prev?.gender,
+                                complexion:
+                                    detail.complexion || detail.Complexion || prev?.complexion,
+                                cityOfResidence:
+                                    detail.cityOfResidence ||
+                                    detail.CityOfResidence ||
+                                    prev?.cityOfResidence,
+                                educationLevel:
+                                    detail.qualificationLevel ||
+                                    detail.QualificationLevel ||
+                                    detail.educationLevel ||
+                                    prev?.educationLevel,
+                                aboutMe: detail.remarks || detail.Remarks || prev?.aboutMe,
+                                bio: detail.remarks || detail.Remarks || prev?.bio,
+                                diet:
+                                    detail.eatingHabits ||
+                                    detail.EatingHabits ||
+                                    prev?.diet,
+                                smoking:
+                                    detail.smokingHabits ||
+                                    detail.SmokingHabits ||
+                                    prev?.smoking,
+                                drinking:
+                                    detail.drinkingHabits ||
+                                    detail.DrinkingHabits ||
+                                    prev?.drinking,
+                                partnerPreferences:
+                                    detail.partnerAdditionalRequirements ||
+                                    detail.PartnerAdditionalRequirements ||
+                                    prev?.partnerPreferences,
                             }));
-                        } else if (res?.message) {
-                            setProfileAccessMessage(res.message);
-                            if (String(res.message).toLowerCase().includes('daily profile view limit')) {
+                        } else if (res?.message || res?.Message) {
+                            setProfileAccessMessage(res.message || res.Message);
+                            if (String(res.message || res.Message).toLowerCase().includes('daily profile view limit')) {
                                 setIsProfileLockedByDailyLimit(true);
                                 const limitResult = res?.result ?? res?.Result ?? {};
                                 updateUser({
@@ -4422,9 +4468,9 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     )}
                                     <p className="profile-tagline">{selectedProfile.bio || 'Looking for a caring and understanding life partner'}</p>
                                     <div className="profile-key-info">
-                                        <span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Age Not Specified'}</span>
-                                        <span>{selectedProfile.height || 'Height Not Specified'}</span>
-                                        <span>{selectedProfile.cityOfResidence || 'Location Not Specified'}</span>
+                                        <span>{selectedProfile.age || selectedProfile.Age ? `${selectedProfile.age ?? selectedProfile.Age} years` : 'Age Not Specified'}</span>
+                                        <span>{formatProfileHeight(selectedProfile, 'Height Not Specified')}</span>
+                                        <span>{selectedProfile.cityOfResidence || selectedProfile.CityOfResidence || 'Location Not Specified'}</span>
                                     </div>
                                     <div className="profile-actions-row">
                                         {isProfileLockedByDailyLimit && (
@@ -4583,7 +4629,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                     <div className="info-item"><label>Age</label><span>{selectedProfile.age ? `${selectedProfile.age} years` : 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Date of Birth</label><span>{formatBirthdayDisplay(selectedProfile.dateOfBirth ?? selectedProfile.DateOfBirth) || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Gender</label><span>{selectedProfile.gender || 'Not Specified'}</span></div>
-                                                    <div className="info-item"><label>Height</label><span>{selectedProfile.height || 'Not Specified'}</span></div>
+                                                    <div className="info-item"><label>Height</label><span>{formatProfileHeight(selectedProfile)}</span></div>
                                                     <div className="info-item"><label>Complexion</label><span>{selectedProfile.complexion || 'Not Specified'}</span></div>
                                                     <div className="info-item"><label>Marital Status</label><span>{formatMaritalStatusDisplay(selectedProfile.maritalStatus ?? selectedProfile.MaritalStatus)}</span></div>
                                                 </div>

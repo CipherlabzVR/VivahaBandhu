@@ -980,10 +980,10 @@ export const matrimonialService = {
     async deleteMessage(messageId: number, userId: number): Promise<any> {
         try {
             const token = getStoredToken();
+            // POST: some API hosts/proxies block HTTP DELETE (surfaces as a CORS error in the browser).
             const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteMessage?messageId=${messageId}&userId=${userId}`, {
-                method: 'DELETE',
+                method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': token ? `Bearer ${token}` : ''
                 }
             });
@@ -1080,10 +1080,10 @@ export const matrimonialService = {
     async deleteSubAccount(parentUserId: number, subUserId: number): Promise<any> {
         try {
             const token = getStoredToken();
+            // POST: some API hosts/proxies block HTTP DELETE (surfaces as a CORS error in the browser).
             const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteSubAccount?parentUserId=${parentUserId}&subUserId=${subUserId}`, {
-                method: 'DELETE',
+                method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': token ? `Bearer ${token}` : ''
                 }
             });
@@ -1229,10 +1229,10 @@ export const matrimonialService = {
     async deleteOwnAccount(userId: number): Promise<any> {
         try {
             const token = getStoredToken();
+            // POST: some API hosts/proxies block HTTP DELETE (surfaces as a CORS error in the browser).
             const response = await fetch(`${API_BASE_URL}/Matrimonial/DeleteOwnAccount?userId=${userId}`, {
-                method: 'DELETE',
+                method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': token ? `Bearer ${token}` : ''
                 }
             });

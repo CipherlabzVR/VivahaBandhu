@@ -319,6 +319,7 @@ function MessagesContent() {
     // Delete message state
     const [contextMenu, setContextMenu] = useState<{ msgId: number; x: number; y: number } | null>(null);
     const [deletingMsgId, setDeletingMsgId] = useState<number | null>(null);
+    const [messagePendingDelete, setMessagePendingDelete] = useState<number | null>(null);
     const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const [favoriteActivityReady, setFavoriteActivityReady] = useState(false);
     const [shareHoroscopePages, setShareHoroscopePages] = useState<string[]>([]);
@@ -1316,10 +1317,21 @@ function MessagesContent() {
         void sendMessageWithManagedProfile(content, existingManagedId);
     };
 
-    const handleDeleteMessage = async (msgId: number) => {
-        if (!user) return;
+    const requestDeleteMessage = (msgId: number) => {
         const existing = messages.find((m) => Number(m.id) === Number(msgId));
         if (existing?.isDeleted) return;
+        setContextMenu(null);
+        setMessagePendingDelete(msgId);
+    };
+
+    const handleConfirmDeleteMessage = async () => {
+        if (!user || messagePendingDelete == null) return;
+        const msgId = messagePendingDelete;
+        const existing = messages.find((m) => Number(m.id) === Number(msgId));
+        if (existing?.isDeleted) {
+            setMessagePendingDelete(null);
+            return;
+        }
         setDeletingMsgId(msgId);
         try {
             const res = await matrimonialService.deleteMessage(msgId, Number(user.id));
@@ -1332,12 +1344,15 @@ function MessagesContent() {
                     )
                 );
                 refreshInbox();
+                setMessagePendingDelete(null);
+            } else {
+                showToast(res?.message || 'Failed to delete message.', 'error');
             }
         } catch (err) {
-            console.error("Failed to delete message", err);
+            console.error('Failed to delete message', err);
+            showToast('Failed to delete message.', 'error');
         } finally {
             setDeletingMsgId(null);
-            setContextMenu(null);
         }
     };
 
@@ -1748,7 +1763,7 @@ function MessagesContent() {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleDeleteMessage(msg.id);
+                                                                requestDeleteMessage(msg.id);
                                                             }}
                                                             className="absolute -left-8 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-sm border border-red-100"
                                                             title="Delete message"
@@ -1902,15 +1917,79 @@ function MessagesContent() {
                     onClick={(e) => e.stopPropagation()}
                 >
                     <button
-                        onClick={() => handleDeleteMessage(contextMenu.msgId)}
+                        onClick={() => requestDeleteMessage(contextMenu.msgId)}
                         className="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 transition-colors"
                         disabled={deletingMsgId === contextMenu.msgId}
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
                         </svg>
-                        {deletingMsgId === contextMenu.msgId ? 'Deleting...' : 'Delete Message'}
+                        Delete Message
                     </button>
+                </div>
+            )}
+
+            {messagePendingDelete != null && (
+                <div
+                    className="modal-overlay active"
+                    data-lenis-prevent
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="delete-message-title"
+                    style={{ zIndex: 1100 }}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget && !deletingMsgId) {
+                            setMessagePendingDelete(null);
+                        }
+                    }}
+                >
+                    <div className="modal" style={{ maxWidth: '480px', width: '95%' }}>
+                        <button
+                            type="button"
+                            className="modal-close"
+                            onClick={() => !deletingMsgId && setMessagePendingDelete(null)}
+                            aria-label="Close"
+                            disabled={!!deletingMsgId}
+                        >
+                            ✕
+                        </button>
+                        <div className="modal-header">
+                            <h2 id="delete-message-title" style={{ color: '#b91c1c' }}>
+                                Delete message?
+                            </h2>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ marginBottom: '1.25rem', color: '#374151', lineHeight: 1.55 }}>
+                                This message will be removed from the conversation for you and the other person. This action cannot be undone.
+                            </p>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => setMessagePendingDelete(null)}
+                                    disabled={!!deletingMsgId}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleConfirmDeleteMessage()}
+                                    disabled={!!deletingMsgId}
+                                    style={{
+                                        padding: '0.6rem 1.1rem',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        background: deletingMsgId ? '#fca5a5' : '#b91c1c',
+                                        color: 'white',
+                                        fontWeight: 600,
+                                        cursor: deletingMsgId ? 'not-allowed' : 'pointer',
+                                    }}
+                                >
+                                    {deletingMsgId ? 'Deleting…' : 'Delete message'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
