@@ -184,7 +184,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
     const [activeFilters, setActiveFilters] = useState<ActiveBrowseFilters>(() => ({
         ...defaultBrowseFields(),
         pageNumber: 1,
-        pageSize: 99,
+        pageSize: 24,
     }));
     /** Last filters persisted via Save (used for “unsaved changes” hint only). */
     const [persistedFilters, setPersistedFilters] = useState<BrowseFilterFields | null>(null);
@@ -681,7 +681,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
         if (ageApplyTimerRef.current) clearTimeout(ageApplyTimerRef.current);
         const cleared = defaultBrowseFieldsForUser(user, subAccounts);
         setDraftFilters(cleared);
-        setActiveFilters({ ...cleared, pageNumber: 1, pageSize: 99 });
+        setActiveFilters({ ...cleared, pageNumber: 1, pageSize: 24 });
         setPersistedFilters(null);
     };
 

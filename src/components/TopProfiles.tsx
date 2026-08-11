@@ -69,7 +69,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
                 /* Deployed API may not expose GetRecentPremiumProfiles yet */
             }
             try {
-                const fallback = await matrimonialService.getRecentProfiles(48, viewerForGender);
+                const fallback = await matrimonialService.getRecentProfiles(24, viewerForGender);
                 const ok = fallback.statusCode === 200 || fallback.statusCode === 1;
                 if (ok && Array.isArray(fallback.result)) {
                     const onlyPremium = fallback.result.filter((p: any) => p?.isPremium || p?.IsPremium);

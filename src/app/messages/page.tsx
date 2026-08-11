@@ -360,11 +360,17 @@ function MessagesContent() {
         return subAccounts.find((s) => s.id === managedId) ?? null;
     }, [selectedContact?.managedProfileUserId, activeSubAccountId, subAccounts]);
 
+    /** The thread's managed sub-profile, but only when the viewer owns it — a peer's sub merely tags the thread. */
+    const viewerThreadSubAccountId = useMemo(() => {
+        const managedId = readManagedProfileUserId(selectedContact?.managedProfileUserId);
+        if (managedId == null) return null;
+        return subAccounts.some((s) => s.id === managedId) ? managedId : null;
+    }, [selectedContact?.managedProfileUserId, subAccounts]);
+
     const horoscopeProfileUserId = useMemo(() => {
         if (!user?.id) return null;
         if (isManagedParent) {
-            const fromContact = readManagedProfileUserId(selectedContact?.managedProfileUserId);
-            if (fromContact != null) return fromContact;
+            if (viewerThreadSubAccountId != null) return viewerThreadSubAccountId;
             if (subAccounts.length === 1) return subAccounts[0]!.id;
             if (activeSubAccountId != null) return activeSubAccountId;
             return null;
@@ -373,17 +379,21 @@ function MessagesContent() {
     }, [
         user?.id,
         isManagedParent,
-        selectedContact?.managedProfileUserId,
+        viewerThreadSubAccountId,
         subAccounts,
         activeSubAccountId,
     ]);
 
+    /**
+     * Thread tag sent with a horoscope share — must match what a normal message sends, otherwise the
+     * server resolves the wrong counterparty and rejects the share as "no mutual interest".
+     */
     const managedProfileUserIdForShare = useMemo(() => {
-        if (!isManagedParent) return null;
+        const fromThread = readManagedProfileUserId(selectedContact?.managedProfileUserId);
+        if (fromThread != null) return fromThread;
         return readManagedProfileUserId(
-            selectedContact?.managedProfileUserId ??
-                activeSubAccountId ??
-                (subAccounts.length === 1 ? subAccounts[0]?.id : null)
+            activeSubAccountId ??
+                (isManagedParent && subAccounts.length === 1 ? subAccounts[0]?.id : null)
         );
     }, [
         isManagedParent,
@@ -1210,7 +1220,7 @@ function MessagesContent() {
 
     const handleShareHoroscope = async () => {
         if (!canSendInThread || !user || !selectedContact || shareHoroscopePages.length === 0) return;
-        if (isManagedParent && managedProfileUserIdForShare == null) {
+        if (isManagedParent && horoscopeProfileUserId == null) {
             showToast('Select a profile before sharing horoscope.', 'info');
             return;
         }
@@ -1851,7 +1861,7 @@ function MessagesContent() {
                                                 !canSendInThread ||
                                                 sharingHoroscope ||
                                                 shareHoroscopePages.length === 0 ||
-                                                (isManagedParent && managedProfileUserIdForShare == null)
+                                                (isManagedParent && horoscopeProfileUserId == null)
                                             }
                                             title={
                                                 shareHoroscopePages.length === 0

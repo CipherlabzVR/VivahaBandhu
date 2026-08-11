@@ -700,14 +700,20 @@ export const matrimonialService = {
 
     /**
      * Persist browse visibility and profile-photo visibility preferences.
+     * Managers (parent / matchmaker / relation) pass managedProfileUserIds to apply
+     * the settings to one or more owned sub-profiles.
      */
     async setMatrimonialPrivacyPreferences(
         userId: number,
         showInBrowse: boolean,
         photoVisibility: 'everyone' | 'premium',
+        managedProfileUserIds?: number[] | null,
     ): Promise<any> {
         try {
             const token = getStoredToken();
+            const managedIds = (managedProfileUserIds ?? [])
+                .map((id) => Number(id))
+                .filter((id) => Number.isFinite(id) && id > 0);
             const response = await fetch(`${API_BASE_URL}/Matrimonial/SetMatrimonialPrivacyPreferences`, {
                 method: 'POST',
                 headers: {
@@ -718,6 +724,7 @@ export const matrimonialService = {
                     UserId: userId,
                     ShowInBrowse: showInBrowse,
                     PhotoVisibility: photoVisibility,
+                    ...(managedIds.length > 0 ? { ManagedProfileUserIds: managedIds } : {}),
                 }),
             });
             const data = await response.json().catch(() => ({}));
@@ -1198,9 +1205,16 @@ export const matrimonialService = {
         }
     },
 
-    async updateNotificationPreferences(userId: number, emailOnInterest: boolean): Promise<any> {
+    async updateNotificationPreferences(
+        userId: number,
+        emailOnInterest: boolean,
+        managedProfileUserIds?: number[] | null,
+    ): Promise<any> {
         try {
             const token = getStoredToken();
+            const managedIds = (managedProfileUserIds ?? [])
+                .map((id) => Number(id))
+                .filter((id) => Number.isFinite(id) && id > 0);
             const response = await fetch(
                 `${API_BASE_URL}/Matrimonial/UpdateNotificationPreferences?userId=${userId}&emailOnInterest=${emailOnInterest}`,
                 {
@@ -1208,7 +1222,12 @@ export const matrimonialService = {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': token ? `Bearer ${token}` : ''
-                    }
+                    },
+                    body: JSON.stringify({
+                        UserId: userId,
+                        EmailOnInterest: emailOnInterest,
+                        ...(managedIds.length > 0 ? { ManagedProfileUserIds: managedIds } : {}),
+                    }),
                 }
             );
             if (!response.ok) {

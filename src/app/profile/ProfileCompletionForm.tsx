@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type ReactNode, type CSSProperties, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
@@ -19,6 +19,7 @@ import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, parseNicToDobAndGender } from '../../utils/nicInput';
 import { sanitizeSriLankanPhoneInput, sriLankanPhoneFormatErrorIfInvalid, formatStoredPhoneForInput } from '../../utils/sriLankanPhone';
 import { AUTH_FIELD_MAX_LENGTH } from '../../constants/inputLimits';
+import { scrollToFirstFormError } from '../../utils/autoScrollError';
 import {
     isManagedProfileCreateResponseSuccess,
     isManagedProfileDraftPersistBlocked,
@@ -999,6 +1000,7 @@ export default function ProfileCompletionForm({
     const applyFieldErrors = (errors: Record<string, string>) => {
         setFieldErrors(errors);
         setSubmitError('');
+        scrollToFirstFormError(undefined, Object.keys(errors));
     };
 
     const fieldInputStyle = (name: string): CSSProperties | undefined =>

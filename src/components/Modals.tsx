@@ -34,6 +34,7 @@ import SubscriptionPlanPicker from './SubscriptionPlanPicker';
 import { AUTH_FIELD_MAX_LENGTH, PASSWORD_MAX_LENGTH } from '../constants/inputLimits';
 import Link from 'next/link';
 import WelcomePopup from './WelcomePopup';
+import { scrollToFirstFormError } from '../utils/autoScrollError';
 import ModalScrollArea from './ModalScrollArea';
 import { HeartIcon, BookmarkIcon, ShareIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
@@ -1352,7 +1353,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
         } else if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
 
         setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        const hasErrors = Object.keys(newErrors).length > 0;
+        if (hasErrors) {
+            scrollToFirstFormError('#registerModal .modal-body', Object.keys(newErrors));
+        }
+        return !hasErrors;
     };
 
     const handleFirstNameChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -1603,18 +1608,23 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 console.error('Registration failed or missing userId. Response:', response);
                 const failMsg = response.message || 'Registration failed. Please try again.';
                 setRegisterError(failMsg);
-                setShowVerification(false); // Ensure verification screen is not shown on error
-                // Verified "already exists" — offer resume lookup in case a pending session still exists.
+                setShowVerification(false);
+                if (/email/i.test(failMsg)) {
+                    setErrors((prev) => ({ ...prev, email: failMsg }));
+                } else if (/phone|mobile|contact/i.test(failMsg)) {
+                    setErrors((prev) => ({ ...prev, phone: failMsg }));
+                } else if (/nic|national id|passport/i.test(failMsg)) {
+                    setErrors((prev) => ({ ...prev, nic: failMsg }));
+                }
                 if (/already exists/i.test(failMsg)) {
                     setLoginTab('register');
                 }
+                scrollToFirstFormError('#registerModal .modal-body', undefined, failMsg);
             }
         } catch (error) {
-            // Extract error message properly
             let errorMessage = 'Registration failed. Please try again.';
             if (error instanceof Error) {
                 errorMessage = error.message;
-                // Only log to console if it's not an expected API error
                 if (!(error as any).isApiError) {
                     console.error('Registration error:', error);
                 }
@@ -1622,7 +1632,15 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                 errorMessage = error;
             }
             setRegisterError(errorMessage);
-            setShowVerification(false); // Ensure verification screen is not shown on error
+            setShowVerification(false);
+            if (/email/i.test(errorMessage)) {
+                setErrors((prev) => ({ ...prev, email: errorMessage }));
+            } else if (/phone|mobile|contact/i.test(errorMessage)) {
+                setErrors((prev) => ({ ...prev, phone: errorMessage }));
+            } else if (/nic|national id|passport/i.test(errorMessage)) {
+                setErrors((prev) => ({ ...prev, nic: errorMessage }));
+            }
+            scrollToFirstFormError('#registerModal .modal-body', undefined, errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -1659,7 +1677,10 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setLoginPasswordError(null);
         }
 
-        if (hasError) return;
+        if (hasError) {
+            scrollToFirstFormError('#loginModal .modal-body', ['loginEmail', 'loginPassword']);
+            return;
+        }
 
         setIsLoading(true);
         setLoginError(null);
@@ -4020,25 +4041,29 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                 >
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
-                                        <label>First Name *</label>
-                                        <input type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.firstName ? 'red' : '' }} />
+                                        <label htmlFor="firstName">First Name *</label>
+                                        <input id="firstName" name="firstName" data-field="firstName" aria-invalid={errors.firstName ? 'true' : undefined} type="text" placeholder="First Name" value={firstName} onChange={handleFirstNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.firstName ? 'red' : '' }} />
                                         {errors.firstName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.firstName}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
-                                        <label>Last Name *</label>
-                                        <input type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.lastName ? 'red' : '' }} />
+                                        <label htmlFor="lastName">Last Name *</label>
+                                        <input id="lastName" name="lastName" data-field="lastName" aria-invalid={errors.lastName ? 'true' : undefined} type="text" placeholder="Last Name" value={lastName} onChange={handleLastNameChange} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.lastName ? 'red' : '' }} />
                                         {errors.lastName && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.lastName}</span>}
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label>National ID / Passport No *</label>
-                                    <input type="text" placeholder="NIC or Passport Number" value={nic} onChange={handleNicChange} maxLength={12} style={{ borderColor: errors.nic ? 'red' : '' }} />
+                                    <label htmlFor="nic">National ID / Passport No *</label>
+                                    <input id="nic" name="nic" data-field="nic" aria-invalid={errors.nic ? 'true' : undefined} type="text" placeholder="NIC or Passport Number" value={nic} onChange={handleNicChange} maxLength={12} style={{ borderColor: errors.nic ? 'red' : '' }} />
                                     {errors.nic && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.nic}</span>}
                                 </div>
                                 <div className="form-row flex-col sm:flex-row flex sm:gap-4">
                                     <div className="form-group" style={{ flex: 1 }}>
-                                        <label>Date of Birth *</label>
+                                        <label htmlFor="dob">Date of Birth *</label>
                                         <input
+                                            id="dob"
+                                            name="dob"
+                                            data-field="dob"
+                                            aria-invalid={errors.dob ? 'true' : undefined}
                                             type="date"
                                             value={dob}
                                             onChange={(e) => setDob(e.target.value)}
@@ -4052,8 +4077,12 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {errors.dob && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.dob}</span>}
                                     </div>
                                     <div className="form-group" style={{ flex: 1 }}>
-                                        <label>Gender *</label>
+                                        <label htmlFor="gender">Gender *</label>
                                         <select
+                                            id="gender"
+                                            name="gender"
+                                            data-field="gender"
+                                            aria-invalid={errors.gender ? 'true' : undefined}
                                             value={gender}
                                             onChange={(e) => setGender(e.target.value)}
                                             disabled={dobGenderDisabled}
@@ -4078,13 +4107,13 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         'Enter DOB and gender manually for passport. Typing a valid NIC updates both fields from your ID and locks them.'}
                                 </p>
                                 <div className="form-group">
-                                    <label>Phone Number *</label>
-                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
+                                    <label htmlFor="phone">Phone Number *</label>
+                                    <input id="phone" name="phone" data-field="phone" aria-invalid={errors.phone ? 'true' : undefined} type="tel" placeholder={SL_PHONE_PLACEHOLDER} value={phone} onChange={handlePhoneChange} style={{ borderColor: errors.phone ? 'red' : '' }} />
                                     {errors.phone && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.phone}</span>}
                                 </div>
                                 <div className="form-group">
-                                    <label>WhatsApp Number *</label>
-                                    <input type="tel" placeholder={SL_PHONE_PLACEHOLDER} disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={handleWhatsappChange} style={{ borderColor: errors.whatsapp ? 'red' : '' }} />
+                                    <label htmlFor="whatsapp">WhatsApp Number *</label>
+                                    <input id="whatsapp" name="whatsapp" data-field="whatsapp" aria-invalid={errors.whatsapp ? 'true' : undefined} type="tel" placeholder={SL_PHONE_PLACEHOLDER} disabled={isWhatsAppSame} value={isWhatsAppSame ? phone : whatsapp} onChange={handleWhatsappChange} style={{ borderColor: errors.whatsapp ? 'red' : '' }} />
                                     {errors.whatsapp && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.whatsapp}</span>}
                                     <div className="checkbox-group" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
                                         <input
@@ -4097,8 +4126,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     </div>
                                 </div>
                                 <div className="form-group">
-                                    <label>Email Address *</label>
-                                    <input type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.email ? 'red' : '' }} />
+                                    <label htmlFor="email">Email Address *</label>
+                                    <input id="email" name="email" data-field="email" aria-invalid={errors.email ? 'true' : undefined} type="email" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={AUTH_FIELD_MAX_LENGTH} style={{ borderColor: errors.email ? 'red' : '' }} />
                                     {errors.email && <span style={{ color: 'red', fontSize: '0.8rem' }}>{errors.email}</span>}
                                 </div>
                                 <RegisterPasswordFields

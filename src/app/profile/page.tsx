@@ -54,12 +54,18 @@ import {
 } from '../../utils/matrimonialInterestNotifications';
 import {
     canManageSubAccounts,
+    filterActiveManagedSubAccounts,
+    MANAGED_ACTIONS_BLOCKED_MESSAGE,
     parseSubAccountsApiResult,
     shouldShowManagedProfileTabs,
     subAccountDisplayName,
     type ManagedSubAccount,
     type ManagedSubAccountDetail,
 } from '../../utils/managedSubAccounts';
+import ManagedSubAccountSettingsPicker, {
+    type ManagedSettingsDraft,
+    type PrivacySettingsDraft,
+} from '../../components/ManagedSubAccountSettingsPicker';
 import { useMatrimonialNotifications } from '../../context/MatrimonialNotificationsContext';
 import { respondToIncomingInterest } from '../../utils/respondToIncomingInterest';
 import { apiInstantToMs, formatDeviceDateTime } from '../../utils/deviceDateTime';
@@ -78,11 +84,18 @@ import { useBankTransferResultBanner } from '../../hooks/useBankTransferResultBa
 function apiResponseBusinessCode(body: Record<string, unknown> | null | undefined): number | undefined {
     if (!body) return undefined;
     const raw = body.statusCode ?? body.StatusCode;
-    return typeof raw === 'number' ? raw : undefined;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (/^\d+$/.test(trimmed)) return Number(trimmed);
+        if (trimmed.toUpperCase() === 'SUCCESS') return 200;
+        if (trimmed.toUpperCase() === 'FAILED') return -99;
+    }
+    return undefined;
 }
 
 /** Treat missing body status as OK when HTTP succeeded (backward compatible). */
-function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | undefined, httpOk: boolean): boolean {
+function apiResponseIndicatesSuccess(body: Record<string, unknown> | null | undefined, httpOk = true): boolean {
     if (!httpOk) return false;
     const code = apiResponseBusinessCode(body);
     if (code === undefined) return true;
@@ -619,21 +632,30 @@ function ProfilePageContent() {
 
                     const showInBrowse = r.showInBrowse ?? r.ShowInBrowse;
                     const photoVis = r.photoVisibility ?? r.PhotoVisibility;
+                    // Manager accounts apply privacy to sub-profiles; keep browse ON by default
+                    // in Settings (their own main profile may be intentionally hidden).
+                    // Self accounts: server value wins; missing value defaults to enabled.
+                    const managerAccount = canManageSubAccounts(
+                        profileUpdates.accountType || user?.accountType || '',
+                    );
                     const loadedPrivacyPrefs: { showInBrowse?: boolean; photoVisibility?: 'everyone' | 'premium' } = {
-                        ...(showInBrowse !== undefined && showInBrowse !== null
-                            ? { showInBrowse: !!showInBrowse }
-                            : {}),
+                        ...(managerAccount
+                            ? { showInBrowse: true }
+                            : {
+                                showInBrowse:
+                                    showInBrowse === undefined || showInBrowse === null
+                                        ? true
+                                        : !!showInBrowse,
+                            }),
                         ...(photoVis !== undefined && photoVis !== null && String(photoVis).trim() !== ''
                             ? {
                                 photoVisibility: String(photoVis).toLowerCase() === 'premium'
                                     ? 'premium'
                                     : 'everyone',
                             }
-                            : {}),
+                            : { photoVisibility: 'everyone' as const }),
                     };
-                    if (Object.keys(loadedPrivacyPrefs).length > 0) {
-                        setPrefs(prev => ({ ...prev, ...loadedPrivacyPrefs }));
-                    }
+                    setPrefs(prev => ({ ...prev, ...loadedPrivacyPrefs }));
 
                     const famPurchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
                     const famConsumed = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
@@ -965,6 +987,8 @@ function ProfilePageContent() {
                 profilePayload.isFamilyManaged = true;
                 profilePayload.managedByLabel = isRelationAccountType(user?.accountType)
                     ? 'Managed by relation'
+                    : user?.accountType === 'Self'
+                    ? 'Self'
                     : 'Managed by parent';
                 profilePayload.managerName = managerName;
             }
@@ -987,6 +1011,8 @@ function ProfilePageContent() {
 
     const familyManagedByLabel = isRelationAccountType(user?.accountType)
         ? 'Managed by relation'
+        : user?.accountType === 'Self'
+        ? 'Self'
         : 'Managed by parent';
     const managerDisplayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim();
 
@@ -1680,10 +1706,15 @@ function ProfilePageContent() {
             if (raw) {
                 const parsed = JSON.parse(raw);
                 const { emailNotifications: _ignored, ...rest } = parsed ?? {};
-                setPrefs(p => ({ ...p, ...rest }));
+                // Managers always start from browse-enabled in Settings; local cache must not
+                // force the toggle off from an old main-account hide state.
+                if (canManageSubAccounts(user.accountType) && rest && typeof rest === 'object') {
+                    delete (rest as { showInBrowse?: boolean }).showInBrowse;
+                }
+                setPrefs(p => ({ ...p, ...rest, ...(canManageSubAccounts(user.accountType) ? { showInBrowse: true } : {}) }));
             }
         } catch { /* ignore corrupted prefs */ }
-    }, [user?.id]);
+    }, [user?.id, user?.accountType]);
 
     /**
      * The "email me when someone shows interest" preference is server-authoritative — the
@@ -1807,34 +1838,138 @@ function ProfilePageContent() {
             /* ignore refresh errors */
         }
     }, [user?.id, user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed, updateUser]);
+    const [settingsPickerDraft, setSettingsPickerDraft] = useState<ManagedSettingsDraft | null>(null);
+    const [settingsPickerPreviousEmail, setSettingsPickerPreviousEmail] = useState<boolean | null>(null);
+    const [settingsPickerPreviousPrivacy, setSettingsPickerPreviousPrivacy] = useState<PrivacySettingsDraft | null>(null);
+
+    const applyEmailNotificationPreference = async (
+        enabled: boolean,
+        managedProfileUserIds?: number[] | null,
+    ) => {
+        if (!user?.id) return false;
+        setIsSavingEmailPref(true);
+        try {
+            const res = await matrimonialService.updateNotificationPreferences(
+                Number(user.id),
+                enabled,
+                managedProfileUserIds,
+            );
+            if (apiResponseIndicatesSuccess(res as Record<string, unknown>)) {
+                updateUser?.({ emailOnInterest: enabled });
+                showToast(
+                    (res as { message?: string; Message?: string })?.message
+                        || (res as { Message?: string })?.Message
+                        || (enabled
+                            ? 'Interest email notifications are on again.'
+                            : 'You have unsubscribed from interest emails.'),
+                    'success',
+                );
+                return true;
+            }
+            showToast(
+                (res as { message?: string; Message?: string })?.message
+                    || (res as { Message?: string })?.Message
+                    || 'Could not save preference. Please try again.',
+                'error',
+            );
+            return false;
+        } catch (err: unknown) {
+            showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
+            return false;
+        } finally {
+            setIsSavingEmailPref(false);
+        }
+    };
+
     /**
      * Persist the email-on-interest toggle to the server so notifications are actually
-     * sent (or not). We optimistically update the UI and roll it back on error.
+     * sent (or not). Managers pick which sub-profiles the preference applies to.
      */
     const handleEmailNotificationToggle = async (enabled: boolean) => {
         if (!user?.id) return;
         const previous = prefs.emailNotifications;
-        updatePref('emailNotifications', enabled);
-        try {
-            setIsSavingEmailPref(true);
-            const res = await matrimonialService.updateNotificationPreferences(Number(user.id), enabled);
-            if (res?.statusCode === 200 || res?.statusCode === 1) {
-                updateUser?.({ emailOnInterest: enabled });
+
+        if (canManageSubAccounts(user.accountType)) {
+            const activeSubs = filterActiveManagedSubAccounts(subAccounts as ManagedSubAccount[]);
+            if (activeSubs.length === 0) {
                 showToast(
-                    enabled
-                        ? 'Interest email notifications are on again.'
-                        : 'You have unsubscribed from interest emails.',
-                    'success'
+                    subAccounts.length === 0
+                        ? 'Create a managed profile first, then update its notification settings.'
+                        : MANAGED_ACTIONS_BLOCKED_MESSAGE,
+                    'info',
                 );
-            } else {
-                updatePref('emailNotifications', previous);
-                showToast(res?.message || 'Could not save preference. Please try again.', 'error');
+                return;
             }
-        } catch (err: any) {
-            updatePref('emailNotifications', previous);
-            showToast(err?.message || 'Could not save preference. Please try again.', 'error');
+
+            updatePref('emailNotifications', enabled);
+            setSettingsPickerPreviousEmail(previous);
+
+            if (activeSubs.length === 1) {
+                const ok = await applyEmailNotificationPreference(enabled, [activeSubs[0]!.id]);
+                if (!ok) updatePref('emailNotifications', previous);
+                return;
+            }
+
+            setSettingsPickerDraft({ kind: 'emailInterest', enabled });
+            return;
+        }
+
+        updatePref('emailNotifications', enabled);
+        const ok = await applyEmailNotificationPreference(enabled);
+        if (!ok) updatePref('emailNotifications', previous);
+    };
+
+    const applyPrivacyPreferences = async (
+        nextShowInBrowse: boolean,
+        nextPhotoVisibility: 'everyone' | 'premium',
+        managedProfileUserIds?: number[] | null,
+    ) => {
+        if (!user?.id) return false;
+        setIsSavingPrivacyPref(true);
+        try {
+            const res = await matrimonialService.setMatrimonialPrivacyPreferences(
+                Number(user.id),
+                nextShowInBrowse,
+                nextPhotoVisibility,
+                managedProfileUserIds,
+            );
+            if (apiResponseIndicatesSuccess(res as Record<string, unknown>)) {
+                // Persist for Self accounts so refresh keeps the last saved values.
+                if (!canManageSubAccounts(user.accountType) && typeof window !== 'undefined') {
+                    try {
+                        const raw = localStorage.getItem(`cbass.prefs.${user.id}`);
+                        const prev = raw ? JSON.parse(raw) : {};
+                        const { emailNotifications: _ignored, ...rest } = prev ?? {};
+                        localStorage.setItem(
+                            `cbass.prefs.${user.id}`,
+                            JSON.stringify({
+                                ...rest,
+                                showInBrowse: nextShowInBrowse,
+                                photoVisibility: nextPhotoVisibility,
+                            }),
+                        );
+                    } catch { /* ignore */ }
+                }
+                showToast(
+                    (res as { message?: string; Message?: string })?.message
+                        || (res as { Message?: string })?.Message
+                        || 'Privacy settings saved.',
+                    'success',
+                );
+                return true;
+            }
+            showToast(
+                (res as { message?: string; Message?: string })?.message
+                    || (res as { Message?: string })?.Message
+                    || 'Could not save preference. Please try again.',
+                'error',
+            );
+            return false;
+        } catch (err: unknown) {
+            showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
+            return false;
         } finally {
-            setIsSavingEmailPref(false);
+            setIsSavingPrivacyPref(false);
         }
     };
 
@@ -1847,37 +1982,113 @@ function ProfilePageContent() {
         const previousPhotoVisibility = prefs.photoVisibility;
         const nextShowInBrowse = updates.showInBrowse ?? prefs.showInBrowse;
         const nextPhotoVisibility = updates.photoVisibility ?? prefs.photoVisibility;
+
+        // Parent / matchmaker / relation: pick which managed profiles to update.
+        if (canManageSubAccounts(user.accountType)) {
+            const activeSubs = filterActiveManagedSubAccounts(subAccounts as ManagedSubAccount[]);
+            if (activeSubs.length === 0) {
+                showToast(
+                    subAccounts.length === 0
+                        ? 'Create a managed profile first, then update its privacy settings.'
+                        : MANAGED_ACTIONS_BLOCKED_MESSAGE,
+                    'info',
+                );
+                return;
+            }
+
+            setPrefs(prev => ({
+                ...prev,
+                showInBrowse: nextShowInBrowse,
+                photoVisibility: nextPhotoVisibility,
+            }));
+            setSettingsPickerPreviousPrivacy({
+                kind: 'privacy',
+                showInBrowse: previousShowInBrowse,
+                photoVisibility: previousPhotoVisibility,
+            });
+
+            // Single managed profile — apply immediately without a picker.
+            if (activeSubs.length === 1) {
+                const ok = await applyPrivacyPreferences(
+                    nextShowInBrowse,
+                    nextPhotoVisibility,
+                    [activeSubs[0]!.id],
+                );
+                if (!ok) {
+                    setPrefs(prev => ({
+                        ...prev,
+                        showInBrowse: previousShowInBrowse,
+                        photoVisibility: previousPhotoVisibility,
+                    }));
+                }
+                return;
+            }
+
+            setSettingsPickerDraft({
+                kind: 'privacy',
+                showInBrowse: nextShowInBrowse,
+                photoVisibility: nextPhotoVisibility,
+            });
+            return;
+        }
+
         setPrefs(prev => ({
             ...prev,
             showInBrowse: nextShowInBrowse,
             photoVisibility: nextPhotoVisibility,
         }));
-        try {
-            setIsSavingPrivacyPref(true);
-            const res = await matrimonialService.setMatrimonialPrivacyPreferences(
-                Number(user.id),
-                nextShowInBrowse,
-                nextPhotoVisibility,
-            );
-            if (res?.statusCode === 200 || res?.statusCode === 1) {
-                return;
-            }
+        const ok = await applyPrivacyPreferences(nextShowInBrowse, nextPhotoVisibility);
+        if (!ok) {
             setPrefs(prev => ({
                 ...prev,
                 showInBrowse: previousShowInBrowse,
                 photoVisibility: previousPhotoVisibility,
             }));
-            showToast(res?.message || 'Could not save preference. Please try again.', 'error');
-        } catch (err: unknown) {
-            setPrefs(prev => ({
-                ...prev,
-                showInBrowse: previousShowInBrowse,
-                photoVisibility: previousPhotoVisibility,
-            }));
-            showToast(err instanceof Error ? err.message : 'Could not save preference. Please try again.', 'error');
-        } finally {
-            setIsSavingPrivacyPref(false);
         }
+    };
+
+    const handleSettingsPickerCancel = () => {
+        if (settingsPickerDraft?.kind === 'privacy' && settingsPickerPreviousPrivacy) {
+            setPrefs(prev => ({
+                ...prev,
+                showInBrowse: settingsPickerPreviousPrivacy.showInBrowse,
+                photoVisibility: settingsPickerPreviousPrivacy.photoVisibility,
+            }));
+        }
+        if (settingsPickerDraft?.kind === 'emailInterest' && settingsPickerPreviousEmail != null) {
+            updatePref('emailNotifications', settingsPickerPreviousEmail);
+        }
+        setSettingsPickerDraft(null);
+        setSettingsPickerPreviousPrivacy(null);
+        setSettingsPickerPreviousEmail(null);
+    };
+
+    const handleSettingsPickerConfirm = async (selectedIds: number[]) => {
+        if (!settingsPickerDraft) return;
+
+        if (settingsPickerDraft.kind === 'privacy') {
+            const ok = await applyPrivacyPreferences(
+                settingsPickerDraft.showInBrowse,
+                settingsPickerDraft.photoVisibility,
+                selectedIds,
+            );
+            if (!ok && settingsPickerPreviousPrivacy) {
+                setPrefs(prev => ({
+                    ...prev,
+                    showInBrowse: settingsPickerPreviousPrivacy.showInBrowse,
+                    photoVisibility: settingsPickerPreviousPrivacy.photoVisibility,
+                }));
+            }
+        } else {
+            const ok = await applyEmailNotificationPreference(settingsPickerDraft.enabled, selectedIds);
+            if (!ok && settingsPickerPreviousEmail != null) {
+                updatePref('emailNotifications', settingsPickerPreviousEmail);
+            }
+        }
+
+        setSettingsPickerDraft(null);
+        setSettingsPickerPreviousPrivacy(null);
+        setSettingsPickerPreviousEmail(null);
     };
 
     const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
@@ -3059,6 +3270,13 @@ function ProfilePageContent() {
                         {/* Account & Privacy */}
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Privacy</h4>
+                            {canManageSubAccounts(user?.accountType) ? (
+                                <p style={{ color: '#6b7280', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+                                    These settings apply to your{' '}
+                                    {user?.accountType === 'Matchmaker' ? 'client' : 'managed'} profiles.
+                                    When you change a setting, choose which profile(s) it should update.
+                                </p>
+                            ) : null}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                                 <label
                                     style={{
@@ -3069,22 +3287,28 @@ function ProfilePageContent() {
                                         padding: '0.85rem 1rem',
                                         background: '#FDF8F3',
                                         borderRadius: '10px',
-                                        cursor: isSavingPrivacyPref ? 'wait' : 'pointer',
-                                        opacity: isSavingPrivacyPref ? 0.7 : 1,
+                                        cursor: isSavingPrivacyPref || settingsPickerDraft ? 'wait' : 'pointer',
+                                        opacity: isSavingPrivacyPref || settingsPickerDraft ? 0.7 : 1,
                                     }}
                                 >
                                     <span>
-                                        <span style={{ display: 'block', fontWeight: 500 }}>Show my profile in browse results</span>
+                                        <span style={{ display: 'block', fontWeight: 500 }}>
+                                            {canManageSubAccounts(user?.accountType)
+                                                ? 'Show profiles in browse results'
+                                                : 'Show my profile in browse results'}
+                                        </span>
                                         <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
                                             {isSavingPrivacyPref
                                                 ? 'Saving…'
-                                                : 'Turn off to temporarily hide your profile from other members.'}
+                                                : canManageSubAccounts(user?.accountType)
+                                                  ? 'Turn off to temporarily hide selected profiles from other members.'
+                                                  : 'Turn off to temporarily hide your profile from other members.'}
                                         </span>
                                     </span>
                                     <input
                                         type="checkbox"
                                         checked={prefs.showInBrowse}
-                                        disabled={isSavingPrivacyPref}
+                                        disabled={isSavingPrivacyPref || !!settingsPickerDraft}
                                         onChange={(e) => void handlePrivacyPreferenceChange({ showInBrowse: e.target.checked })}
                                         style={{ width: 18, height: 18 }}
                                     />
@@ -3098,20 +3322,26 @@ function ProfilePageContent() {
                                         padding: '0.85rem 1rem',
                                         background: '#FDF8F3',
                                         borderRadius: '10px',
-                                        opacity: isSavingPrivacyPref ? 0.7 : 1,
+                                        opacity: isSavingPrivacyPref || settingsPickerDraft ? 0.7 : 1,
                                     }}
                                 >
                                     <span>
-                                        <span style={{ display: 'block', fontWeight: 500 }}>Who can see my profile photo</span>
+                                        <span style={{ display: 'block', fontWeight: 500 }}>
+                                            {canManageSubAccounts(user?.accountType)
+                                                ? 'Who can see profile photos'
+                                                : 'Who can see my profile photo'}
+                                        </span>
                                         <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
                                             {isSavingPrivacyPref
                                                 ? 'Saving…'
-                                                : 'Restrict your photo to premium members for added privacy.'}
+                                                : canManageSubAccounts(user?.accountType)
+                                                  ? 'Restrict selected profile photos to premium members for added privacy.'
+                                                  : 'Restrict your photo to premium members for added privacy.'}
                                         </span>
                                     </span>
                                     <select
                                         value={prefs.photoVisibility}
-                                        disabled={isSavingPrivacyPref}
+                                        disabled={isSavingPrivacyPref || !!settingsPickerDraft}
                                         onChange={(e) => void handlePrivacyPreferenceChange({
                                             photoVisibility: e.target.value as 'everyone' | 'premium',
                                         })}
@@ -3127,22 +3357,45 @@ function ProfilePageContent() {
                         {/* Notifications */}
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Notifications</h4>
-                            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px', cursor: isSavingEmailPref ? 'wait' : 'pointer', opacity: isSavingEmailPref ? 0.7 : 1 }}>
+                            {canManageSubAccounts(user?.accountType) ? (
+                                <p style={{ color: '#6b7280', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+                                    Interest emails for your{' '}
+                                    {user?.accountType === 'Matchmaker' ? 'client' : 'managed'} profiles are sent to
+                                    your main account email. Choose which profile(s) each change applies to.
+                                </p>
+                            ) : null}
+                            <label
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: '1rem',
+                                    padding: '0.85rem 1rem',
+                                    background: '#FDF8F3',
+                                    borderRadius: '10px',
+                                    cursor: isSavingEmailPref || settingsPickerDraft ? 'wait' : 'pointer',
+                                    opacity: isSavingEmailPref || settingsPickerDraft ? 0.7 : 1,
+                                }}
+                            >
                                 <span>
                                     <span style={{ display: 'block', fontWeight: 500 }}>Email me when someone shows interest</span>
                                     <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>
                                         {isSavingEmailPref
                                             ? 'Saving…'
-                                            : prefs.emailNotifications
-                                              ? 'Turn off to unsubscribe from interest emails. In-app notifications are unaffected.'
-                                              : 'You are unsubscribed from interest emails. Turn on to receive them again.'}
+                                            : canManageSubAccounts(user?.accountType)
+                                              ? prefs.emailNotifications
+                                                ? 'Turn off for selected profiles to stop interest emails. In-app notifications are unaffected.'
+                                                : 'Turn on for selected profiles to receive interest emails on your main account.'
+                                              : prefs.emailNotifications
+                                                ? 'Turn off to unsubscribe from interest emails. In-app notifications are unaffected.'
+                                                : 'You are unsubscribed from interest emails. Turn on to receive them again.'}
                                     </span>
                                 </span>
                                 <input
                                     type="checkbox"
                                     checked={prefs.emailNotifications}
-                                    disabled={isSavingEmailPref}
-                                    onChange={(e) => handleEmailNotificationToggle(e.target.checked)}
+                                    disabled={isSavingEmailPref || !!settingsPickerDraft}
+                                    onChange={(e) => void handleEmailNotificationToggle(e.target.checked)}
                                     style={{ width: 18, height: 18 }}
                                 />
                             </label>
@@ -4318,6 +4571,16 @@ function ProfilePageContent() {
                 open={!!horoscopeViewSrc}
                 src={horoscopeViewSrc || ''}
                 onClose={() => setHoroscopeViewSrc(null)}
+            />
+
+            <ManagedSubAccountSettingsPicker
+                open={!!settingsPickerDraft}
+                subAccounts={filterActiveManagedSubAccounts(subAccounts as ManagedSubAccount[])}
+                accountType={user?.accountType}
+                draft={settingsPickerDraft}
+                isSubmitting={isSavingPrivacyPref || isSavingEmailPref}
+                onConfirm={handleSettingsPickerConfirm}
+                onCancel={handleSettingsPickerCancel}
             />
 
             <Footer />

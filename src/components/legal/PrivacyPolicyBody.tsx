@@ -381,10 +381,10 @@ export default function PrivacyPolicyBody() {
                         <li>
                             <span className="font-semibold text-text-dark">Phone:</span>{' '}
                             <a
-                                href="tel:0777718055"
+                                href="tel:0707718055"
                                 className="text-primary underline underline-offset-2 hover:text-primary-dark"
                             >
-                                0777718055
+                                0707718055
                             </a>
                         </li>
                     </ul>

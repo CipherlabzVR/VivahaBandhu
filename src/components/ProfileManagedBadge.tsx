@@ -8,11 +8,20 @@ export function profileIsMatchmakerManaged(p: ProfileLike): boolean {
 }
 
 export function profileIsFamilyManaged(p: ProfileLike): boolean {
-    return !!(p.isFamilyManaged || p.IsFamilyManaged);
+    if (profileIsMatchmakerManaged(p)) return false;
+    if (p.isFamilyManaged || p.IsFamilyManaged) return true;
+    const type = String(p.managedByType ?? p.ManagedByType ?? p.accountType ?? p.AccountType ?? p.postedBy ?? p.PostedBy ?? '').trim().toLowerCase();
+    const label = String(p.managedByLabel ?? p.ManagedByLabel ?? '').trim().toLowerCase();
+    return type === 'parent' || type === 'parents' || type === 'relation' || label.includes('parent') || label.includes('relation');
+}
+
+export function profileIsSelf(p: ProfileLike): boolean {
+    if (profileIsMatchmakerManaged(p) || profileIsFamilyManaged(p)) return false;
+    return true;
 }
 
 export function profileHasManagedBadge(p: ProfileLike): boolean {
-    return profileIsMatchmakerManaged(p) || profileIsFamilyManaged(p);
+    return profileIsMatchmakerManaged(p) || profileIsFamilyManaged(p) || profileIsSelf(p);
 }
 
 export default function ProfileManagedBadge({
@@ -33,11 +42,17 @@ export default function ProfileManagedBadge({
     if (profileIsFamilyManaged(profile)) {
         return (
             <ManagedProfileBadge
-                managedByLabel={String(profile.managedByLabel ?? profile.ManagedByLabel ?? 'Managed by parent')}
-                managedByType={String(profile.managedByType ?? profile.ManagedByType ?? '')}
+                managedByLabel={String(profile.managedByLabel ?? profile.ManagedByLabel ?? '')}
+                managedByType={String(profile.managedByType ?? profile.ManagedByType ?? profile.accountType ?? profile.AccountType ?? '')}
                 variant={variant}
             />
         );
     }
-    return null;
+    return (
+        <ManagedProfileBadge
+            managedByLabel={String(profile.managedByLabel ?? profile.ManagedByLabel ?? 'Self')}
+            managedByType={String(profile.managedByType ?? profile.ManagedByType ?? profile.accountType ?? profile.AccountType ?? 'Self')}
+            variant={variant}
+        />
+    );
 }
