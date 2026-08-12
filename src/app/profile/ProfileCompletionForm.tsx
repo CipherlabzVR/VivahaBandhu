@@ -1783,25 +1783,21 @@ export default function ProfileCompletionForm({
             const maxRaw = formData.partnerMaxAge.toString().trim();
             const minUnset = !minRaw || minRaw === '0';
             const maxUnset = !maxRaw || maxRaw === '0';
-            const partnerAgesOptional = isManagedFlow;
 
-            if (partnerAgesOptional && minUnset && maxUnset) {
-                // Backend treats 0 as "not specified" for managed profiles.
-            } else {
-                if (minUnset) errors.partnerMinAge = 'Please enter the minimum partner age.';
-                if (maxUnset) errors.partnerMaxAge = 'Please enter the maximum partner age.';
-                if (!errors.partnerMinAge && !errors.partnerMaxAge) {
-                    const minAge = parseInt(minRaw, 10);
-                    const maxAge = parseInt(maxRaw, 10);
-                    if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
-                        errors.partnerMinAge = 'Partner age must be a valid number.';
-                        errors.partnerMaxAge = 'Partner age must be a valid number.';
-                    } else {
-                        if (minAge < 18) errors.partnerMinAge = 'Minimum partner age must be at least 18.';
-                        if (maxAge < 18) errors.partnerMaxAge = 'Maximum partner age must be at least 18.';
-                        if (!errors.partnerMinAge && !errors.partnerMaxAge && maxAge <= minAge) {
-                            errors.partnerMaxAge = 'Maximum partner age must be greater than minimum age.';
-                        }
+            // Required for Self and managed/sub-account create — both min and max.
+            if (minUnset) errors.partnerMinAge = 'Please enter the minimum partner age.';
+            if (maxUnset) errors.partnerMaxAge = 'Please enter the maximum partner age.';
+            if (!errors.partnerMinAge && !errors.partnerMaxAge) {
+                const minAge = parseInt(minRaw, 10);
+                const maxAge = parseInt(maxRaw, 10);
+                if (Number.isNaN(minAge) || Number.isNaN(maxAge)) {
+                    errors.partnerMinAge = 'Partner age must be a valid number.';
+                    errors.partnerMaxAge = 'Partner age must be a valid number.';
+                } else {
+                    if (minAge < 18) errors.partnerMinAge = 'Minimum partner age must be at least 18.';
+                    if (maxAge < 18) errors.partnerMaxAge = 'Maximum partner age must be at least 18.';
+                    if (!errors.partnerMinAge && !errors.partnerMaxAge && maxAge <= minAge) {
+                        errors.partnerMaxAge = 'Maximum partner age must be greater than minimum age.';
                     }
                 }
             }

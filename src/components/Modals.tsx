@@ -4502,11 +4502,6 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         <span>{selectedProfile.cityOfResidence || selectedProfile.CityOfResidence || 'Location Not Specified'}</span>
                                     </div>
                                     <div className="profile-actions-row">
-                                        {isProfileLockedByDailyLimit && (
-                                            <p style={{ fontSize: '0.85rem', color: '#92400e', margin: '0 0 0.5rem 0', width: '100%' }}>
-                                                Upgrade to keep browsing full profiles today.
-                                            </p>
-                                        )}
                                         <button
                                             type="button"
                                             className="btn btn-primary"
