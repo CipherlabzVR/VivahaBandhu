@@ -33,10 +33,22 @@ export function notificationCreatedAtMs(
     notification: Record<string, unknown> | undefined | null
 ): number {
     if (!notification) return 0;
-    const raw = notification.createdOn ?? notification.CreatedOn;
+    const raw =
+        notification.createdOn
+        ?? notification.CreatedOn
+        ?? notification.createdAt
+        ?? notification.CreatedAt;
     if (raw == null || String(raw).trim() === '') return 0;
     const t = new Date(String(raw)).getTime();
     return Number.isFinite(t) ? t : 0;
+}
+
+export function notificationIdNumber(
+    notification: Record<string, unknown> | undefined | null
+): number {
+    if (!notification) return 0;
+    const n = Number(notification.id ?? notification.Id ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 export function isMatrimonialSubscriptionNotification(
@@ -88,24 +100,149 @@ export function isBankTransferApprovedNotification(
     notification: Record<string, unknown> | undefined | null
 ): boolean {
     if (!notification) return false;
+    const title = notificationTitleLower(notification);
+    if (title.includes('undo') || title.includes('undone')) return false;
     const desc = String(notification.description ?? notification.Description ?? '').toLowerCase();
     if (desc.includes('bank transfer was approved')) return true;
-    const title = notificationTitleLower(notification);
     return title.includes('premium activated') && desc.includes('bank transfer');
 }
 
-/** Infer localStorage pending key purpose from a "bank transfer received" notification body. */
+/** Admin undid a rejection — slip is pending review again. */
+export function isBankTransferRejectionUndoneNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!isMatrimonialSubscriptionNotification(notification)) return false;
+    const title = notificationTitleLower(notification);
+    return title.includes('bank transfer') && title.includes('rejection') && title.includes('undone');
+}
+
+/** Admin undid an approval — slip is pending review again. */
+export function isBankTransferApprovalUndoneNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    if (!isMatrimonialSubscriptionNotification(notification)) return false;
+    const title = notificationTitleLower(notification);
+    return title.includes('bank transfer') && title.includes('approval') && title.includes('undone');
+}
+
+export function isBankTransferUndoNotification(
+    notification: Record<string, unknown> | undefined | null
+): boolean {
+    return (
+        isBankTransferRejectionUndoneNotification(notification)
+        || isBankTransferApprovalUndoneNotification(notification)
+    );
+}
+
+export type BankTransferLifecycleAction = 'restore_pending' | 'approved' | 'rejected';
+
+/**
+ * Latest bank-transfer lifecycle event by timestamp.
+ * Ensures undo-after-reject restores pending, and a later approve is not blocked by a stale reject.
+ */
+export function resolveLatestBankTransferLifecycleAction(
+    notifications: Array<Record<string, unknown> | null | undefined>
+): { action: BankTransferLifecycleAction | null; notification: Record<string, unknown> | null } {
+    const events: Array<{
+        action: BankTransferLifecycleAction;
+        at: number;
+        notification: Record<string, unknown>;
+    }> = [];
+
+    for (const raw of notifications) {
+        if (!raw) continue;
+        const at = notificationCreatedAtMs(raw);
+        if (isBankTransferUndoNotification(raw)) {
+            events.push({ action: 'restore_pending', at, notification: raw });
+        } else if (isBankTransferApprovedNotification(raw)) {
+            events.push({ action: 'approved', at, notification: raw });
+        } else if (isBankTransferRejectedNotification(raw)) {
+            events.push({ action: 'rejected', at, notification: raw });
+        }
+    }
+
+    if (events.length === 0) {
+        return { action: null, notification: null };
+    }
+
+    events.sort((a, b) => {
+        const aId = notificationIdNumber(a.notification);
+        const bId = notificationIdNumber(b.notification);
+        const aAt = a.at > 0 ? a.at : 0;
+        const bAt = b.at > 0 ? b.at : 0;
+
+        // Missing timestamp: prefer higher notification id (live/SignalR rows).
+        if (aAt === 0 || bAt === 0) {
+            if (aId !== bId) return bId - aId;
+            if (aAt !== bAt) {
+                // Treat missing timestamp as newest when ids are equal/missing.
+                if (aAt === 0 && bAt !== 0) return -1;
+                if (bAt === 0 && aAt !== 0) return 1;
+            }
+        } else if (bAt !== aAt) {
+            return bAt - aAt;
+        }
+
+        if (bId !== aId) return bId - aId;
+
+        // Last resort only: prefer decision over restore so a same-second reject
+        // is not hidden by an older "rejection undone" with a tied clock.
+        const rank = (action: BankTransferLifecycleAction) =>
+            action === 'rejected' ? 3 : action === 'approved' ? 2 : 1;
+        return rank(b.action) - rank(a.action);
+    });
+
+    return { action: events[0]!.action, notification: events[0]!.notification };
+}
+
+/**
+ * Infer slot pending key (client / sub-account) from bank-transfer notification body.
+ * Matchmaker bank slips are always client-slot packages on this product.
+ */
 export function isSlotBankTransferReceivedNotification(
     notification: Record<string, unknown> | undefined | null
 ): boolean {
     if (!notification) return false;
     const desc = String(notification.description ?? notification.Description ?? '').toLowerCase();
+    const title = notificationTitleLower(notification);
+    const combined = `${title} ${desc}`;
     return (
-        desc.includes('sub-account')
-        || desc.includes('client-account')
-        || desc.includes('client account')
-        || desc.includes('matchmaker')
+        combined.includes('sub-account')
+        || combined.includes('client-account')
+        || combined.includes('client account')
+        || combined.includes('client-account package')
+        || combined.includes('client package')
+        || combined.includes('client slot')
+        || combined.includes('matchmaker')
+        || title.includes('client')
     );
+}
+
+/**
+ * When undoing reject/approve, purpose text may be missing on older notifications.
+ * Prefer the undo/decision body, then the latest related reject/received notice.
+ */
+export function resolveBankTransferPendingIsSlot(
+    notification: Record<string, unknown> | undefined | null,
+    allNotifications: Array<Record<string, unknown> | null | undefined> = [],
+): boolean {
+    if (isSlotBankTransferReceivedNotification(notification)) return true;
+
+    const related = allNotifications
+        .filter((n): n is Record<string, unknown> => !!n)
+        .filter(
+            (n) =>
+                isBankTransferRejectedNotification(n)
+                || isPendingBankTransferReceivedNotification(n)
+                || isBankTransferApprovalUndoneNotification(n)
+                || isBankTransferRejectionUndoneNotification(n),
+        )
+        .sort((a, b) => notificationCreatedAtMs(b) - notificationCreatedAtMs(a));
+
+    for (const n of related) {
+        if (isSlotBankTransferReceivedNotification(n)) return true;
+    }
+    return false;
 }
 
 export function isMatrimonialInterestNotification(

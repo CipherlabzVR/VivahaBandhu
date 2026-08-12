@@ -1706,29 +1706,6 @@ function MessagesContent() {
                                                 className={`flex flex-col max-w-[85%] md:max-w-[70%] group ${isMe ? 'self-end' : 'self-start'}`}
                                                 onContextMenu={(e) => handleMessageRightClick(e, msg)}
                                             >
-                                                {isMe && actingSubAccount && !isDeleted && (
-                                                    <div className="flex items-center gap-1.5 self-end mb-1 pr-1">
-                                                        <ProfileAvatar
-                                                            photo={actingSubAccount.profilePhoto}
-                                                            firstName={actingSubAccount.firstName}
-                                                            lastName={actingSubAccount.lastName}
-                                                            gender={actingSubAccount.gender}
-                                                            alt={subAccountDisplayName(actingSubAccount)}
-                                                            className="w-5 h-5 rounded-full object-cover ring-1 ring-primary/25"
-                                                        />
-                                                        <span className="text-[0.65rem] text-text-light font-medium">
-                                                            {subAccountDisplayName(actingSubAccount)}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                                {!isMe &&
-                                                    !isDeleted &&
-                                                    readManagedProfileUserId(msg.managedProfileUserId) != null &&
-                                                    msg.managedProfileName && (
-                                                        <span className="text-[0.65rem] text-text-light font-medium mb-1 pl-1">
-                                                            {msg.managedProfileName}
-                                                        </span>
-                                                    )}
                                                 <div className="relative">
                                                     <div className={`px-4 py-3 shadow-sm transition-all ${deletingMsgId === msg.id ? 'opacity-50 scale-95' : ''} ${
                                                         isDeleted

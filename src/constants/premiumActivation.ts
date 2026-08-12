@@ -16,7 +16,87 @@ export const PENDING_BANK_TRANSFER_CHANGED_EVENT = 'mymatch-pending-bank-changed
 /** Profile banner after admin decision: `approved` | `rejected`. Cleared when user dismisses. */
 export const BANK_TRANSFER_RESULT_STORAGE_KEY = 'mymatch_bank_transfer_result';
 
+/**
+ * Last bank-transfer lifecycle event applied on this device (approve / reject / undo).
+ * Prevents a stale "rejection undone" notice from wiping a newer reject banner.
+ */
+export const BANK_TRANSFER_APPLIED_LIFECYCLE_KEY = 'mymatch_bank_applied_lifecycle';
+
 export type BankTransferResultBanner = 'approved' | 'rejected';
+
+export type AppliedBankTransferLifecycle = {
+    action: 'restore_pending' | 'approved' | 'rejected';
+    id: number;
+    at: number;
+};
+
+export function getAppliedBankTransferLifecycle(): AppliedBankTransferLifecycle | null {
+    if (typeof window === 'undefined') return null;
+    try {
+        const raw = localStorage.getItem(BANK_TRANSFER_APPLIED_LIFECYCLE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as AppliedBankTransferLifecycle;
+        if (!parsed || typeof parsed !== 'object') return null;
+        if (
+            parsed.action !== 'restore_pending'
+            && parsed.action !== 'approved'
+            && parsed.action !== 'rejected'
+        ) {
+            return null;
+        }
+        return {
+            action: parsed.action,
+            id: Number(parsed.id) || 0,
+            at: Number(parsed.at) || 0,
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** True when this notification is newer than the last lifecycle we already applied. */
+export function shouldApplyBankTransferLifecycle(
+    action: AppliedBankTransferLifecycle['action'],
+    notification: Record<string, unknown> | null | undefined,
+    createdAtMs: number,
+): boolean {
+    if (typeof window === 'undefined' || !notification) return false;
+    const id = Number(notification.id ?? notification.Id ?? 0) || 0;
+    const at = createdAtMs > 0 ? createdAtMs : 0;
+    const prev = getAppliedBankTransferLifecycle();
+    if (!prev) return true;
+    if (id > 0 && prev.id > 0 && id === prev.id) return false;
+    if (at > 0 && prev.at > 0) {
+        if (at < prev.at) return false;
+        if (at > prev.at) return true;
+        if (id > 0 && prev.id > 0) return id > prev.id;
+        return action !== prev.action;
+    }
+    if (id > 0 && prev.id > 0) return id > prev.id;
+    // Missing ids/timestamps: allow only when action advances (e.g. restore → reject).
+    if (prev.action === 'restore_pending' && (action === 'rejected' || action === 'approved')) {
+        return true;
+    }
+    if ((prev.action === 'rejected' || prev.action === 'approved') && action === 'restore_pending') {
+        // Undo without a newer id/timestamp — ignore (stale undo after reject).
+        return false;
+    }
+    return false;
+}
+
+export function rememberAppliedBankTransferLifecycle(
+    action: AppliedBankTransferLifecycle['action'],
+    notification: Record<string, unknown> | null | undefined,
+    createdAtMs: number,
+): void {
+    if (typeof window === 'undefined' || !notification) return;
+    const id = Number(notification.id ?? notification.Id ?? 0) || 0;
+    const at = createdAtMs > 0 ? createdAtMs : Date.now();
+    localStorage.setItem(
+        BANK_TRANSFER_APPLIED_LIFECYCLE_KEY,
+        JSON.stringify({ action, id, at } satisfies AppliedBankTransferLifecycle),
+    );
+}
 
 /** Shown via GlobalToast after card payment succeeds or admin approves a pending bank transfer. */
 export const PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE =
@@ -98,6 +178,20 @@ export function applyBankTransferDecision(result: BankTransferResultBanner): voi
         return;
     }
 
+    localStorage.setItem(BANK_TRANSFER_RESULT_STORAGE_KEY, result);
+    window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
+}
+
+/**
+ * Apply reject/approve even when pending flags were already cleared by a stale undo restore,
+ * as long as we still have (or just set) a result banner path from a real slip decision.
+ */
+export function applyBankTransferDecisionForce(result: BankTransferResultBanner): void {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY);
     localStorage.setItem(BANK_TRANSFER_RESULT_STORAGE_KEY, result);
     window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
 }
@@ -189,5 +283,52 @@ export function clearPendingBankTransferFlags(): void {
     localStorage.removeItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY);
     localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
     localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY);
+    window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
+}
+
+/**
+ * Admin undid reject/approve — put the slip back into "pending review" on the website.
+ * Clears the rejected/approved result banner so it cannot stick after undo.
+ */
+export function restorePendingBankTransferAfterUndo(options?: {
+    isSlot?: boolean;
+    submittedAtMs?: number;
+}): void {
+    if (typeof window === 'undefined') return;
+
+    const submittedAtMs =
+        typeof options?.submittedAtMs === 'number' && options.submittedAtMs > 0
+            ? options.submittedAtMs
+            : Date.now();
+
+    const hadResult = !!localStorage.getItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+    const wantSlot = !!options?.isSlot;
+    const hasCorrectPending = wantSlot
+        ? localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1'
+        : localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
+
+    // Already restored — avoid re-dispatch loops from notification listeners.
+    if (!hadResult && hasCorrectPending) return;
+
+    localStorage.removeItem(BANK_TRANSFER_RESULT_STORAGE_KEY);
+    try {
+        sessionStorage.removeItem(BANK_PREMIUM_TOAST_SHOWN_SESSION_KEY);
+        sessionStorage.removeItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY);
+    } catch {
+        /* ignore */
+    }
+
+    if (wantSlot) {
+        localStorage.removeItem(PENDING_BANK_PREMIUM_STORAGE_KEY);
+        localStorage.removeItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY);
+        localStorage.setItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY, '1');
+        localStorage.setItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY, String(submittedAtMs));
+    } else {
+        localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY);
+        localStorage.removeItem(PENDING_BANK_SUB_ACCOUNT_AT_STORAGE_KEY);
+        localStorage.setItem(PENDING_BANK_PREMIUM_STORAGE_KEY, '1');
+        localStorage.setItem(PENDING_BANK_PREMIUM_AT_STORAGE_KEY, String(submittedAtMs));
+    }
+
     window.dispatchEvent(new Event(PENDING_BANK_TRANSFER_CHANGED_EVENT));
 }

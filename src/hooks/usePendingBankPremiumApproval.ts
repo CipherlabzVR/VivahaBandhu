@@ -5,7 +5,6 @@ import {
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
     PENDING_BANK_TRANSFER_CHANGED_EVENT,
-    clearBankTransferUiState,
     hasPendingBankTransferFlag,
 } from '../constants/premiumActivation';
 
@@ -24,15 +23,17 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
             const premiumPending = localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
             const slotPending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
 
-            // Already premium with a leftover premium-slip flag → not a bank-wait UI state.
-            if (isSubscribed === true && premiumPending && !slotPending) {
-                clearBankTransferUiState();
-                setPending(false);
+            // Slot (client / sub-account) review can continue while already premium.
+            if (slotPending) {
+                setPending(true);
                 return;
             }
 
-            // Slot bank review can continue while the manager is already premium.
-            if (slotPending) {
+            // Keep premium pending visible after undo-reject even if auth still looks subscribed
+            // briefly; only drop a stale premium flag when there is no active wait state.
+            if (isSubscribed === true && premiumPending) {
+                // Do not clear storage here — undo-reject restores this flag while subscribed
+                // Matchmakers wait on client packages, and Self may still be mid-refresh.
                 setPending(true);
                 return;
             }
@@ -41,7 +42,7 @@ export function usePendingBankPremiumApproval(isSubscribed: boolean | undefined)
                 setPending(false);
                 return;
             }
-            setPending(hasPendingBankTransferFlag());
+            setPending(hasPendingBankTransferFlag() || premiumPending);
         };
 
         read();

@@ -27,6 +27,7 @@ import {
     BANK_TRANSFER_REJECTED_BANNER_BODY,
     BANK_TRANSFER_REJECTED_BANNER_TITLE,
     PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY,
+    PENDING_BANK_TRANSFER_CHANGED_EVENT,
     SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
     clearBankTransferUiState,
     clearPendingBankSubAccountFlag,
@@ -2066,11 +2067,23 @@ function ProfilePageContent() {
     const handleSettingsPickerConfirm = async (selectedIds: number[]) => {
         if (!settingsPickerDraft) return;
 
+        const activeIds = new Set(
+            filterActiveManagedSubAccounts(subAccounts as ManagedSubAccount[])
+                .map((s) => Number(s.id))
+                .filter((id) => id > 0),
+        );
+        // Only the profiles the user explicitly checked — never expand to all subs.
+        const idsToApply = [...new Set(selectedIds.map(Number))].filter((id) => activeIds.has(id));
+        if (idsToApply.length === 0) {
+            showToast('Select at least one profile to apply settings.', 'info');
+            return;
+        }
+
         if (settingsPickerDraft.kind === 'privacy') {
             const ok = await applyPrivacyPreferences(
                 settingsPickerDraft.showInBrowse,
                 settingsPickerDraft.photoVisibility,
-                selectedIds,
+                idsToApply,
             );
             if (!ok && settingsPickerPreviousPrivacy) {
                 setPrefs(prev => ({
@@ -2080,7 +2093,7 @@ function ProfilePageContent() {
                 }));
             }
         } else {
-            const ok = await applyEmailNotificationPreference(settingsPickerDraft.enabled, selectedIds);
+            const ok = await applyEmailNotificationPreference(settingsPickerDraft.enabled, idsToApply);
             if (!ok && settingsPickerPreviousEmail != null) {
                 updatePref('emailNotifications', settingsPickerPreviousEmail);
             }
@@ -2413,10 +2426,15 @@ function ProfilePageContent() {
         const onVisible = () => {
             if (document.visibilityState === 'visible') {
                 refreshFamilySubAccountSlots();
+                syncPendingFromSlots();
             }
+        };
+        const onPendingBankChanged = () => {
+            syncPendingFromSlots();
         };
         document.addEventListener('visibilitychange', onVisible);
         window.addEventListener('focus', onVisible);
+        window.addEventListener(PENDING_BANK_TRANSFER_CHANGED_EVENT, onPendingBankChanged);
 
         const pending = localStorage.getItem(PENDING_BANK_SUB_ACCOUNT_STORAGE_KEY) === '1';
         const interval = pending
@@ -2426,6 +2444,7 @@ function ProfilePageContent() {
         return () => {
             document.removeEventListener('visibilitychange', onVisible);
             window.removeEventListener('focus', onVisible);
+            window.removeEventListener(PENDING_BANK_TRANSFER_CHANGED_EVENT, onPendingBankChanged);
             if (interval) window.clearInterval(interval);
         };
     }, [
@@ -2535,10 +2554,36 @@ function ProfilePageContent() {
     }, [subAccountPackages, liveSubAccountPackage?.price, user?.familySubAccountAdditionalAmountLkr]);
 
     const openSubAccountPackageModal = useCallback(() => {
+        const purchased = Math.max(0, user?.familySubAccountSlotsPurchased ?? 0);
+        const consumed = Math.max(0, user?.familySubAccountSlotsConsumed ?? 0);
+        const remaining = Math.max(0, purchased - consumed);
+        if (remaining > 0) {
+            showToast(
+                user?.accountType === 'Matchmaker'
+                    ? `Create your unused client profile first (${remaining} slot(s) ready), then you can buy another.`
+                    : `Create your unused managed profile first (${remaining} slot(s) ready), then you can buy another.`,
+                'info',
+                4500,
+            );
+            return;
+        }
         setShowSubAccountPackageModal(true);
-    }, []);
+    }, [user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed]);
 
     const handleSelectSubAccountPackage = useCallback((pkg: PublicMatrimonialPackage) => {
+        const purchased = Math.max(0, user?.familySubAccountSlotsPurchased ?? 0);
+        const consumed = Math.max(0, user?.familySubAccountSlotsConsumed ?? 0);
+        if (purchased - consumed > 0) {
+            setShowSubAccountPackageModal(false);
+            showToast(
+                user?.accountType === 'Matchmaker'
+                    ? 'Create your unused client profile before buying another slot.'
+                    : 'Create your unused managed profile before buying another slot.',
+                'info',
+                4500,
+            );
+            return;
+        }
         setShowSubAccountPackageModal(false);
         const amount = packagePrice(pkg);
         const plan =
@@ -2550,7 +2595,7 @@ function ProfilePageContent() {
             amount: String(amount),
         });
         router.push(`/subscription/checkout?${params.toString()}`);
-    }, [router, user?.accountType]);
+    }, [router, user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed]);
 
     if (loading) {
         return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '1.2rem', color: 'var(--primary)' }}>Loading...</div>;
@@ -2870,7 +2915,7 @@ function ProfilePageContent() {
                                             matchmakerPackageName: matchmakerPackageDisplayName,
                                         })}
                                     </span>
-                                ) : bankPremiumAwaitingApproval ? (
+                                ) : (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
                                     <span
                                         className="badge"
                                         style={{
@@ -2935,25 +2980,7 @@ function ProfilePageContent() {
                         </div>
                     </div>
 
-                    {bankPremiumAwaitingApproval ? (
-                        <div
-                            role="status"
-                            style={{
-                                marginBottom: '1.5rem',
-                                padding: '1rem 1.25rem',
-                                borderRadius: '12px',
-                                background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-                                border: '1px solid #fcd34d',
-                                color: '#92400e',
-                            }}
-                        >
-                            <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Bank transfer under review</strong>
-                            <span style={{ fontSize: '0.95rem', lineHeight: 1.5 }}>
-                                We received your payment slip. Our team will verify it and activate your premium access. This usually doesn&apos;t take long —
-                                you can keep using the site on the free plan until then.
-                            </span>
-                        </div>
-                    ) : bankTransferResult === 'approved' ? (
+                    {bankTransferResult === 'approved' ? (
                         <div
                             role="status"
                             style={{
@@ -3086,6 +3113,27 @@ function ProfilePageContent() {
                                     Upgrade Premium
                                 </button>
                             </div>
+                        </div>
+                    ) : (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
+                        <div
+                            role="status"
+                            style={{
+                                marginBottom: '1.5rem',
+                                padding: '1rem 1.25rem',
+                                borderRadius: '12px',
+                                background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                                border: '1px solid #fcd34d',
+                                color: '#92400e',
+                            }}
+                        >
+                            <strong style={{ display: 'block', marginBottom: '0.35rem' }}>Bank transfer under review</strong>
+                            <span style={{ fontSize: '0.95rem', lineHeight: 1.5 }}>
+                                {bankSubAccountAwaitingApproval
+                                    ? isMatchmakerAccount
+                                        ? 'We received your payment slip. Our team will verify it and add your client-account slot. This usually doesn\'t take long.'
+                                        : 'We received your payment slip. Our team will verify it and add your sub-account slot. This usually doesn\'t take long.'
+                                    : 'We received your payment slip. Our team will verify it and activate your premium access. This usually doesn\'t take long — you can keep using the site on the free plan until then.'}
+                            </span>
                         </div>
                     ) : null}
 
@@ -3434,7 +3482,7 @@ function ProfilePageContent() {
                                         </div>
                                         <div style={{ color: '#92400e', fontSize: '0.88rem', marginTop: 8 }}>
                                             {subSlotsRemaining > 0
-                                                ? `${subSlotsRemaining} slot(s) ready to create · ${subSlotsConsumed}/${subSlotsPurchased} used`
+                                                ? `${subSlotsRemaining} slot(s) ready — create a profile before buying another · ${subSlotsConsumed}/${subSlotsPurchased} used`
                                                 : subSlotsPurchased > 0
                                                   ? `All ${subSlotsPurchased} slot(s) used — pay for another slot to add more profiles`
                                                   : 'No sub-account slots yet — pay below to add your first managed profile'}
@@ -3466,7 +3514,7 @@ function ProfilePageContent() {
                                             {bankSubAccountAwaitingApproval && !canCreateManagedSubAccount
                                                 ? 'Your bank transfer is waiting for admin approval. You can create a client profile after approval.'
                                                 : canCreateManagedSubAccount
-                                                    ? `You have ${subSlotsRemaining} unused client-account slot(s). Create a profile when ready — ${subSlotsConsumed}/${subSlotsPurchased} used.`
+                                                    ? `You have ${subSlotsRemaining} unused client-account slot(s). Create that profile before buying another — ${subSlotsConsumed}/${subSlotsPurchased} used.`
                                                     : `Pay for one client account (from ${subAccountPriceLabel}), then create that profile. Add unlimited accounts — no fixed package.`}
                                         </div>
                                     </div>
@@ -3775,11 +3823,15 @@ function ProfilePageContent() {
                     introLine={
                         isMatchmakerAccount
                             ? (needsSubAccountPayment
-                                ? 'Pay for one client account, then create that profile. You can add unlimited accounts — pay for each one.'
-                                : `You have used all ${subSlotsPurchased} client-account slot(s). Pay for another to add more.`)
+                                ? (subSlotsPurchased === 0
+                                    ? 'Pay for one client account, then create that profile. You can add unlimited accounts — pay for each one.'
+                                    : `You have used all ${subSlotsPurchased} client-account slot(s). Pay for another to add more.`)
+                                : `Create your unused client profile first (${subSlotsRemaining} slot(s) ready), then you can buy another.`)
                             : (needsSubAccountPayment
-                                ? 'Choose a package to pay for your first sub-account slot, then create a managed profile.'
-                                : `You have used all ${subSlotsPurchased} slot(s). Choose a package to add another managed profile.`)
+                                ? (subSlotsPurchased === 0
+                                    ? 'Choose a package to pay for your first sub-account slot, then create a managed profile.'
+                                    : `You have used all ${subSlotsPurchased} slot(s). Choose a package to add another managed profile.`)
+                                : `Create your unused managed profile first (${subSlotsRemaining} slot(s) ready), then you can buy another.`)
                     }
                     onSelectPackage={handleSelectSubAccountPackage}
                 />
@@ -3804,15 +3856,20 @@ function ProfilePageContent() {
                                         setIsCreateSubAccountModalOpen(true);
                                     }}
                                 >
-                                    Create Sub-Account
+                                    {canCreateManagedSubAccount ? 'Create Sub-Account' : 'Pay for sub-account slot'}
                                 </button>
                             </div>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem' }}>
                             {usesSubAccountSlots
-                                ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Pay first to activate premium on your account — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. Premium also applies to each managed profile when created; expiry is shown per account below.`
+                                ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Premium also applies to each managed profile when created; expiry is shown per account below.`
                                 : null}
                         </p>
+                        {usesSubAccountSlots && canCreateManagedSubAccount && (
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                You have {subSlotsRemaining} unused slot(s). Create a managed profile before purchasing another slot.
+                            </p>
+                        )}
                         {usesSubAccountSlots && !canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 {bankSubAccountAwaitingApproval
@@ -3978,8 +4035,13 @@ function ProfilePageContent() {
                             </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem', fontSize: '0.95rem' }}>
-                            {`Client profiles appear in browse with a matchmaker badge. Pay for one account, then create it — ${subSlotsConsumed}/${subSlotsPurchased} slot(s) used. No fixed package limit. Messages and interest for each profile are grouped below.`}
+                            {`Client profiles appear in browse with a matchmaker badge. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Messages and interest for each profile are grouped below.`}
                         </p>
+                        {canCreateManagedSubAccount && (
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                                You have {subSlotsRemaining} unused client-account slot(s). Create a profile before purchasing another slot.
+                            </p>
+                        )}
                         {needsSubAccountPayment && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 {bankSubAccountAwaitingApproval
@@ -4007,7 +4069,13 @@ function ProfilePageContent() {
                                         onDelete={handleDeleteSubAccount}
                                         deletingSubAccountId={deletingSubAccountId}
                                         badgeKind="matchmaker-client"
-                                        detailLine={`${subAccount.email || '—'}${subAccount.phoneNumber ? ` • ${subAccount.phoneNumber}` : ''}${subAccount.age ? ` • ${subAccount.age} years` : ''}`}
+                                        detailLine={[
+                                            subAccount.phoneNumber || null,
+                                            subAccount.age ? `${subAccount.age} years` : null,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(' • ') || '—'}
+                                        subscriptionLine={formatSubAccountSubscription(subAccount)}
                                         footerLine="Listed in browse with matchmaker badge · Messages and interest grouped by client"
                                         onViewHoroscope={(src) => setHoroscopeViewSrc(src)}
                                     />

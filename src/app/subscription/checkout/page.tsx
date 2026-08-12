@@ -79,7 +79,17 @@ export default function SubscriptionCheckoutPage() {
     const isSubAccountCheckout = checkoutPlan === CHECKOUT_PLAN_SUB_ACCOUNT;
     const isMatchmakerClientCheckout = isMatchmakerClientCheckoutPlan(checkoutPlan);
     const isSlotCheckout = isSubAccountCheckout || isMatchmakerClientCheckout;
+    const unusedSlotCount = Math.max(
+        0,
+        Math.max(0, user?.familySubAccountSlotsPurchased ?? 0)
+            - Math.max(0, user?.familySubAccountSlotsConsumed ?? 0),
+    );
+    const mustCreateProfileBeforeBuySlot = isSlotCheckout && unusedSlotCount > 0;
     const [isResubmitCheckout, setIsResubmitCheckout] = useState(false);
+
+    const unusedSlotBlockMessage = isMatchmakerAccount
+        ? `You have ${unusedSlotCount} unused client-account slot(s). Create a client profile before buying another.`
+        : `You have ${unusedSlotCount} unused sub-account slot(s). Create a managed profile before buying another.`;
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -238,9 +248,17 @@ export default function SubscriptionCheckoutPage() {
                 setError('Client-account checkout is only for Matchmaker accounts.');
                 return;
             }
+            if (unusedSlotCount > 0) {
+                setError(unusedSlotBlockMessage);
+                return;
+            }
         } else if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
             if (user.accountType !== 'Parents' && user.accountType !== 'Relation' && user.accountType !== 'Father' && user.accountType !== 'Mother') {
                 setError('Sub-account checkout is only for Parents and Relation accounts.');
+                return;
+            }
+            if (unusedSlotCount > 0) {
+                setError(unusedSlotBlockMessage);
                 return;
             }
         } else if (user.isSubscribed) {
@@ -336,6 +354,11 @@ export default function SubscriptionCheckoutPage() {
             return;
         }
 
+        if (mustCreateProfileBeforeBuySlot) {
+            setError(unusedSlotBlockMessage);
+            return;
+        }
+
         if (user.isSubscribed && !isSlotCheckout) {
             setError('You already have an active premium plan. Switch to the free plan first to change packages.');
             return;
@@ -421,6 +444,18 @@ export default function SubscriptionCheckoutPage() {
                 {isResubmitCheckout ? (
                     <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
                         Upload a new bank transfer slip for the plan below. Our team will review it and activate your subscription after approval.
+                    </p>
+                ) : null}
+                {mustCreateProfileBeforeBuySlot ? (
+                    <p className="text-amber-900 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
+                        {unusedSlotBlockMessage}{' '}
+                        <button
+                            type="button"
+                            className="underline font-semibold"
+                            onClick={() => router.push('/profile')}
+                        >
+                            Go to profile
+                        </button>
                     </p>
                 ) : null}
                 <p className="text-text-light mb-6">
@@ -675,7 +710,7 @@ export default function SubscriptionCheckoutPage() {
                         className="btn btn-primary"
                         style={{ padding: '0.9rem 1.4rem' }}
                         onClick={paymentMethod === 'card' ? handleMockPayment : handleBankTransfer}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || mustCreateProfileBeforeBuySlot}
                     >
                         {isSubmitting
                             ? 'Processing...'

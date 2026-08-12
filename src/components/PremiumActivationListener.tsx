@@ -12,15 +12,20 @@ import {
     PENDING_BANK_PREMIUM_STORAGE_KEY,
     PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE,
     applyBankTransferDecision,
+    applyBankTransferDecisionForce,
     clearBankTransferUiState,
     getPendingBankTransferSubmittedAt,
     hasPendingBankTransferFlag,
+    rememberAppliedBankTransferLifecycle,
+    restorePendingBankTransferAfterUndo,
+    shouldApplyBankTransferLifecycle,
 } from '../constants/premiumActivation';
 import { isMatchmakerPaidTier } from '../constants/subscription';
 import {
-    isBankTransferApprovedNotification,
     isBankTransferRejectedNotification,
     notificationCreatedAtMs,
+    resolveBankTransferPendingIsSlot,
+    resolveLatestBankTransferLifecycleAction,
 } from '../utils/matrimonialInterestNotifications';
 
 async function fetchMatrimonialSubscriptionSnapshot(
@@ -157,44 +162,93 @@ export default function PremiumActivationListener() {
         }
     }, [refreshInterestNotifications]);
 
-    /** Real-time path: react as soon as SignalR appends approve/reject notifications. */
+    /** Real-time path: react as soon as SignalR appends approve/reject/undo notifications. */
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
-        // Free Matchmaker must not treat leftover Self "Premium activated" notices as a new approval.
         const accountType = String(user?.accountType ?? '').toLowerCase();
         const isFreeMatchmaker =
             accountType === 'matchmaker' &&
             user?.isSubscribed !== true &&
             String(user?.matchmakerTier ?? 'FREE').toUpperCase() === 'FREE';
-        if (isFreeMatchmaker) return;
 
-        // Bank-transfer UI only when a slip is pending — ignore card/other premium events.
-        if (!hasPendingBankTransferFlag()) return;
-
-        const approved = interestNotifications.filter((n) =>
-            isBankTransferApprovedNotification(n as Record<string, unknown>)
+        const lifecycle = resolveLatestBankTransferLifecycleAction(
+            interestNotifications as Array<Record<string, unknown>>,
         );
-        if (approved.length > 0) {
-            const key = String(approved[0].id ?? approved[0].Id ?? 'approved');
-            if (!handledDecisionIdsRef.current.has(`a:${key}`)) {
-                handledDecisionIdsRef.current.add(`a:${key}`);
-                const fromPendingPremium =
-                    localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
-                void applyApprovedDecision(fromPendingPremium);
-            }
+        if (!lifecycle.action || !lifecycle.notification) return;
+
+        const decisionKey = String(
+            lifecycle.notification.id
+                ?? lifecycle.notification.Id
+                ?? `${lifecycle.action}:${notificationCreatedAtMs(lifecycle.notification)}`,
+        );
+        const lifecycleAt = notificationCreatedAtMs(lifecycle.notification);
+        if (!shouldApplyBankTransferLifecycle(lifecycle.action, lifecycle.notification, lifecycleAt)) {
             return;
         }
 
-        const rejected = interestNotifications.filter((n) =>
-            isBankTransferRejectedNotification(n as Record<string, unknown>)
-        ) as Record<string, unknown>[];
-        if (rejected.length > 0 && shouldApplyPendingRejection(rejected)) {
-            const key = String(rejected[0].id ?? rejected[0].Id ?? 'rejected');
-            if (!handledDecisionIdsRef.current.has(`r:${key}`)) {
-                handledDecisionIdsRef.current.add(`r:${key}`);
-                applyRejectedDecision();
+        // Undo must run even for free Matchmakers (reject clears pending; undo must restore banner).
+        if (lifecycle.action === 'restore_pending') {
+            if (handledDecisionIdsRef.current.has(`u:${decisionKey}`)) return;
+            handledDecisionIdsRef.current.add(`u:${decisionKey}`);
+            const isSlot =
+                resolveBankTransferPendingIsSlot(
+                    lifecycle.notification,
+                    interestNotifications as Array<Record<string, unknown>>,
+                )
+                || accountType === 'matchmaker';
+            restorePendingBankTransferAfterUndo({
+                isSlot,
+                submittedAtMs: lifecycleAt || Date.now(),
+            });
+            rememberAppliedBankTransferLifecycle(
+                'restore_pending',
+                lifecycle.notification,
+                lifecycleAt,
+            );
+            void refreshInterestNotifications();
+            return;
+        }
+
+        // Free Matchmaker must not treat leftover Self "Premium activated" notices as a new approval.
+        if (isFreeMatchmaker) return;
+
+        if (lifecycle.action === 'approved') {
+            if (handledDecisionIdsRef.current.has(`a:${decisionKey}`)) return;
+            handledDecisionIdsRef.current.add(`a:${decisionKey}`);
+            const fromPendingPremium =
+                localStorage.getItem(PENDING_BANK_PREMIUM_STORAGE_KEY) === '1';
+            if (hasPendingBankTransferFlag()) {
+                void applyApprovedDecision(fromPendingPremium);
+            } else {
+                // Pending already cleared (e.g. stale undo) — still surface approve + sync.
+                applyBankTransferDecisionForce('approved');
+                void refreshInterestNotifications();
+                void syncSubscriptionFromServer();
             }
+            rememberAppliedBankTransferLifecycle('approved', lifecycle.notification, lifecycleAt);
+            return;
+        }
+
+        if (lifecycle.action === 'rejected') {
+            const rejected = [lifecycle.notification];
+            // Allow reject when pending exists, or when a stale undo already cleared pending.
+            if (hasPendingBankTransferFlag()) {
+                if (!shouldApplyPendingRejection(rejected)) return;
+                if (handledDecisionIdsRef.current.has(`r:${decisionKey}`)) return;
+                handledDecisionIdsRef.current.add(`r:${decisionKey}`);
+                applyRejectedDecision();
+            } else {
+                if (handledDecisionIdsRef.current.has(`r:${decisionKey}`)) return;
+                handledDecisionIdsRef.current.add(`r:${decisionKey}`);
+                applyBankTransferDecisionForce('rejected');
+                void refreshInterestNotifications();
+                if (sessionStorage.getItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY) !== '1') {
+                    sessionStorage.setItem(BANK_TRANSFER_REJECTED_TOAST_SHOWN_SESSION_KEY, '1');
+                    showToast(BANK_TRANSFER_REJECTED_MESSAGE, 'error', 4000);
+                }
+            }
+            rememberAppliedBankTransferLifecycle('rejected', lifecycle.notification, lifecycleAt);
         }
     }, [
         interestNotifications,
@@ -203,6 +257,8 @@ export default function PremiumActivationListener() {
         user?.matchmakerTier,
         applyApprovedDecision,
         applyRejectedDecision,
+        refreshInterestNotifications,
+        syncSubscriptionFromServer,
     ]);
 
     const checkBankApproval = useCallback(async () => {

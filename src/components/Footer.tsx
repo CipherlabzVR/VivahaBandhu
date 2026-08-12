@@ -4,6 +4,7 @@ import { useRef, useState, useEffect, useCallback, type MouseEvent } from 'react
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
     cancelFooterScrollRestore,
@@ -32,8 +33,10 @@ function hashSectionIdFromHref(href: string): string | null {
 
 export default function Footer() {
     const { t } = useLanguage();
+    const { user } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
+    const isMatchmaker = user?.accountType === 'Matchmaker';
     const ref = useRef<HTMLElement>(null);
     const pathRef = useRef<SVGPathElement>(null);
     const [inView, setInView] = useState(false);
@@ -239,7 +242,9 @@ export default function Footer() {
                     <ul className="space-y-2">
                         <li>{footerLink('/profiles', t('browseProfiles'))}</li>
                         <li>{footerLink('/#how-it-works', t('howItWorks'))}</li>
-                        <li>{footerLink('/#matchmaker', t('forMatchmakers'))}</li>
+                        {!isMatchmaker && (
+                            <li>{footerLink('/#matchmaker', t('forMatchmakers'))}</li>
+                        )}
                         <li>{footerLink('/#pricing', t('pricingPlans'))}</li>
                     </ul>
                 </div>

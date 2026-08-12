@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ManagedSubAccount } from '../utils/managedSubAccounts';
 import { subAccountDisplayName } from '../utils/managedSubAccounts';
 import ModalScrollArea from './ModalScrollArea';
@@ -79,6 +79,7 @@ export default function ManagedSubAccountSettingsPicker({
 }: ManagedSubAccountSettingsPickerProps) {
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
     const [error, setError] = useState('');
+    const wasOpenRef = useRef(false);
 
     const isMatchmaker = accountType === 'Matchmaker';
 
@@ -87,11 +88,19 @@ export default function ManagedSubAccountSettingsPicker({
         [subAccounts],
     );
 
+    // Only reset selection when the modal opens — not when parent re-fetches subAccounts
+    // (that was re-selecting every profile and applying settings to all after a delay).
     useEffect(() => {
-        if (!open) return;
-        setError('');
-        setSelectedIds(sortedAccounts.map((s) => Number(s.id)).filter((id) => id > 0));
-    }, [open, sortedAccounts]);
+        if (open && !wasOpenRef.current) {
+            setError('');
+            setSelectedIds([]);
+        }
+        if (!open) {
+            setError('');
+            setSelectedIds([]);
+        }
+        wasOpenRef.current = open;
+    }, [open]);
 
     if (!open || !draft) return null;
 
@@ -106,11 +115,13 @@ export default function ManagedSubAccountSettingsPicker({
     };
 
     const handleConfirm = () => {
-        if (selectedIds.length === 0) {
+        // Snapshot ids at click time so a late parent re-render cannot widen the selection.
+        const idsToApply = [...selectedIds].filter((id) => id > 0);
+        if (idsToApply.length === 0) {
             setError(`Select at least one ${profileWord} profile.`);
             return;
         }
-        void onConfirm(selectedIds);
+        void onConfirm(idsToApply);
     };
 
     return (

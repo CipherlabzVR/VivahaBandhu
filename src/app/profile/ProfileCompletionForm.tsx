@@ -3133,33 +3133,37 @@ export default function ProfileCompletionForm({
                         <div className="form-grid">
                             <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                                 <label>Age Range (Years)*</label>
-                                <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
-                                    <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        name="partnerMinAge"
-                                        value={formData.partnerMinAge}
-                                        onChange={handleChange}
-                                        placeholder="Min (18+)"
-                                        maxLength={3}
-                                        required
-                                        style={{ flex: 1, minWidth: 0, width: 'auto', ...fieldInputStyle('partnerMinAge') }}
-                                    />
-                                    <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        name="partnerMaxAge"
-                                        value={formData.partnerMaxAge}
-                                        onChange={handleChange}
-                                        placeholder="Max (greater than Min)"
-                                        maxLength={3}
-                                        required
-                                        style={{ flex: 1, minWidth: 0, width: 'auto', ...fieldInputStyle('partnerMaxAge') }}
-                                    />
+                                <div style={{ display: 'flex', gap: '1rem', width: '100%', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            name="partnerMinAge"
+                                            value={formData.partnerMinAge}
+                                            onChange={handleChange}
+                                            placeholder="Min (18+)"
+                                            maxLength={3}
+                                            required
+                                            style={{ width: '100%', ...fieldInputStyle('partnerMinAge') }}
+                                        />
+                                        <FieldErrorMessage message={fieldErrors.partnerMinAge} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            name="partnerMaxAge"
+                                            value={formData.partnerMaxAge}
+                                            onChange={handleChange}
+                                            placeholder="Max (greater than Min)"
+                                            maxLength={3}
+                                            required
+                                            style={{ width: '100%', ...fieldInputStyle('partnerMaxAge') }}
+                                        />
+                                        <FieldErrorMessage message={fieldErrors.partnerMaxAge} />
+                                    </div>
                                 </div>
-                                <FieldErrorMessage message={fieldErrors.partnerMinAge} />
-                                <FieldErrorMessage message={fieldErrors.partnerMaxAge} />
-                                <small style={{ color: '#888', fontSize: '0.78rem' }}>
+                                <small style={{ color: '#888', fontSize: '0.78rem', display: 'block', marginTop: '0.35rem' }}>
                                     Minimum and maximum partner age must be at least 18. Maximum must be greater than minimum.
                                 </small>
                             </div>
