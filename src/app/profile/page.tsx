@@ -1121,7 +1121,7 @@ function ProfilePageContent() {
                     const details = await Promise.all(
                         stillMissing.map(async (profileId) => {
                             try {
-                                const profileRes = await matrimonialService.getProfile(profileId);
+                                const profileRes = await matrimonialService.getProfile(profileId, Number(user.id));
                                 if (profileRes?.statusCode === 200 && profileRes?.result) {
                                     return mapCard(profileRes.result as Record<string, unknown>, profileId);
                                 }
@@ -1255,7 +1255,7 @@ function ProfilePageContent() {
                         const extraIncoming = await Promise.all(
                             stillMissingIncoming.map(async (profileId) => {
                                 try {
-                                    const profileRes = await matrimonialService.getProfile(profileId);
+                                    const profileRes = await matrimonialService.getProfile(profileId, Number(user.id));
                                     if (profileRes?.statusCode === 200 && profileRes?.result) {
                                         return mapCard(
                                             profileRes.result as Record<string, unknown>,
@@ -2712,7 +2712,7 @@ function ProfilePageContent() {
 
                                         // Fetch existing profile first, then patch only basic details so we don't wipe other fields.
                                         const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
-                                        const profileRes = await fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}`, {
+                                        const profileRes = await fetch(`${apiBase}/Matrimonial/GetProfile?userId=${user.id}&requesterUserId=${user.id}`, {
                                             headers: { 'Authorization': `Bearer ${token}` }
                                         });
                                         const profileJson = profileRes.ok ? await profileRes.json() : null;

@@ -907,24 +907,24 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             setIsProfileLockedByDailyLimit(false);
             if (activeModal === 'profile' && initialSelectedProfile.userId) {
                 const fetchDetailedProfile = async () => {
+                    if (!user?.id) {
+                        setIsLoadingProfile(false);
+                        onSwitch('login');
+                        return;
+                    }
                     setIsLoadingProfile(true);
                     try {
                         const viewAsOthers = Boolean(initialSelectedProfile.viewAsOthers);
                         const isOwnProfile =
                             isOwnMatrimonialProfile(user, initialSelectedProfile);
-                        // Owner preview: omit requester so the API applies visitor masking (no daily-view charge).
-                        const requesterForFetch =
-                            viewAsOthers && isOwnProfile
-                                ? undefined
-                                : user?.id
-                                  ? Number(user.id)
-                                  : undefined;
+                        const requesterForFetch = Number(user.id);
                         const applyViewLimit = !(viewAsOthers && isOwnProfile);
 
                         const res = await matrimonialService.getProfile(
                             initialSelectedProfile.userId,
                             requesterForFetch,
-                            applyViewLimit
+                            applyViewLimit,
+                            viewAsOthers && isOwnProfile
                         );
                         const statusCode = res?.statusCode ?? res?.StatusCode;
                         const detail = res?.result ?? res?.Result;

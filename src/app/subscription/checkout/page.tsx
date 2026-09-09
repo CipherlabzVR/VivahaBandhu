@@ -25,9 +25,8 @@ import {
     setPendingBankSubAccountFlag,
 } from '../../../constants/premiumActivation';
 import { useMatrimonialNotifications } from '../../../context/MatrimonialNotificationsContext';
-import { sanitizeNameInput } from '../../../utils/nameInput';
-import { PasswordVisibilityToggle } from '../../../components/PasswordVisibilityToggle';
 import { showToast } from '../../../utils/toast';
+import { saveDirectPaySession } from '../../../utils/directPayIpg';
 
 type PaymentMethod = 'card' | 'bank';
 
@@ -59,12 +58,6 @@ export default function SubscriptionCheckoutPage() {
     const [checkoutPlan, setCheckoutPlan] = useState<string>(CHECKOUT_PLAN_PREMIUM_SELF);
     const [amount, setAmount] = useState(String(PREMIUM_SUBSCRIPTION_LKR));
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
-
-    const [cardNumber, setCardNumber] = useState('');
-    const [cardHolder, setCardHolder] = useState('');
-    const [expiry, setExpiry] = useState('');
-    const [cvv, setCvv] = useState('');
-    const [showCvv, setShowCvv] = useState(false);
 
     const [bankSlipFile, setBankSlipFile] = useState<File | null>(null);
     const [bankSlipPreview, setBankSlipPreview] = useState<string | null>(null);
@@ -145,19 +138,61 @@ export default function SubscriptionCheckoutPage() {
             });
             return;
         }
-        setAmount(String(PREMIUM_SUBSCRIPTION_LKR));
+        matrimonialService.getActiveUserPremiumPackage().then((pkg) => {
+            if (pkg?.price != null && pkg.price > 0) {
+                setAmount(String(pkg.price));
+                return;
+            }
+            setAmount(String(PREMIUM_SUBSCRIPTION_LKR));
+        });
     }, [user?.familySubAccountAdditionalAmountLkr]);
 
-    const formatCardNumber = (value: string) => {
-        const digits = value.replace(/\D/g, '').slice(0, 16);
-        return digits.replace(/(\d{4})(?=\d)/g, '$1 ');
-    };
+    useEffect(() => {
+        if (typeof window === 'undefined' || !user?.id) return;
+        const url = new URL(window.location.href);
+        const isReturn = url.searchParams.get('directpay') === '1';
+        const orderId = url.searchParams.get('orderId') || url.searchParams.get('order_id');
+        if (!isReturn || !orderId) return;
 
-    const formatExpiry = (value: string) => {
-        const digits = value.replace(/\D/g, '').slice(0, 4);
-        if (digits.length <= 2) return digits;
-        return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    };
+        let cancelled = false;
+        const finishReturn = async () => {
+            setError('');
+            setSuccess('');
+            setIsSubmitting(true);
+            try {
+                const urlPlan =
+                    url.searchParams.get('plan')
+                    || url.searchParams.get('Plan')
+                    || checkoutPlan;
+                const subscriptionPlan =
+                    urlPlan.trim().length > 0 ? urlPlan.trim().toLowerCase() : CHECKOUT_PLAN_PREMIUM_SELF;
+                const normalizedPlan = isMatchmakerClientCheckoutPlan(subscriptionPlan)
+                    ? CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                    : subscriptionPlan;
+                const res = await confirmDirectPayWithRetry(Number(user.id), orderId, 'SUCCESS');
+                if (cancelled) return;
+                const statusCode = res?.statusCode ?? res?.StatusCode;
+                if (statusCode === 200 || statusCode === 1) {
+                    applyPaidCheckoutSuccess(normalizedPlan, res);
+                } else {
+                    setError(res?.message || 'Failed to confirm card payment.');
+                }
+            } catch (err) {
+                if (!cancelled) {
+                    setError(err instanceof Error ? err.message : 'Failed to confirm card payment.');
+                }
+            } finally {
+                if (!cancelled) setIsSubmitting(false);
+            }
+        };
+
+        void finishReturn();
+        return () => {
+            cancelled = true;
+        };
+        // Return-from-gateway confirmation should run once per landing, not on every plan/user patch.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -233,10 +268,10 @@ export default function SubscriptionCheckoutPage() {
         updateUser(patch);
     };
 
-    const handleMockPayment = async () => {
+    const resolveCheckoutPlan = (): string | null => {
         if (!user?.id) {
             setError('Please log in first.');
-            return;
+            return null;
         }
 
         let subscriptionPlan =
@@ -246,24 +281,24 @@ export default function SubscriptionCheckoutPage() {
             subscriptionPlan = CHECKOUT_PLAN_MATCHMAKER_CLIENT;
             if (user.accountType !== 'Matchmaker') {
                 setError('Client-account checkout is only for Matchmaker accounts.');
-                return;
+                return null;
             }
             if (unusedSlotCount > 0) {
                 setError(unusedSlotBlockMessage);
-                return;
+                return null;
             }
         } else if (subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT) {
             if (user.accountType !== 'Parents' && user.accountType !== 'Relation' && user.accountType !== 'Father' && user.accountType !== 'Mother') {
                 setError('Sub-account checkout is only for Parents and Relation accounts.');
-                return;
+                return null;
             }
             if (unusedSlotCount > 0) {
                 setError(unusedSlotBlockMessage);
-                return;
+                return null;
             }
         } else if (user.isSubscribed) {
             setError('You already have an active premium plan. Switch to the free plan first to change packages.');
-            return;
+            return null;
         }
 
         if (
@@ -271,11 +306,83 @@ export default function SubscriptionCheckoutPage() {
             user.accountType === 'Matchmaker'
         ) {
             setError('Matchmakers pay per client account. Choose a client-account package from your profile.');
-            return;
+            return null;
         }
 
-        if (!cardNumber.trim() && !cardHolder.trim() && !expiry.trim() && !cvv.trim()) {
-            setError('Enter any card details to continue.');
+        return subscriptionPlan;
+    };
+
+    const applyPaidCheckoutSuccess = (
+        subscriptionPlan: string,
+        res: { statusCode?: number; StatusCode?: number; message?: string; result?: unknown; Result?: unknown },
+    ) => {
+        const isSlotPlan =
+            subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
+            || subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT;
+        clearBankTransferUiState();
+        if (isSlotPlan) {
+            const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
+            applySubAccountSlotPatch(r);
+            setSuccess(
+                subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                    ? 'Payment successful. You can create a client profile from your profile page.'
+                    : 'Payment successful. Premium is now active on your account. You can create a managed profile from your profile page.',
+            );
+            showToast(
+                subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
+                    ? MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE
+                    : SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
+                'success',
+                5500,
+            );
+            void refreshInterestNotifications();
+            window.setTimeout(() => router.replace('/profile'), 800);
+            return;
+        }
+        const rawUntil =
+            (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
+                ?.subscribedUntil ??
+            (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
+                ?.SubscribedUntil;
+        let untilIso: string | undefined;
+        if (rawUntil != null && String(rawUntil).trim() !== '') {
+            const d = new Date(String(rawUntil));
+            if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
+        }
+        applySuccessUserPatch(untilIso);
+        setSuccess('Payment successful. Premium membership is now active.');
+        showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
+        void refreshInterestNotifications();
+        window.setTimeout(() => {
+            router.replace('/');
+        }, 800);
+    };
+
+    const confirmDirectPayWithRetry = async (
+        userId: number,
+        orderId: string,
+        clientStatus?: string,
+    ) => {
+        let lastRes: any = null;
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+            lastRes = await matrimonialService.confirmDirectPayPayment(userId, orderId, clientStatus);
+            const statusCode = lastRes?.statusCode ?? lastRes?.StatusCode;
+            const result = (lastRes?.result ?? lastRes?.Result) as Record<string, unknown> | undefined;
+            const awaitingWebhook = result?.awaitingWebhook === true || result?.AwaitingWebhook === true;
+            if ((statusCode === 200 || statusCode === 1) && !awaitingWebhook) {
+                return lastRes;
+            }
+            await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+        throw new Error(
+            lastRes?.message
+            || 'Payment was received. Activation is taking longer than expected. Refresh this page in a minute or contact support.',
+        );
+    };
+
+    const handleCardPayment = async () => {
+        const subscriptionPlan = resolveCheckoutPlan();
+        if (!subscriptionPlan || !user?.id) {
             return;
         }
 
@@ -284,61 +391,35 @@ export default function SubscriptionCheckoutPage() {
         setIsSubmitting(true);
 
         try {
-            const mockReference = `${cardNumber}|${cardHolder}|${expiry}|${cvv}|MOCK`;
-            const isSlotPlan =
-                subscriptionPlan === CHECKOUT_PLAN_SUB_ACCOUNT
-                || subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT;
-            const res = await matrimonialService.activateMockSubscription(
+            const checkoutPath = `/subscription/checkout?plan=${encodeURIComponent(subscriptionPlan)}&amount=${encodeURIComponent(amount)}`;
+            const returnUrl = `${window.location.origin}/subscription/pay`;
+            const initiated = await matrimonialService.initiateDirectPayCheckout(
                 Number(user.id),
-                mockReference,
                 subscriptionPlan,
-                isSlotPlan ? parseFloat(amount) : undefined,
+                parseFloat(amount),
+                returnUrl,
             );
-            if (res?.statusCode === 200 || res?.statusCode === 1) {
-                // Card/other paid paths must never leave bank-transfer banners or pending flags.
-                clearBankTransferUiState();
-                if (isSlotPlan) {
-                    const r = (res?.result ?? res?.Result) as Record<string, unknown> | undefined;
-                    applySubAccountSlotPatch(r);
-                    setSuccess(
-                        subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
-                            ? 'Payment successful. You can create a client profile from your profile page.'
-                            : 'Payment successful. Premium is now active on your account. You can create a managed profile from your profile page.',
-                    );
-                    showToast(
-                        subscriptionPlan === CHECKOUT_PLAN_MATCHMAKER_CLIENT
-                            ? MATCHMAKER_CLIENT_SLOT_PURCHASED_MESSAGE
-                            : SUB_ACCOUNT_SLOT_PURCHASED_MESSAGE,
-                        'success',
-                        5500,
-                    );
-                    void refreshInterestNotifications();
-                    window.setTimeout(() => router.replace('/profile'), 800);
-                    return;
-                }
-                const rawUntil =
-                    (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
-                        ?.subscribedUntil ??
-                    (res as { result?: { subscribedUntil?: string; SubscribedUntil?: string } })?.result
-                        ?.SubscribedUntil;
-                let untilIso: string | undefined;
-                if (rawUntil != null && String(rawUntil).trim() !== '') {
-                    const d = new Date(String(rawUntil));
-                    if (!Number.isNaN(d.getTime())) untilIso = d.toISOString();
-                }
-                applySuccessUserPatch(untilIso);
-                setSuccess('Payment successful. Premium membership is now active.');
-                showToast(PREMIUM_MEMBERSHIP_ACTIVATED_MESSAGE, 'success', 5500);
-                void refreshInterestNotifications();
-                window.setTimeout(() => {
-                    router.replace('/');
-                }, 800);
-            } else {
-                setError(res?.message || 'Failed to activate subscription.');
+            const payload = (initiated?.result ?? initiated?.Result) as Record<string, unknown> | undefined;
+            const signature = String(payload?.signature ?? payload?.Signature ?? '');
+            const dataString = String(payload?.dataString ?? payload?.DataString ?? '');
+            const stageRaw = String(payload?.stage ?? payload?.Stage ?? 'DEV').toUpperCase();
+            const orderId = String(payload?.orderId ?? payload?.OrderId ?? '');
+            if (!signature || !dataString || !orderId) {
+                throw new Error(initiated?.message || 'DirectPay did not return a checkout session.');
             }
+
+            saveDirectPaySession({
+                signature,
+                dataString,
+                stage: stageRaw === 'PROD' ? 'PROD' : 'DEV',
+                orderId,
+                plan: subscriptionPlan,
+                amount,
+                returnTo: checkoutPath,
+            });
+            router.push('/subscription/pay');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Payment failed.');
-        } finally {
             setIsSubmitting(false);
         }
     };
@@ -512,68 +593,11 @@ export default function SubscriptionCheckoutPage() {
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-sm text-text-dark font-semibold">Card Number</label>
-                                <input
-                                    type="text"
-                                    value={cardNumber}
-                                    onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                                    placeholder="4111 1111 1111 1111"
-                                    className="w-full border border-cream-dark rounded-xl px-3 py-3 mt-2"
-                                    inputMode="numeric"
-                                    maxLength={19}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-sm text-text-dark font-semibold">Card Holder Name</label>
-                                <input
-                                    type="text"
-                                    value={cardHolder}
-                                    onChange={(e) => setCardHolder(sanitizeNameInput(e.target.value))}
-                                    placeholder="Name on card"
-                                    className="w-full border border-cream-dark rounded-xl px-3 py-3 mt-2"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm text-text-dark font-semibold">Expiry (MM/YY)</label>
-                                    <input
-                                        type="text"
-                                        value={expiry}
-                                        onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                                        placeholder="12/30"
-                                        className="w-full border border-cream-dark rounded-xl px-3 py-3 mt-2"
-                                        inputMode="numeric"
-                                        maxLength={5}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-sm text-text-dark font-semibold">CVV</label>
-                                    <div className="relative mt-2">
-                                        <input
-                                            type={showCvv ? 'text' : 'password'}
-                                            value={cvv}
-                                            onChange={(e) => setCvv(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                            placeholder="123"
-                                            className="w-full border border-cream-dark rounded-xl px-3 py-3 pr-11 box-border"
-                                            inputMode="numeric"
-                                            maxLength={4}
-                                            autoComplete="cc-csc"
-                                        />
-                                        <PasswordVisibilityToggle
-                                            passwordVisible={showCvv}
-                                            onToggle={() => setShowCvv((v) => !v)}
-                                            ariaLabelWhenHidden="Show CVV"
-                                            ariaLabelWhenVisible="Hide CVV"
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md border-0 bg-transparent cursor-pointer text-stone-500 hover:text-stone-800 inline-flex items-center justify-center leading-none"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <p className="text-sm text-text-light leading-relaxed mb-4">
+                            Pay securely with Visa, Mastercard, or Frimi via DirectPay. Your card details are entered on
+                            DirectPay&apos;s payment page — MyMatch never sees them.
+                        </p>
+                        <div id="directpay_card_container" className="min-h-[1px]" />
                     </div>
                 )}
 
@@ -709,7 +733,7 @@ export default function SubscriptionCheckoutPage() {
                         type="button"
                         className="btn btn-primary"
                         style={{ padding: '0.9rem 1.4rem' }}
-                        onClick={paymentMethod === 'card' ? handleMockPayment : handleBankTransfer}
+                        onClick={paymentMethod === 'card' ? handleCardPayment : handleBankTransfer}
                         disabled={isSubmitting || mustCreateProfileBeforeBuySlot}
                     >
                         {isSubmitting

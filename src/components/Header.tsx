@@ -93,6 +93,12 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerqa.openskylabz.com/api';
 
     useEffect(() => {
+        const openLogin = () => onOpenLogin();
+        window.addEventListener('open-login-modal', openLogin);
+        return () => window.removeEventListener('open-login-modal', openLogin);
+    }, [onOpenLogin]);
+
+    useEffect(() => {
         if (!openNotificationScope && !profileMenuOpen) return;
 
         const closeOnOutside = (e: MouseEvent | TouchEvent) => {
@@ -234,7 +240,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         if (!token) return;
 
         let cancelled = false;
-        fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}`, {
+        fetch(`${API_BASE_URL}/Matrimonial/GetProfile?userId=${user.id}&requesterUserId=${user.id}`, {
             headers: { Authorization: `Bearer ${token}` }
         })
             .then(res => res.ok ? res.json() : null)

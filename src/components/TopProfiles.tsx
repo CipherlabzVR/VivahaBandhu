@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
+import { requireLoginToViewProfile } from '../utils/requireLoginToViewProfile';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
@@ -212,6 +213,7 @@ export default function TopProfiles({ onOpenProfileDetail }: TopProfilesProps) {
                         <div
                             key={profile.id}
                             onClick={() => {
+                                if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
                                 if (user?.isVerified === false) {
                                     window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                     return;

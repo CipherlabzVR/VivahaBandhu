@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
+import { requireLoginToViewProfile } from '../utils/requireLoginToViewProfile';
+import { useLanguage } from '../context/LanguageContext';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
 import PremiumBadge, { PREMIUM_CARD_FRAME_STYLE } from './PremiumBadge';
@@ -166,6 +168,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
     const { user, loading: authLoading } = useAuth();
+    const { t } = useLanguage();
     const { ownedIds, subAccounts } = useOwnedSubAccountsForBrowse();
     const isManagedParent = canManageSubAccounts(user?.accountType);
     const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
@@ -402,6 +405,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
         setSearchTerm(s.label);
         setShowSuggestions(false);
         setHighlightedSuggestion(-1);
+        if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
         if (user?.isVerified === false) {
             window.dispatchEvent(new CustomEvent('open-verify-modal'));
             return;
@@ -1093,6 +1097,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                             };
                             return (
                                 <div key={profile.id} onClick={() => {
+                                    if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
                                     if (user?.isVerified === false) {
                                         window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                         return;

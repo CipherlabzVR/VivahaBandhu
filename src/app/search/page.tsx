@@ -20,6 +20,7 @@ import {
 } from '../../utils/quickSearchSession';
 import { brideGroomToBrowseGender, managedParentShowsBothGenders } from '../../utils/selfAccountBrowseGender';
 import { showToast } from '../../utils/toast';
+import { requireLoginToViewProfile } from '../../utils/requireLoginToViewProfile';
 import { profileBrowseUserId } from '../../utils/browseProfileFilters';
 import { useOwnedSubAccountsForBrowse } from '../../hooks/useOwnedSubAccountsForBrowse';
 
@@ -158,6 +159,9 @@ function SearchContent() {
     }, [searchParams, user?.id, user?.gender, user?.accountType, user?.parentUserId, subAccounts, ownedIds]);
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
+        if (modal === 'profile' && !requireLoginToViewProfile(user, t('loginToViewProfile'))) {
+            return;
+        }
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) setSelectedProfile(profile);

@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast, showInterestToggleToastFromResponse } from '../utils/toast';
+import { requireLoginToViewProfile } from '../utils/requireLoginToViewProfile';
 import { HeartIcon, BookmarkIcon } from './icons/InteractionIcons';
 import MatchmakerBadge from './MatchmakerBadge';
 import ProfileManagedBadge, { profileHasManagedBadge } from './ProfileManagedBadge';
@@ -234,6 +235,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                     const isManaged = profileHasManagedBadge(profile);
                     return (
                         <div key={profile.id} onClick={() => {
+                            if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
                             if (user?.isVerified === false) {
                                 window.dispatchEvent(new CustomEvent('open-verify-modal'));
                                 return;

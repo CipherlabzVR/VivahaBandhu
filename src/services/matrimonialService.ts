@@ -589,12 +589,18 @@ export const matrimonialService = {
     /**
      * Get detailed profile by user ID
      */
-    async getProfile(userId: number, requesterUserId?: number, applyViewLimit: boolean = false): Promise<any> {
+    async getProfile(
+        userId: number,
+        requesterUserId?: number,
+        applyViewLimit: boolean = false,
+        viewAsOthers: boolean = false
+    ): Promise<any> {
         try {
             const query = new URLSearchParams({
                 userId: String(userId),
                 ...(requesterUserId ? { requesterUserId: String(requesterUserId) } : {}),
                 applyViewLimit: String(applyViewLimit),
+                ...(viewAsOthers ? { viewAsOthers: 'true' } : {}),
             });
 
             const response = await fetch(`${API_BASE_URL}/Matrimonial/GetProfile?${query.toString()}`, {
@@ -1315,6 +1321,60 @@ export const matrimonialService = {
         }
     },
 
+    async initiateDirectPayCheckout(
+        userId: number,
+        subscriptionPlan?: string,
+        amount?: number,
+        returnUrl?: string,
+    ): Promise<any> {
+        const token = getStoredToken();
+        const response = await fetch(`${API_BASE_URL}/Matrimonial/InitiateDirectPay`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify({
+                userId,
+                ...(subscriptionPlan ? { subscriptionPlan } : {}),
+                ...(amount != null && Number.isFinite(amount) ? { amount } : {}),
+                ...(returnUrl ? { returnUrl } : {}),
+            }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.message || 'Failed to start card payment');
+        }
+        return data;
+    },
+
+    async confirmDirectPayPayment(
+        userId: number,
+        orderId: string,
+        clientStatus?: string,
+    ): Promise<any> {
+        const token = getStoredToken();
+        const response = await fetch(`${API_BASE_URL}/Matrimonial/ConfirmDirectPay`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : '',
+            },
+            body: JSON.stringify({
+                userId,
+                orderId,
+                ...(clientStatus ? { clientStatus } : {}),
+            }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.message || 'Failed to confirm card payment');
+        }
+        return data;
+    },
+
     async activateMockSubscription(
         userId: number,
         mockReference: string,
@@ -1506,6 +1566,22 @@ export const matrimonialService = {
         const res = await this.getPublicPackages('sub_account');
         const pkgs = res?.result ?? res?.Result ?? [];
         return parseActiveSubAccountPackage(Array.isArray(pkgs) ? pkgs : []);
+    },
+
+    async getActiveUserPremiumPackage(): Promise<{ price: number } | null> {
+        const res = await this.getPublicPackages('user');
+        const pkgs = normalizePublicPackages(res?.result ?? res?.Result);
+        const paid = pkgs
+            .filter((p) => packagePrice(p) > 0)
+            .sort((a, b) => {
+                const popA = (a.isPopular ?? a.IsPopular) ? 1 : 0;
+                const popB = (b.isPopular ?? b.IsPopular) ? 1 : 0;
+                if (popB !== popA) return popB - popA;
+                return (a.sortOrder ?? (a as { SortOrder?: number }).SortOrder ?? 0)
+                    - (b.sortOrder ?? (b as { SortOrder?: number }).SortOrder ?? 0);
+            });
+        const pkg = paid[0];
+        return pkg ? { price: packagePrice(pkg) } : null;
     },
 };
 

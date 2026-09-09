@@ -11,6 +11,7 @@ import { matrimonialService } from '../services/matrimonialService';
 import { canConvertToMatchmakerAccountType } from '../utils/matrimonialAccountTypes';
 import { hasPendingBankTransferFlag } from '../constants/premiumActivation';
 import { showToast } from '../utils/toast';
+import { requireLoginToViewProfile } from '../utils/requireLoginToViewProfile';
 import { consumePendingSiteHash, endHashScrollGuard, getSiteHashId, prepareSiteHashNavigation } from '../utils/siteHashScroll';
 import { cancelFooterScrollRestore } from '../utils/footerScrollRestore';
 
@@ -199,7 +200,10 @@ export default function Home() {
       <AnimateIn delay={150}>
         <Profiles
           onOpenSubscription={() => openModal('subscription')}
-          onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)}
+          onOpenProfileDetail={(profile) => {
+            if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
+            openModal('profile', undefined, profile);
+          }}
         />
       </AnimateIn>
       <AnimateIn delay={100}>
@@ -212,7 +216,10 @@ export default function Home() {
       ) : null}
       <AnimateIn delay={150}>
         <TopProfiles
-          onOpenProfileDetail={(profile) => openModal('profile', undefined, profile)}
+          onOpenProfileDetail={(profile) => {
+            if (!requireLoginToViewProfile(user, t('loginToViewProfile'))) return;
+            openModal('profile', undefined, profile);
+          }}
         />
       </AnimateIn>
       <AnimateIn delay={100}>

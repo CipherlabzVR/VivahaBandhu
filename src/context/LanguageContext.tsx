@@ -92,6 +92,7 @@ const translations: Record<Language, Record<string, string>> = {
     'topLiveProfilesEmpty': 'No subscribed profiles to show yet.',
     'topLiveProfilesPremiumLabel': 'Premium member',
     'viewProfile': 'View Profile',
+    'loginToViewProfile': 'Please login to view profiles.',
     'onlineNow': 'Online now',
     // Matchmaker Section
     'forProfessionals': 'For Professionals',
@@ -326,6 +327,7 @@ const translations: Record<Language, Record<string, string>> = {
     'topLiveProfilesEmpty': 'දැන් පෙන්වීමට දායක පැතිකඩ නැත.',
     'topLiveProfilesPremiumLabel': 'ප්‍රිමියම් සාමාජික',
     'viewProfile': 'පැතිකඩ බලන්න',
+    'loginToViewProfile': 'පැතිකඩ බැලීමට කරුණාකර ඇතුළු වන්න.',
     'onlineNow': 'දැන් මාර්ගගත',
     // Matchmaker Section
     'forProfessionals': 'වෘත්තීයවේදීන් සඳහා',

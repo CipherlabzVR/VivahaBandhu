@@ -10,9 +10,12 @@ import { useAuth } from '../../context/AuthContext';
 import { isManagedSubAccount } from '../../utils/managedSubAccount';
 import { clearFooterScrollRestoreIntent } from '../../utils/footerScrollRestore';
 import { smoothScrollTo } from '../../utils/lenisScroll';
+import { requireLoginToViewProfile } from '../../utils/requireLoginToViewProfile';
+import { useLanguage } from '../../context/LanguageContext';
 
 function ProfilesPageInner() {
     const { user, loading } = useAuth();
+    const { t } = useLanguage();
     const router = useRouter();
     const searchParams = useSearchParams();
     const [activeModal, setActiveModal] = useState<
@@ -43,6 +46,9 @@ function ProfilesPageInner() {
         blogId?: number,
         profile?: any
     ) => {
+        if (modal === 'profile' && !requireLoginToViewProfile(user, t('loginToViewProfile'))) {
+            return;
+        }
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) setSelectedProfile(profile);

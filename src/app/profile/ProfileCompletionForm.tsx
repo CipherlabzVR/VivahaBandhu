@@ -1431,7 +1431,7 @@ export default function ProfileCompletionForm({
                 const profileUserId = managedEdit?.subUserId ?? Number(user.id);
                 const requesterParam = managedEdit
                     ? `&requesterUserId=${managedEdit.parentUserId}`
-                    : '';
+                    : `&requesterUserId=${user.id}`;
                 const response = await fetch(
                     `${API_BASE_URL}/Matrimonial/GetProfile?userId=${profileUserId}${requesterParam}`,
                     { headers: { Authorization: `Bearer ${token}` } },

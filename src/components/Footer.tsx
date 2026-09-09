@@ -274,7 +274,28 @@ export default function Footer() {
             >
                 <p>{t('allRightsReserved')}</p>
                 <p className="mt-2">{t('madeWithLove')}</p>
-                <p className="mt-4 text-gray-500 text-sm">Design by Clovesis</p>
+                <p className="mt-4 text-gray-500 text-sm">
+                    Design by{" "}
+                    <a
+                        href="https://clovesis.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-400 hover:text-white transition-colors underline-offset-2 hover:underline"
+                    >
+                        Clovesis
+                    </a>
+                </p>
+                <p className="mt-1 text-gray-500 text-sm">
+                    Powered by{" "}
+                    <a
+                        href="https://cbass.us"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-400 hover:text-white transition-colors underline-offset-2 hover:underline"
+                    >
+                        CBASS-AI
+                    </a>
+                </p>
             </div>
         </footer>
     );
