@@ -1577,8 +1577,8 @@ export const matrimonialService = {
                 const popA = (a.isPopular ?? a.IsPopular) ? 1 : 0;
                 const popB = (b.isPopular ?? b.IsPopular) ? 1 : 0;
                 if (popB !== popA) return popB - popA;
-                return (a.sortOrder ?? (a as { SortOrder?: number }).SortOrder ?? 0)
-                    - (b.sortOrder ?? (b as { SortOrder?: number }).SortOrder ?? 0);
+                return (a.sortOrder ?? a.SortOrder ?? 0)
+                    - (b.sortOrder ?? b.SortOrder ?? 0);
             });
         const pkg = paid[0];
         return pkg ? { price: packagePrice(pkg) } : null;

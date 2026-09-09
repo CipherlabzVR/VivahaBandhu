@@ -30,6 +30,8 @@ export type PublicMatrimonialPackage = {
     ValidityMonths?: number | null;
     maxManagedAccounts?: number | null;
     MaxManagedAccounts?: number | null;
+    sortOrder?: number;
+    SortOrder?: number;
 };
 
 export function normalizePublicPackages(raw: unknown): PublicMatrimonialPackage[] {
