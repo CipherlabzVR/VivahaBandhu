@@ -118,23 +118,22 @@ export async function openDirectPayCheckout(input: DirectPayCheckoutInput): Prom
     }
 
     const fromMessages = listenForDirectPayBrowserSuccess();
+    // Only an explicit success status counts. Widget markup and transaction ids are
+    // present for declined cards too, so guessing from them grants premium for free.
     try {
         const result = await Promise.race([
             plugin.doInContainerCheckout(),
             fromMessages.promise,
         ]);
         fromMessages.stop();
-        if (isDirectPayClientFailure(result) && !isDirectPayClientSuccess(result)) {
-            throw new Error(formatDirectPayError(result) || 'Card payment was cancelled or failed.');
-        }
-        if (isDirectPayClientSuccess(result) || isDirectPayDomSuccess(containerId) || looksLikeDirectPayPaid(result)) {
-            return result ?? { status: 'SUCCESS' };
+        if (isDirectPayClientSuccess(result)) {
+            return result;
         }
         throw new Error(formatDirectPayError(result) || 'Card payment was cancelled or failed.');
     } catch (error) {
         fromMessages.stop();
-        if (isDirectPayClientSuccess(error) || isDirectPayDomSuccess(containerId) || looksLikeDirectPayPaid(error)) {
-            return isDirectPayClientFailure(error) ? { status: 'SUCCESS' } : error;
+        if (isDirectPayClientSuccess(error)) {
+            return error;
         }
         throw new Error(formatDirectPayError(error));
     }
@@ -145,8 +144,8 @@ function listenForDirectPayBrowserSuccess(): { promise: Promise<unknown>; stop: 
     const promise = new Promise<unknown>((resolve) => {
         const onMessage = (event: MessageEvent) => {
             const payload = unwrapDirectPayMessage(event.data);
-            if (isDirectPayClientSuccess(payload) || looksLikeDirectPayPaid(payload)) {
-                resolve(payload ?? { status: 'SUCCESS' });
+            if (isDirectPayClientSuccess(payload)) {
+                resolve(payload);
             }
         };
         window.addEventListener('message', onMessage);
@@ -164,20 +163,6 @@ function unwrapDirectPayMessage(data: unknown): unknown {
         }
     }
     return data;
-}
-
-function looksLikeDirectPayPaid(result: unknown): boolean {
-    const text = stringifyDirectPayError(result).toUpperCase();
-    if (!text) return false;
-    if (text.includes('INVALID AMOUNT') || text.includes('PAYMENT FAILED') || text.includes('DECLINED')) {
-        return false;
-    }
-    return (
-        text.includes('PAYMENT SUCCESS')
-        || text.includes('APPROVED')
-        || /\bTRANSACTION ID\b/.test(text)
-        || /"TRANSACTIONID"\s*:/.test(text)
-    );
 }
 
 function formatDirectPayError(error: unknown): string {
@@ -300,11 +285,3 @@ export function isDirectPayClientSuccess(result: unknown): boolean {
     return false;
 }
 
-export function isDirectPayDomSuccess(containerId = 'directpay_page_container'): boolean {
-    if (typeof document === 'undefined') return false;
-    const el = document.getElementById(containerId);
-    const text = (el?.textContent || '').toLowerCase();
-    if (!text) return false;
-    if (text.includes('payment failed') || text.includes('invalid amount')) return false;
-    return text.includes('payment successful') || text.includes('transaction successful');
-}

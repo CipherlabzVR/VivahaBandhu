@@ -376,7 +376,8 @@ export default function SubscriptionCheckoutPage() {
         }
         throw new Error(
             lastRes?.message
-            || 'Payment was received. Activation is taking longer than expected. Refresh this page in a minute or contact support.',
+            || 'We could not confirm this payment with the bank yet. Nothing has been activated. '
+            + 'If your card was charged, refresh this page in a minute or contact support.',
         );
     };
 

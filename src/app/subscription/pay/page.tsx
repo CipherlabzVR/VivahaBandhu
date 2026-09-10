@@ -18,7 +18,6 @@ import { useMatrimonialNotifications } from '../../../context/MatrimonialNotific
 import { showToast } from '../../../utils/toast';
 import {
     clearDirectPaySession,
-    isDirectPayDomSuccess,
     openDirectPayCheckout,
     readDirectPaySession,
 } from '../../../utils/directPayIpg';
@@ -76,17 +75,7 @@ export default function DirectPayPaymentPage() {
                 });
                 await finishSuccessfulPayment(widgetResult);
             } catch (err) {
-                await new Promise((resolve) => window.setTimeout(resolve, 400));
-                if (isDirectPayDomSuccess('directpay_page_container')) {
-                    try {
-                        await finishSuccessfulPayment(err);
-                        return;
-                    } catch (confirmErr) {
-                        setError(confirmErr instanceof Error ? confirmErr.message : 'Payment failed.');
-                        setStatus('');
-                        return;
-                    }
-                }
+                // A failed or cancelled card must never fall through to activation.
                 setError(err instanceof Error ? err.message : 'Payment failed.');
                 setStatus('');
             }
@@ -209,6 +198,7 @@ async function confirmDirectPayWithRetry(
     }
     throw new Error(
         lastRes?.message
-        || 'Payment was received. Activation is taking longer than expected. Refresh this page in a minute or contact support.',
+        || 'We could not confirm this payment with the bank yet. Nothing has been activated. '
+        + 'If your card was charged, refresh this page in a minute or contact support.',
     );
 }
