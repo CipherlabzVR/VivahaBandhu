@@ -40,6 +40,7 @@ import { respondToIncomingInterest } from '../utils/respondToIncomingInterest';
 import { bankTransferRejectPurposeFromDescription } from '../utils/bankTransferResubmit';
 import { type FavoriteActivityRow } from '../utils/messagingMutualInterest';
 import ProfileAvatar from './ProfileAvatar';
+import MobileBottomNav from './MobileBottomNav';
 
 interface HeaderProps {
     onOpenLogin: () => void;
@@ -97,6 +98,20 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
         window.addEventListener('open-login-modal', openLogin);
         return () => window.removeEventListener('open-login-modal', openLogin);
     }, [onOpenLogin]);
+
+    useEffect(() => {
+        if (!mobileMenuOpen) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setMobileMenuOpen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [mobileMenuOpen]);
 
     useEffect(() => {
         if (!openNotificationScope && !profileMenuOpen) return;
@@ -665,8 +680,8 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     </button>
                 </div>
             )}
-            <header className={`fixed w-full bg-white shadow-gold z-[1000] ${user && user.isVerified === false ? 'top-[36px]' : 'top-0'}`}>
-            <div className="max-w-[1400px] mx-auto px-6 sm:px-8 py-2 flex justify-between items-center">
+            <header className={`mobile-app-header fixed w-full bg-white shadow-gold z-[1000] ${user && user.isVerified === false ? 'top-[36px]' : 'top-0'}`}>
+            <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-2 flex justify-between items-center">
                 <Link href="/" className="flex items-center h-11 md:h-14">
                     <Image 
                         src="/logo4.webp" 
@@ -720,7 +735,21 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     </div>
 
                     {user ? (
-                        <div ref={notificationMenuRef} className="relative hidden md:flex items-center gap-2">
+                        <div ref={notificationMenuRef} className="relative flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => toggleNotificationScope('main')}
+                                className={`md:hidden w-10 h-10 rounded-full border flex items-center justify-center relative transition-colors ${
+                                    openNotificationScope === 'main'
+                                        ? 'border-primary bg-gold/10'
+                                        : 'border-gray-200 bg-white'
+                                }`}
+                                aria-label="Notifications"
+                            >
+                                <span style={{ fontSize: '1rem' }}>🔔</span>
+                                {renderUnreadBadge(unreadNotificationCount)}
+                            </button>
+                            <div className="hidden md:flex items-center gap-2">
                             {showDualNotificationIcons ? (
                                 <>
                                     <button
@@ -793,6 +822,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                     {renderUnreadBadge(unreadNotificationCount)}
                                 </button>
                             )}
+                            </div>
                             {renderNotificationPanel()}
                         </div>
                     ) : null}
@@ -883,6 +913,8 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                     {/* Mobile Menu Button */}
                     <button 
                         className="md:hidden p-2 text-text-dark"
+                        aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                        aria-expanded={mobileMenuOpen}
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                     >
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -896,45 +928,70 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 </div>
             </div>
 
-            {/* Mobile Menu */}
-            {mobileMenuOpen && (
-                <div className="md:hidden bg-white border-t border-gray-100 px-4 py-4 shadow-lg absolute w-full left-0 top-full">
-                    <nav className="flex flex-col gap-4 mb-6">
-                        <Link href="/" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+            {actionToast && (
+                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 3000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
+                    {actionToast}
+                </div>
+            )}
+        </header>
+        {mobileMenuOpen ? (
+            <div className="mobile-sidebar-root md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+                <button
+                    type="button"
+                    className="mobile-sidebar-backdrop"
+                    aria-label="Close menu"
+                    onClick={() => setMobileMenuOpen(false)}
+                />
+                <aside className="mobile-sidebar">
+                    <div className="mobile-sidebar__header">
+                        <span className="mobile-sidebar__title">Menu</span>
+                        <button
+                            type="button"
+                            className="mobile-sidebar__close"
+                            aria-label="Close menu"
+                            onClick={() => setMobileMenuOpen(false)}
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <nav className="flex flex-col gap-1 mb-6">
+                        <Link href="/" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                             {t('home')}
                         </Link>
                         {(!user || !isManagedSubAccount(user)) && (
-                        <Link href="/profiles" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                        <Link href="/profiles" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                             {t('browseProfiles')}
                         </Link>
                         )}
-                        <Link href="/about" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                        <Link href="/about" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                             {t('aboutUs')}
                         </Link>
-                        <Link href="/success-stories" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                        <Link href="/success-stories" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                             {t('successStories')}
                         </Link>
-                        <Link href="/contact" className="text-text-dark font-medium hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                        <Link href="/contact" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                             {t('contactUs')}
                         </Link>
                     </nav>
 
                     <div className="flex gap-2 mb-6 border-t border-gray-100 pt-4">
-                        <button 
+                        <button
                             onClick={() => setLanguage('en')}
                             className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
-                                language === 'en' 
-                                    ? 'bg-primary text-white' 
+                                language === 'en'
+                                    ? 'bg-primary text-white'
                                     : 'bg-gray-100 text-text-dark'
                             }`}
                         >
                             English
                         </button>
-                        <button 
+                        <button
                             onClick={() => setLanguage('si')}
                             className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
-                                language === 'si' 
-                                    ? 'bg-primary text-white' 
+                                language === 'si'
+                                    ? 'bg-primary text-white'
                                     : 'bg-gray-100 text-text-dark'
                             }`}
                         >
@@ -960,16 +1017,16 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                     <div className="text-xs text-gray-500">{user.email}</div>
                                 </div>
                             </div>
-                            <div className="flex flex-col gap-3">
-                                <Link href="/profile" className="text-text-dark hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                            <div className="flex flex-col gap-1">
+                                <Link href="/profile" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                                     {t('myProfile')}
                                 </Link>
-                                <Link href="/profile?settings=open" className="text-text-dark hover:text-primary" onClick={() => setMobileMenuOpen(false)}>
+                                <Link href="/profile?settings=open" className="mobile-sidebar__link" onClick={() => setMobileMenuOpen(false)}>
                                     {t('settings')}
                                 </Link>
-                                <button 
+                                <button
                                     onClick={() => { logout(); setMobileMenuOpen(false); }}
-                                    className="text-left text-red-600 hover:text-red-700"
+                                    className="mobile-sidebar__link mobile-sidebar__link--danger"
                                 >
                                     {t('logout')}
                                 </button>
@@ -977,29 +1034,24 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3 border-t border-gray-100 pt-4">
-                            <button 
-                                className="w-full py-2 border-2 border-primary text-primary rounded-full font-medium" 
+                            <button
+                                className="w-full py-2.5 border-2 border-primary text-primary rounded-full font-medium"
                                 onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }}
                             >
                                 {t('login')}
                             </button>
-                            <button 
-                                className="w-full py-2 bg-primary text-white rounded-full font-medium" 
+                            <button
+                                className="w-full py-2.5 bg-primary text-white rounded-full font-medium"
                                 onClick={() => { onOpenRegister(); setMobileMenuOpen(false); }}
                             >
                                 {t('registerFree')}
                             </button>
                         </div>
                     )}
-                </div>
-            )}
-
-            {actionToast && (
-                <div style={{ position: 'fixed', top: 'calc(72px + env(safe-area-inset-top, 0px))', right: 'max(16px, env(safe-area-inset-right, 0px))', bottom: 'auto', zIndex: 3000, background: '#1f7a3f', color: '#fff', padding: '10px 14px', borderRadius: '10px', boxShadow: '0 4px 14px rgba(0,0,0,0.2)', fontSize: '0.9rem', fontWeight: 600 }}>
-                    {actionToast}
-                </div>
-            )}
-        </header>
+                </aside>
+            </div>
+        ) : null}
+        <MobileBottomNav />
         </>
     );
 }

@@ -164,6 +164,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
     const router = useRouter();
     const searchParams = useSearchParams();
     const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    const [filtersSidebarOpen, setFiltersSidebarOpen] = useState(false);
     const [profiles, setProfiles] = useState<any[]>([]);
     const [interactions, setInteractions] = useState<{ Favorites: number[], Shortlists: number[] }>({ Favorites: [], Shortlists: [] });
     const [favoriteActivity, setFavoriteActivity] = useState<FavoriteActivityRow[]>([]);
@@ -796,6 +797,20 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
 
     const getOpenClass = (group: string) => !collapsedGroups[group] ? 'open' : '';
 
+    useEffect(() => {
+        if (!filtersSidebarOpen) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setFiltersSidebarOpen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', onKeyDown);
+        };
+    }, [filtersSidebarOpen]);
+
     return (
         <section className="search-section" id="search" style={{ padding: '40px 20px', backgroundColor: '#f9f9f9' }}>
             <div
@@ -803,13 +818,32 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                 style={preferredSearch ? { gridTemplateColumns: '1fr' } : undefined}
             >
                 {/* Filters Sidebar — hidden while Preferred Search uses partner-preference matching */}
+                {!preferredSearch && filtersSidebarOpen && (
+                    <button
+                        type="button"
+                        className="filters-sidebar-backdrop"
+                        aria-label="Close filters"
+                        onClick={() => setFiltersSidebarOpen(false)}
+                    />
+                )}
                 {!preferredSearch && (
-                <aside className="filters-sidebar" style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                <aside className={`filters-sidebar${filtersSidebarOpen ? ' is-open' : ''}`} style={{ backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
                     <div className="filters-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
                         <h3 style={{ margin: 0 }}>Filters</h3>
-                        <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer' }}>Clear Filters</button>
+                        <div className="filters-header-actions">
+                            <button onClick={clearFilters} className="clear-filters-btn" style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer' }}>Clear Filters</button>
+                            <button
+                                type="button"
+                                className="filters-sidebar-close"
+                                aria-label="Close filters"
+                                onClick={() => setFiltersSidebarOpen(false)}
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
 
+                    <div className="filters-scroll">
                     <div className="filter-group" style={{ marginBottom: '20px' }}>
                         <label style={{ display: 'block', marginBottom: '8px', color: '#666' }}>Sort By</label>
                         <select name="sortBy" value={draftFilters.sortBy} onChange={handleFilterChange} className="filter-select" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #eee' }}>
@@ -872,6 +906,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                                 </option>
                             ))}
                         </select>
+                    </div>
                     </div>
 
                     <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
@@ -971,6 +1006,15 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                     <FreeDailyProfileViewsBanner onUpgrade={onOpenSubscription} />
 
                     <div className="results-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', backgroundColor: 'white', padding: '15px 20px', borderRadius: '10px', border: '1px solid #eee' }}>
+                        {!preferredSearch && (
+                            <button
+                                type="button"
+                                className="browse-filters-toggle"
+                                onClick={() => setFiltersSidebarOpen(true)}
+                            >
+                                Filters
+                            </button>
+                        )}
                         <div className="results-toggle" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span style={{ fontWeight: preferredSearch ? 600 : 400, color: preferredSearch ? 'var(--primary)' : '#333' }}>Preferred Search</span>
                             <label className="toggle-switch" style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>

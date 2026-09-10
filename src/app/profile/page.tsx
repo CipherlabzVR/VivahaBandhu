@@ -2646,7 +2646,7 @@ function ProfilePageContent() {
                     <div
                         className="modal-overlay active profile-completion-overlay"
                         data-lenis-prevent
-                        style={{ zIndex: 1000, alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
+                        style={{ alignItems: 'stretch', justifyContent: 'stretch', padding: 0 }}
                     >
                         <div
                             className="modal profile-completion-modal-full"
@@ -3237,7 +3237,7 @@ function ProfilePageContent() {
                         )}
                     </div>
 
-                    <div className="profile-actions" style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid #eee', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                    <div className="profile-page-actions">
                         {!isFamilyParentAccountType(user.accountType) && (
                             <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
                         )}

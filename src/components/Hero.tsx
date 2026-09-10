@@ -171,7 +171,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
         'rounded-3xl border border-white/50 bg-white/30 p-6 shadow-xl backdrop-blur-xl ring-1 ring-inset ring-white/25 md:p-8';
 
     return (
-        <section className="relative min-h-screen overflow-hidden pt-20 bg-cream">
+        <section className="hero-section relative min-h-screen overflow-hidden bg-cream pt-20 max-md:pt-0">
             {loadHeroVideo ? (
                 <video
                     ref={heroVideoRef}
@@ -207,7 +207,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
             />
 
             <div
-                className={`relative z-10 mx-auto max-w-[1400px] px-4 pb-10 ${language === 'si' ? 'font-sinhala' : ''}`}
+                className={`relative z-10 mx-auto max-w-[1400px] px-4 pb-10 max-md:pt-[3.5rem] ${language === 'si' ? 'font-sinhala' : ''}`}
             >
                 <div className="isolate grid min-h-[calc(100vh-120px)] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end lg:gap-14 lg:py-14 lg:pb-8 xl:grid-cols-[minmax(0,1.22fr)_minmax(0,0.78fr)]">
                     <div className="relative z-30 rounded-3xl border border-primary/55 bg-black/82 p-6 shadow-2xl backdrop-blur-md md:backdrop-blur-lg md:p-8 lg:-translate-y-20 lg:p-10 xl:-translate-y-32">
@@ -278,7 +278,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                             </button>
                         </div>
 
-                        <div className="mb-2 flex flex-wrap gap-4">
+                        <div className="hero-cta-row mb-2 flex flex-wrap gap-4">
                             {user ? (
                                 user.isSubscribed ? (
                                     <button
@@ -367,8 +367,8 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                         )}
                     </div>
 
-                    <div className="relative z-0 flex min-h-[min(76vh,820px)] items-end justify-center lg:-ml-4 lg:min-h-0 lg:justify-end xl:-ml-8">
-                        <div className="relative w-full max-w-3xl translate-x-6 translate-y-12 sm:translate-x-8 sm:translate-y-16 lg:max-w-[min(56rem,100%)] lg:translate-x-8 lg:translate-y-14 xl:max-w-[min(72rem,100%)] xl:translate-x-12 xl:translate-y-12">
+                    <div className="relative z-0 flex min-h-[min(76vh,820px)] items-end justify-center max-md:absolute max-md:inset-0 max-md:min-h-full max-md:items-stretch lg:-ml-4 lg:min-h-0 lg:justify-end xl:-ml-8">
+                        <div className="relative w-full max-w-3xl max-md:h-full max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 md:translate-x-8 md:translate-y-16 lg:max-w-[min(56rem,100%)] lg:translate-x-8 lg:translate-y-14 xl:max-w-[min(72rem,100%)] xl:translate-x-12 xl:translate-y-12">
                             <div className="pointer-events-none absolute -inset-8 -z-10 rounded-[40%] bg-black/25 blur-3xl lg:-inset-12" aria-hidden />
                             {/* Plain img + picture so preload href matches the real LCP request. */}
                             <picture>
@@ -380,7 +380,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                     height={1280}
                                     fetchPriority="high"
                                     decoding="async"
-                                    className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.14] md:scale-[1.2] lg:scale-[1.28]"
+                                    className="relative z-0 h-auto w-full origin-bottom object-contain [filter:drop-shadow(0_28px_48px_rgba(0,0,0,0.45))_drop-shadow(0_10px_24px_rgba(0,0,0,0.28))] scale-[1.14] max-md:h-full max-md:min-h-full max-md:scale-100 max-md:object-cover max-md:[filter:none] md:scale-[1.2] lg:scale-[1.28]"
                                     draggable={false}
                                 />
                             </picture>

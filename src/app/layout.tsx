@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Playfair_Display, Source_Sans_3, Pacifico, Dancing_Script, Noto_Sans_Sinhala } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
 import { LanguageProvider } from '../context/LanguageContext';
@@ -52,10 +52,24 @@ const notoSinhala = Noto_Sans_Sinhala({
 export const metadata: Metadata = {
   title: "MyMatch.lk - Find your Perfect Match",
   description: "Join thousands of families who found meaningful connections through our trusted matrimonial platform.",
-  themeColor: "#ffa20d",
   icons: {
     icon: "/favicon.png",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MyMatch.lk",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({

@@ -3459,7 +3459,7 @@ export default function ProfileCompletionForm({
                     </div>
                 )}
 
-                <div className="form-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'space-between' }}>
+                <div className="form-actions profile-completion-actions">
                     {step > 1 ? (
                         <button type="button" className="btn btn-outline" onClick={handlePrev}>Previous</button>
                     ) : <div></div>}
@@ -3480,6 +3480,13 @@ export default function ProfileCompletionForm({
                     width: 100%;
                     max-width: 100%;
                     box-sizing: border-box;
+                }
+                .form-actions {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 0.75rem;
+                    margin-top: 2rem;
                 }
                 .form-grid {
                     display: grid;

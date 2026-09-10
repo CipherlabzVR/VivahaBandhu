@@ -194,10 +194,11 @@ export default function Home() {
         onOpenRegister={() => openModal('register')}
         onOpenSubscription={() => openModal('subscription')}
       />
-      <AnimateIn delay={100}>
+      <div className="home-below-hero">
+      <AnimateIn delay={100} className="home-section-features">
         <Features onOpenRegister={() => openModal('register')} />
       </AnimateIn>
-      <AnimateIn delay={150}>
+      <AnimateIn delay={150} className="home-section-featured">
         <Profiles
           onOpenSubscription={() => openModal('subscription')}
           onOpenProfileDetail={(profile) => {
@@ -236,6 +237,7 @@ export default function Home() {
       <AnimateIn delay={50}>
         <Footer />
       </AnimateIn>
+      </div>
       <Modals
         activeModal={activeModal}
         onClose={closeModal}

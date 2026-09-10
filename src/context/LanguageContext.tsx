@@ -17,6 +17,9 @@ const translations: Record<Language, Record<string, string>> = {
   en: {
     'home': 'Home',
     'settings': 'Settings',
+    'browse': 'Browse',
+    'messages': 'Messages',
+    'accountTab': 'Account',
     'browseProfiles': 'Browse Profiles',
     'aboutUs': 'About Us',
     'successStories': 'Success Stories',
@@ -252,6 +255,9 @@ const translations: Record<Language, Record<string, string>> = {
   si: {
     'home': 'මුල් පිටුව',
     'settings': 'සැකසුම්',
+    'browse': 'පිරික්සන්න',
+    'messages': 'පණිවුඩ',
+    'accountTab': 'ගිණුම',
     'browseProfiles': 'පැතිකඩ පිරික්සන්න',
     'aboutUs': 'අප ගැන',
     'successStories': 'සාර්ථක කතා',

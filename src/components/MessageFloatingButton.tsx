@@ -21,7 +21,7 @@ export default function MessageFloatingButton() {
     const badgeLabel = unreadChatCount > 99 ? '99+' : String(unreadChatCount);
 
     return (
-        <div className="fixed bottom-6 right-6 z-[9999]">
+        <div className="fixed bottom-6 right-6 z-[9999] hidden md:block">
             <Link
                 href="/messages"
                 className="flex items-center justify-center w-14 h-14 bg-primary text-white rounded-full shadow-[0_4px_15px_rgba(0,0,0,0.2)] hover:bg-gold hover:text-white transition-all duration-300 relative group transform hover:scale-110"
