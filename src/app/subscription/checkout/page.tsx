@@ -26,7 +26,7 @@ import {
 } from '../../../constants/premiumActivation';
 import { useMatrimonialNotifications } from '../../../context/MatrimonialNotificationsContext';
 import { showToast } from '../../../utils/toast';
-import { saveDirectPaySession } from '../../../utils/directPayIpg';
+import { readDirectPayReturnFromUrl, saveDirectPaySession, stashDirectPayFailureMessage, toUserFacingDirectPayMessage } from '../../../utils/directPayIpg';
 
 type PaymentMethod = 'card' | 'bank';
 
@@ -148,11 +148,22 @@ export default function SubscriptionCheckoutPage() {
     }, [user?.familySubAccountAdditionalAmountLkr]);
 
     useEffect(() => {
-        if (typeof window === 'undefined' || !user?.id) return;
+        if (typeof window === 'undefined') return;
         const url = new URL(window.location.href);
-        const isReturn = url.searchParams.get('directpay') === '1';
-        const orderId = url.searchParams.get('orderId') || url.searchParams.get('order_id');
-        if (!isReturn || !orderId) return;
+        const gatewayReturn = readDirectPayReturnFromUrl(url.search);
+        const orderId = gatewayReturn.orderId || url.searchParams.get('orderId') || url.searchParams.get('order_id');
+        if (!gatewayReturn.isReturn || !orderId) return;
+
+        if (gatewayReturn.isFailure) {
+            const message = gatewayReturn.message || 'Payment failed. Please try again.';
+            stashDirectPayFailureMessage(message);
+            setError(`${message} Redirecting to the home page…`);
+            showToast(message, 'error', 6000);
+            window.setTimeout(() => router.replace('/'), 4000);
+            return;
+        }
+
+        if (!user?.id) return;
 
         let cancelled = false;
         const finishReturn = async () => {
@@ -175,11 +186,19 @@ export default function SubscriptionCheckoutPage() {
                 if (statusCode === 200 || statusCode === 1) {
                     applyPaidCheckoutSuccess(normalizedPlan, res);
                 } else {
-                    setError(res?.message || 'Failed to confirm card payment.');
+                    const message = toUserFacingDirectPayMessage(res?.message || 'Failed to confirm card payment.');
+                    stashDirectPayFailureMessage(message);
+                    setError(message);
+                    showToast(message, 'error', 6000);
+                    window.setTimeout(() => router.replace('/'), 4000);
                 }
             } catch (err) {
                 if (!cancelled) {
-                    setError(err instanceof Error ? err.message : 'Failed to confirm card payment.');
+                    const message = toUserFacingDirectPayMessage(err);
+                    stashDirectPayFailureMessage(message);
+                    setError(message);
+                    showToast(message, 'error', 6000);
+                    window.setTimeout(() => router.replace('/'), 4000);
                 }
             } finally {
                 if (!cancelled) setIsSubmitting(false);
@@ -420,7 +439,7 @@ export default function SubscriptionCheckoutPage() {
             });
             router.push('/subscription/pay');
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'Payment failed.');
+            setError(toUserFacingDirectPayMessage(err));
             setIsSubmitting(false);
         }
     };
@@ -719,8 +738,16 @@ export default function SubscriptionCheckoutPage() {
                 )}
 
                 {error && (
-                    <div className="mt-4 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">
-                        {error}
+                    <div className="mt-4 p-4 rounded-lg bg-red-50 text-red-800 border border-red-200">
+                        <p className="font-semibold mb-1">Payment unsuccessful</p>
+                        <p>{error}</p>
+                        <button
+                            type="button"
+                            className="mt-3 underline font-semibold"
+                            onClick={() => router.replace('/')}
+                        >
+                            Go to home page
+                        </button>
                     </div>
                 )}
                 {success && (

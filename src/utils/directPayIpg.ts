@@ -67,6 +67,19 @@ export function loadDirectPayScript(): Promise<void> {
 }
 
 export const DIRECTPAY_SESSION_KEY = 'mymatch.directpay.session';
+export const DIRECTPAY_FAILURE_TOAST_KEY = 'mymatch.directpay.failureToast';
+
+export function stashDirectPayFailureMessage(message: string) {
+    if (typeof window === 'undefined' || !message.trim()) return;
+    sessionStorage.setItem(DIRECTPAY_FAILURE_TOAST_KEY, message.trim());
+}
+
+export function consumeDirectPayFailureMessage(): string {
+    if (typeof window === 'undefined') return '';
+    const message = (sessionStorage.getItem(DIRECTPAY_FAILURE_TOAST_KEY) || '').trim();
+    sessionStorage.removeItem(DIRECTPAY_FAILURE_TOAST_KEY);
+    return message;
+}
 
 export type DirectPaySession = {
     signature: string;
@@ -129,13 +142,13 @@ export async function openDirectPayCheckout(input: DirectPayCheckoutInput): Prom
         if (isDirectPayClientSuccess(result)) {
             return result;
         }
-        throw new Error(formatDirectPayError(result) || 'Card payment was cancelled or failed.');
+        throw new Error(toUserFacingDirectPayMessage(result) || 'Card payment was cancelled or failed.');
     } catch (error) {
         fromMessages.stop();
         if (isDirectPayClientSuccess(error)) {
             return error;
         }
-        throw new Error(formatDirectPayError(error));
+        throw new Error(toUserFacingDirectPayMessage(error));
     }
 }
 
@@ -165,46 +178,182 @@ function unwrapDirectPayMessage(data: unknown): unknown {
     return data;
 }
 
-function formatDirectPayError(error: unknown): string {
-    const raw = stringifyDirectPayError(error);
-    const lower = raw.toLowerCase();
-    if (lower.includes('get-payment-token') || lower.includes('token')) {
-        return (
-            'DirectPay could not start the card session (GET-PAYMENT-TOKEN). ' +
-            'Use sandbox Merchant ID + secret with Stage DEV, or live credentials with Stage PROD. ' +
-            (raw ? `Details: ${raw}` : '')
-        ).trim();
+export function toUserFacingDirectPayMessage(error: unknown): string {
+    const fields = collectDirectPayTextFields(error);
+    const haystack = fields.join(' ').toLowerCase();
+
+    if (haystack.includes('get-payment-token')) {
+        return 'The card payment session could not be started. Please try again in a moment.';
     }
-    return raw || 'DirectPay checkout failed.';
+    if (
+        haystack.includes('not sufficient')
+        || haystack.includes('insufficient')
+        || haystack.includes('not enough fund')
+        || haystack.includes('insufficient fund')
+    ) {
+        return 'Your card does not have sufficient funds. Please try another card or payment method.';
+    }
+    if (
+        haystack.includes('declined')
+        || haystack.includes('do not honour')
+        || haystack.includes('do not honor')
+        || haystack.includes('not authorized')
+        || haystack.includes('refused')
+    ) {
+        return 'Your card payment was declined. Please try another card or contact your bank.';
+    }
+    if (haystack.includes('cancel')) {
+        return 'Payment was cancelled. No amount was charged.';
+    }
+    if (
+        haystack.includes('duplicate')
+        || haystack.includes('session exists')
+        || haystack.includes('payment session exist')
+    ) {
+        return 'This payment could not be completed. Please start a new checkout from the home page.';
+    }
+    if (haystack.includes('expired') && haystack.includes('card')) {
+        return 'This card has expired. Please use a different card.';
+    }
+    if (haystack.includes('invalid card') || haystack.includes('incorrect card') || haystack.includes('invalid account')) {
+        return 'The card details were not accepted. Please check the number and try again.';
+    }
+    if (haystack.includes('invalid amount')) {
+        return 'This payment amount is not valid. Please start checkout again.';
+    }
+    if (haystack.includes('timeout') || haystack.includes('timed out')) {
+        return 'The payment timed out. Please try again.';
+    }
+    if (haystack.includes('3ds') || haystack.includes('authentication') || haystack.includes('otp')) {
+        return 'Card authentication was not completed. Please try again and finish the bank verification step.';
+    }
+
+    const clean = fields.find((text) => isReadablePaymentMessage(text));
+    if (clean) return clean;
+    return 'Payment failed. Please try again or use another payment method.';
 }
 
-function stringifyDirectPayError(error: unknown): string {
-    if (error == null) return '';
-    if (typeof error === 'string') return error;
+export type DirectPayReturnOutcome = {
+    isReturn: boolean;
+    isFailure: boolean;
+    isSuccess: boolean;
+    orderId: string;
+    message: string;
+};
+
+export function readDirectPayReturnFromUrl(search: string): DirectPayReturnOutcome {
+    const params = new URLSearchParams(search.startsWith('?') ? search : `?${search}`);
+    const orderId = (
+        params.get('orderId')
+        || params.get('orderid')
+        || params.get('order_id')
+        || ''
+    ).trim();
+    const desc = (
+        params.get('desc')
+        || params.get('description')
+        || params.get('message')
+        || params.get('error')
+        || ''
+    ).trim();
+    const status = (
+        params.get('status')
+        || params.get('transaction_status')
+        || params.get('transactionStatus')
+        || ''
+    ).trim();
+    const isReturn = params.get('directpay') === '1' || Boolean(orderId && (desc || status));
+    const probe = { status, description: desc, desc, message: desc };
+    const isFailure = isReturn && (
+        isDirectPayClientFailure(probe)
+        || isFailureDescription(desc)
+        || isFailureDescription(status)
+    );
+    const isSuccess = isReturn && !isFailure && (
+        isDirectPayClientSuccess(probe)
+        || SUCCESS_STATUSES.has(status.toUpperCase())
+    );
+
+    return {
+        isReturn,
+        isFailure,
+        isSuccess,
+        orderId,
+        message: isFailure ? toUserFacingDirectPayMessage(desc || status || probe) : '',
+    };
+}
+
+function isReadablePaymentMessage(text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < 3 || trimmed.length > 180) return false;
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) return false;
+    if (/[{}\[\]"]/.test(trimmed) && /"(title|message|code|status|data)"/.test(trimmed)) return false;
+    return /[a-zA-Z]/.test(trimmed);
+}
+
+function isFailureDescription(text: string): boolean {
+    const value = text.trim().toLowerCase();
+    if (!value) return false;
+    return (
+        value.includes('insufficient')
+        || value.includes('not sufficient')
+        || value.includes('declined')
+        || value.includes('failed')
+        || value.includes('failure')
+        || value.includes('cancel')
+        || value.includes('duplicate')
+        || value.includes('session exists')
+        || value.includes('do not honour')
+        || value.includes('do not honor')
+        || value.includes('expired')
+        || value.includes('invalid')
+        || value.includes('timeout')
+        || value.includes('refused')
+        || value.includes('not authorized')
+        || value.includes('error')
+    );
+}
+
+function collectDirectPayTextFields(error: unknown, depth = 0): string[] {
+    if (error == null || depth > 5) return [];
+    if (typeof error === 'string') {
+        const trimmed = error.trim();
+        if (!trimmed) return [];
+        if ((trimmed.startsWith('{') || trimmed.startsWith('[')) && (trimmed.includes('"') || trimmed.includes("'"))) {
+            try {
+                return collectDirectPayTextFields(JSON.parse(trimmed), depth + 1);
+            } catch {
+                return [trimmed];
+            }
+        }
+        return [trimmed];
+    }
     if (error instanceof Error) {
         const extra = (error as Error & { data?: unknown }).data;
-        return extra != null ? `${error.message} ${stringifyDirectPayError(extra)}`.trim() : error.message;
+        return [
+            ...collectDirectPayTextFields(error.message, depth + 1),
+            ...collectDirectPayTextFields(extra, depth + 1),
+        ];
     }
     if (typeof error === 'object') {
         const record = error as Record<string, unknown>;
-        const nested =
-            record.message ??
-            record.Message ??
-            record.error ??
-            record.Error ??
-            record.description ??
-            record.desc ??
-            record.data ??
-            record.Data;
-        try {
-            return nested != null && nested !== error
-                ? `${stringifyDirectPayError(nested)} ${JSON.stringify(record)}`.trim()
-                : JSON.stringify(record);
-        } catch {
-            return Object.prototype.toString.call(error);
-        }
+        const keys = [
+            'title', 'Title',
+            'description', 'Description', 'desc',
+            'message', 'Message',
+            'error', 'Error',
+            'code', 'Code',
+            'status', 'Status',
+            'data', 'Data',
+            'result', 'Result',
+        ];
+        return keys.flatMap((key) => collectDirectPayTextFields(record[key], depth + 1));
     }
-    return String(error);
+    return [String(error)];
+}
+
+function stringifyDirectPayError(error: unknown): string {
+    return collectDirectPayTextFields(error).join(' ').trim();
 }
 
 const SUCCESS_STATUSES = new Set([
@@ -232,6 +381,9 @@ const FAILURE_STATUSES = new Set([
     'ERROR',
     'INVALID',
     'INVALID AMOUNT',
+    'INSUFFICIENT',
+    'INSUFFICIENT FUNDS',
+    'NOT SUFFICIENT FUNDS',
 ]);
 
 export function readDirectPayClientStatus(result: unknown): string {
@@ -257,9 +409,10 @@ export function readDirectPayClientStatus(result: unknown): string {
 }
 
 export function isDirectPayClientFailure(result: unknown): boolean {
-    const text = `${readDirectPayClientStatus(result)} ${stringifyDirectPayError(result)}`.toUpperCase();
-    if (FAILURE_STATUSES.has(readDirectPayClientStatus(result).trim().toUpperCase())) return true;
-    return text.includes('PAYMENT FAILED') || text.includes('INVALID AMOUNT') || text.includes('DECLINED');
+    const status = readDirectPayClientStatus(result).trim().toUpperCase();
+    if (FAILURE_STATUSES.has(status)) return true;
+    const text = `${status} ${stringifyDirectPayError(result)}`.toLowerCase();
+    return isFailureDescription(text);
 }
 
 export function isDirectPayClientSuccess(result: unknown): boolean {

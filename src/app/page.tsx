@@ -11,6 +11,7 @@ import { matrimonialService } from '../services/matrimonialService';
 import { canConvertToMatchmakerAccountType } from '../utils/matrimonialAccountTypes';
 import { hasPendingBankTransferFlag } from '../constants/premiumActivation';
 import { showToast } from '../utils/toast';
+import { consumeDirectPayFailureMessage } from '../utils/directPayIpg';
 import { requireLoginToViewProfile } from '../utils/requireLoginToViewProfile';
 import { consumePendingSiteHash, endHashScrollGuard, getSiteHashId, prepareSiteHashNavigation } from '../utils/siteHashScroll';
 import { cancelFooterScrollRestore } from '../utils/footerScrollRestore';
@@ -160,6 +161,13 @@ export default function Home() {
     const handleOpenVerify = () => openModal('verify');
     window.addEventListener('open-verify-modal', handleOpenVerify);
     return () => window.removeEventListener('open-verify-modal', handleOpenVerify);
+  }, []);
+
+  useEffect(() => {
+    const paymentError = consumeDirectPayFailureMessage();
+    if (paymentError) {
+      showToast(paymentError, 'error', 6000);
+    }
   }, []);
 
   useEffect(() => {

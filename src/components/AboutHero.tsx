@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
+import HeroSplitFlapTitle from './HeroSplitFlapTitle';
 
 export default function AboutHero() {
     const { t, language } = useLanguage();
@@ -70,9 +71,8 @@ export default function AboutHero() {
             <div className="relative z-30 max-w-[1400px] mx-auto w-full px-4 py-16 lg:pl-12">
                 <div className="flex flex-col justify-center max-w-xl lg:max-w-2xl">
                     <h1 className="leading-tight mb-4 md:mb-6">
-                        <span className={`font-dancing-script text-orange-500 text-[5.5rem] md:text-[8rem] lg:text-[10rem] font-bold drop-shadow-sm block -ml-2 ${language === 'si' ? 'font-sinhala-sm' : ''}`}>
-                            {t('aboutUs')}
-                        </span>
+                        <span className="sr-only">{t('aboutUs')}</span>
+                        <HeroSplitFlapTitle language={language} variant="page" words={[t('aboutUs')]} />
                     </h1>
                     <p className="text-lg md:text-xl text-slate-600 leading-relaxed max-w-md mb-10 font-light relative z-10">
                         {t('aboutHeroDesc')}

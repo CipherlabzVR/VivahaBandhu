@@ -19,7 +19,10 @@ import { showToast } from '../../../utils/toast';
 import {
     clearDirectPaySession,
     openDirectPayCheckout,
+    readDirectPayReturnFromUrl,
     readDirectPaySession,
+    stashDirectPayFailureMessage,
+    toUserFacingDirectPayMessage,
 } from '../../../utils/directPayIpg';
 
 export default function DirectPayPaymentPage() {
@@ -32,15 +35,40 @@ export default function DirectPayPaymentPage() {
     const [amount, setAmount] = useState('');
     const [returnTo, setReturnTo] = useState('/subscription/checkout');
 
-    const closePayment = () => {
+    const goHome = () => {
         clearDirectPaySession();
-        router.replace(returnTo || '/subscription/checkout');
+        router.replace('/');
+    };
+
+    const failAndGoHome = (raw: unknown) => {
+        const message = toUserFacingDirectPayMessage(raw);
+        clearDirectPaySession();
+        stashDirectPayFailureMessage(message);
+        setError(message);
+        setStatus('Redirecting to the home page…');
+        showToast(message, 'error', 6000);
+        window.setTimeout(() => router.replace('/'), 4000);
     };
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
+        const gatewayReturn = readDirectPayReturnFromUrl(window.location.search);
         const session = readDirectPaySession();
+
+        if (gatewayReturn.isFailure) {
+            if (startedRef.current) return;
+            startedRef.current = true;
+            failAndGoHome(gatewayReturn.message || 'Payment failed.');
+            return;
+        }
+
         if (!session) {
+            if (gatewayReturn.isReturn) {
+                if (startedRef.current) return;
+                startedRef.current = true;
+                failAndGoHome('Payment was not completed. Please try again from the home page.');
+                return;
+            }
             router.replace('/subscription/checkout');
             return;
         }
@@ -49,7 +77,7 @@ export default function DirectPayPaymentPage() {
         if (!user?.id || startedRef.current) return;
         startedRef.current = true;
 
-        const finishSuccessfulPayment = async (widgetResult?: unknown) => {
+        const finishSuccessfulPayment = async () => {
             setError('');
             setStatus('Payment successful. Confirming…');
             const res = await confirmDirectPayWithRetry(
@@ -65,19 +93,31 @@ export default function DirectPayPaymentPage() {
         };
 
         const run = async () => {
+            if (gatewayReturn.isReturn) {
+                if (gatewayReturn.isSuccess || gatewayReturn.orderId) {
+                    try {
+                        await finishSuccessfulPayment();
+                    } catch (err) {
+                        failAndGoHome(err);
+                    }
+                    return;
+                }
+                failAndGoHome('Payment was not completed. Please try again.');
+                return;
+            }
+
             setStatus('Opening DirectPay…');
             try {
-                const widgetResult = await openDirectPayCheckout({
+                await openDirectPayCheckout({
                     signature: session.signature,
                     dataString: session.dataString,
                     stage: session.stage,
                     containerId: 'directpay_page_container',
                 });
-                await finishSuccessfulPayment(widgetResult);
+                await finishSuccessfulPayment();
             } catch (err) {
                 // A failed or cancelled card must never fall through to activation.
-                setError(err instanceof Error ? err.message : 'Payment failed.');
-                setStatus('');
+                failAndGoHome(err);
             }
         };
 
@@ -150,7 +190,10 @@ export default function DirectPayPaymentPage() {
                         type="button"
                         className="btn btn-outline"
                         style={{ padding: '0.7rem 1.2rem' }}
-                        onClick={closePayment}
+                        onClick={error ? goHome : () => {
+                            clearDirectPaySession();
+                            router.replace(returnTo || '/subscription/checkout');
+                        }}
                     >
                         Close
                     </button>
@@ -160,21 +203,26 @@ export default function DirectPayPaymentPage() {
                     <p className="text-sm text-text-light mb-3">{status}</p>
                 ) : null}
                 {error ? (
-                    <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">
-                        <p>{error}</p>
+                    <div className="mb-4 p-5 rounded-2xl bg-red-50 text-red-800 border border-red-200">
+                        <h2 className="text-lg font-semibold mb-1">Payment unsuccessful</h2>
+                        <p className="leading-relaxed">{error}</p>
+                        {status ? <p className="text-sm text-red-700 mt-2">{status}</p> : null}
                         <button
                             type="button"
-                            className="mt-3 underline font-semibold"
-                            onClick={closePayment}
+                            className="mt-4 btn btn-primary"
+                            style={{ padding: '0.7rem 1.2rem' }}
+                            onClick={goHome}
                         >
-                            Back to checkout
+                            Go to home page
                         </button>
                     </div>
                 ) : null}
 
-                <div className="rounded-2xl border border-cream-dark bg-white p-3 md:p-4 min-h-[70vh]">
-                    <div id="directpay_page_container" className="w-full min-h-[70vh]" />
-                </div>
+                {!error ? (
+                    <div className="rounded-2xl border border-cream-dark bg-white p-3 md:p-4 min-h-[70vh]">
+                        <div id="directpay_page_container" className="w-full min-h-[70vh]" />
+                    </div>
+                ) : null}
             </div>
         </div>
     );

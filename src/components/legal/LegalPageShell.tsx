@@ -7,6 +7,7 @@ import Footer from '../Footer';
 import Modals from '../Modals';
 import AnimateIn from '../AnimateIn';
 import { useLanguage } from '../../context/LanguageContext';
+import HeroSplitFlapTitle from '../HeroSplitFlapTitle';
 
 type LegalPageShellProps = {
     title: string;
@@ -24,7 +25,7 @@ export default function LegalPageShell({
     siblingHref,
     siblingTitleKey,
 }: LegalPageShellProps) {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const [activeModal, setActiveModal] = useState<
         'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null
     >(null);
@@ -71,8 +72,9 @@ export default function LegalPageShell({
                     >
                         ← {t('backToHome')}
                     </Link>
-                    <h1 className="mt-6 font-playfair text-3xl font-bold tracking-tight text-text-dark md:text-4xl lg:text-[2.65rem]">
-                        <span className="text-primary">{title}</span>
+                    <h1 className="mt-6">
+                        <span className="sr-only">{title}</span>
+                        <HeroSplitFlapTitle language={language} variant="legal" words={[title]} />
                     </h1>
                     <p className="mt-3 max-w-2xl text-base text-text-light">{effectiveDateLabel}</p>
                     {siblingHref && siblingTitleKey ? (
