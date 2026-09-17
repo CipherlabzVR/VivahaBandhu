@@ -69,7 +69,7 @@ export default function MobileBottomNav() {
                 key: 'browse',
                 href: '/profiles',
                 label: t('browse'),
-                active: pathname.startsWith('/profiles') || pathname.startsWith('/search'),
+                active: pathname.startsWith('/profiles'),
                 icon: IconBrowse,
                 onClick: undefined,
             }]

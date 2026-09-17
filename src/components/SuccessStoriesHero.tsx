@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useLanguage } from '../context/LanguageContext';
-import HeroSplitFlapTitle from './HeroSplitFlapTitle';
 
 export default function SuccessStoriesHero() {
     const { t, language } = useLanguage();
@@ -70,9 +69,14 @@ export default function SuccessStoriesHero() {
             {/* --- Left Side: Content Container --- */}
             <div className="relative z-30 max-w-[1400px] mx-auto w-full px-4 py-16 lg:pl-12">
                 <div className="flex flex-col justify-center max-w-xl lg:max-w-2xl">
-                    <h1 className="leading-tight mb-4 md:mb-6">
-                        <span className="sr-only">{t('successStories')}</span>
-                        <HeroSplitFlapTitle language={language} variant="page" words={[t('successStories')]} />
+                    <h1
+                        className={`mb-4 md:mb-6 leading-none ${
+                            language === 'si'
+                                ? 'font-sinhala text-3xl font-bold text-primary md:text-4xl lg:text-5xl'
+                                : 'font-dancing-script -ml-2 text-[5.5rem] font-bold text-primary drop-shadow-sm md:text-[8rem] lg:text-[10rem]'
+                        }`}
+                    >
+                        {t('successStories')}
                     </h1>
                     <p className="text-lg md:text-xl text-slate-600 leading-relaxed max-w-md mb-10 font-light relative z-10">
                         {t('successStoriesDetail')}

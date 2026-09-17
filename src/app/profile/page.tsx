@@ -3238,7 +3238,7 @@ function ProfilePageContent() {
                     </div>
 
                     <div className="profile-page-actions">
-                        {!isFamilyParentAccountType(user.accountType) && (
+                        {!isBasicProfileOnlyAccountType(user.accountType) && (
                             <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
                         )}
                         {!isBasicProfileOnlyAccountType(user.accountType) && !isManagedSubAccount(user) && (

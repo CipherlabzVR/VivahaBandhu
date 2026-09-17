@@ -29,6 +29,15 @@ const nextConfig: NextConfig = {
         ? { exclude: ["error", "warn"] }
         : false,
   },
+  async redirects() {
+    return [
+      {
+        source: "/search",
+        destination: "/profiles",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

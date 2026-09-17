@@ -5,7 +5,6 @@ import { useLanguage } from '../context/LanguageContext';
 import { sanitizeNameInput } from '../utils/nameInput';
 import { matrimonialService } from '../services/matrimonialService';
 import { showToast } from '../utils/toast';
-import HeroSplitFlapTitle from './HeroSplitFlapTitle';
 
 const HEART_PATH =
     'M 5 25 ' +
@@ -167,9 +166,14 @@ export default function ContactUs() {
 
             <div className="relative z-10 max-w-6xl mx-auto border border-white/40 rounded-lg bg-white/5 backdrop-blur-xl overflow-hidden shadow-sm">
                 <div className="pt-8 md:pt-12 pb-4 text-center">
-                    <h1 className="flex justify-center">
-                        <span className="sr-only">{t('getInTouch')}</span>
-                        <HeroSplitFlapTitle language={language} variant="page" words={[t('getInTouch')]} />
+                    <h1
+                        className={`text-center leading-none ${
+                            language === 'si'
+                                ? 'font-sinhala text-3xl font-bold text-primary md:text-4xl lg:text-5xl'
+                                : 'font-dancing-script text-[5.5rem] font-bold text-primary drop-shadow-sm md:text-[8rem] lg:text-[10rem]'
+                        }`}
+                    >
+                        {t('getInTouch')}
                     </h1>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 p-8 md:p-12 lg:p-16 pt-4">

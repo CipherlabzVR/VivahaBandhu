@@ -775,7 +775,7 @@ export default function SubscriptionCheckoutPage() {
                         type="button"
                         className="btn btn-outline"
                         style={{ padding: '0.9rem 1.4rem' }}
-                        onClick={() => router.push('/search')}
+                        onClick={() => router.push('/profiles')}
                     >
                         Back
                     </button>

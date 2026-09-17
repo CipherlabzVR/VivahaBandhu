@@ -9,10 +9,6 @@ import { clearFooterScrollRestoreIntent } from '../utils/footerScrollRestore';
 import { smoothScrollTo } from '../utils/lenisScroll';
 import { SITE_HEADER_SCROLL_OFFSET } from '../utils/siteHashScroll';
 
-interface FeaturesProps {
-    onOpenRegister?: () => void;
-}
-
 function scrollToProfilesSection(): boolean {
     const profilesSection = document.getElementById('profiles');
     if (!profilesSection) return false;
@@ -22,7 +18,7 @@ function scrollToProfilesSection(): boolean {
     return true;
 }
 
-export default function Features({ onOpenRegister }: FeaturesProps) {
+export default function Features() {
     const { user } = useAuth();
     const { t } = useLanguage();
     const router = useRouter();
@@ -53,9 +49,8 @@ export default function Features({ onOpenRegister }: FeaturesProps) {
             return;
         }
 
-        if (onOpenRegister) {
-            onOpenRegister();
-        }
+        clearFooterScrollRestoreIntent();
+        router.push('/profiles');
     };
 
     return (

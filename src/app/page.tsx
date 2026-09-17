@@ -204,7 +204,7 @@ export default function Home() {
       />
       <div className="home-below-hero">
       <AnimateIn delay={100} className="home-section-features">
-        <Features onOpenRegister={() => openModal('register')} />
+        <Features />
       </AnimateIn>
       <AnimateIn delay={150} className="home-section-featured">
         <Profiles

@@ -955,7 +955,7 @@
 
         .profile-page-actions {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             gap: 0.75rem;
             margin-top: 3rem;
             padding-top: 2rem;
@@ -963,13 +963,15 @@
         }
 
         .profile-page-actions .btn {
-            flex: 1 1 220px;
-            min-width: 220px;
+            flex: 1 1 0;
+            min-width: 0;
             min-height: 48px;
             justify-content: center;
             box-sizing: border-box;
             text-align: center;
             white-space: nowrap;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
         }
 
         .action-btn {
