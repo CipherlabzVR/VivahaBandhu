@@ -1,7 +1,9 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 
 const HEART_PATH =
     'M 5 25 ' +
@@ -20,6 +22,9 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
     const pathRef = useRef<SVGPathElement>(null);
     const [pathLength, setPathLength] = useState<number | null>(null);
     const { t, language } = useLanguage();
+    const { user } = useAuth();
+    const router = useRouter();
+    const isLoggedIn = Boolean(user);
 
     useEffect(() => {
         const path = pathRef.current;
@@ -109,17 +114,29 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                     {t('findYourSoulmateNow')}
                 </h2>
                 <p className="text-slate-600 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-                    {t('findYourSoulmateDesc')}
+                    {isLoggedIn ? t('findYourSoulmateDescLoggedIn') : t('findYourSoulmateDesc')}
                 </p>
                 <button
                     type="button"
-                    onClick={onOpenRegister}
+                    onClick={() => {
+                        if (isLoggedIn) {
+                            router.push('/profiles');
+                            return;
+                        }
+                        onOpenRegister();
+                    }}
                     className="inline-flex items-center justify-center gap-2 px-10 py-4 md:px-12 md:py-5 bg-orange-500 text-white rounded-full font-semibold text-lg shadow-lg shadow-orange-500/30 hover:bg-orange-600 hover:shadow-xl hover:shadow-orange-500/40 hover:-translate-y-0.5 transition-all duration-300"
                 >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                    </svg>
-                    {t('registerFree')}
+                    {isLoggedIn ? (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    ) : (
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                        </svg>
+                    )}
+                    {isLoggedIn ? t('browseProfiles') : t('registerFree')}
                 </button>
             </div>
         </section>

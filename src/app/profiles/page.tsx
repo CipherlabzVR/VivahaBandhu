@@ -12,10 +12,12 @@ import { clearFooterScrollRestoreIntent } from '../../utils/footerScrollRestore'
 import { smoothScrollTo } from '../../utils/lenisScroll';
 import { requireLoginToViewProfile } from '../../utils/requireLoginToViewProfile';
 import { useLanguage } from '../../context/LanguageContext';
+import { useMatrimonialPayments } from '../../context/MatrimonialPaymentsContext';
 
 function ProfilesPageInner() {
     const { user, loading } = useAuth();
     const { t } = useLanguage();
+    const { paymentsRequired } = useMatrimonialPayments();
     const router = useRouter();
     const searchParams = useSearchParams();
     const [activeModal, setActiveModal] = useState<
@@ -46,6 +48,7 @@ function ProfilesPageInner() {
         blogId?: number,
         profile?: any
     ) => {
+        if (modal === 'subscription' && !paymentsRequired) return;
         if (modal === 'profile' && !requireLoginToViewProfile(user, t('loginToViewProfile'))) {
             return;
         }

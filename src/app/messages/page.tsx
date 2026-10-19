@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useMatrimonialPayments } from '@/context/MatrimonialPaymentsContext';
 import { useChatUnread } from '@/context/ChatUnreadContext';
 import { matrimonialService } from '@/services/matrimonialService';
 import Header from '@/components/Header';
@@ -290,6 +291,7 @@ function peerDisplayName(contact: InboxContact | null): string {
 
 function MessagesContent() {
     const { user } = useAuth();
+    const { paymentsRequired } = useMatrimonialPayments();
     const { syncUnreadFromInbox } = useChatUnread();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -664,10 +666,11 @@ function MessagesContent() {
 
     const peerPremiumState = selectedContact ? readPeerIsPremiumFromRow(selectedContact) : null;
     const peerOnFreePlan =
+        paymentsRequired &&
         !!selectedContact &&
         Number(selectedContact.contactId) !== Number(user?.id) &&
         peerPremiumState === false;
-    const senderCanMessage = viewerCanSendMessages(user);
+    const senderCanMessage = !paymentsRequired || viewerCanSendMessages(user);
     const canSendInThread = senderCanMessage && hasMutualInterest && !peerOnFreePlan;
 
     useEffect(() => {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '../../../components/Header';
 import SubscriptionPlanPicker from '../../../components/SubscriptionPlanPicker';
 import { useAuth } from '../../../context/AuthContext';
+import { useMatrimonialPayments } from '../../../context/MatrimonialPaymentsContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 import { CHECKOUT_PLAN_MATCHMAKER_CLIENT, CHECKOUT_PLAN_SUB_ACCOUNT } from '../../../constants/subscription';
 import {
@@ -43,6 +44,7 @@ function SubscriptionPlansContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { user, loading: authLoading } = useAuth();
+    const { paymentsRequired, loaded: paymentsLoaded } = useMatrimonialPayments();
 
     const resubmit = searchParams.get('resubmit') === '1';
     const purposeParam = parsePurposeParam(searchParams.get('purpose'));
@@ -55,6 +57,10 @@ function SubscriptionPlansContent() {
     const [packages, setPackages] = useState<PublicMatrimonialPackage[]>([]);
     const [loadingPackages, setLoadingPackages] = useState(true);
     const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+
+    useEffect(() => {
+        if (paymentsLoaded && !paymentsRequired) router.replace('/');
+    }, [paymentsLoaded, paymentsRequired, router]);
 
     useEffect(() => {
         if (authLoading) return;
@@ -164,6 +170,8 @@ function SubscriptionPlansContent() {
             </div>
         );
     }
+
+    if (paymentsLoaded && !paymentsRequired) return null;
 
     return (
         <main className="min-h-screen bg-cream pt-28 px-4 pb-10">

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Playfair_Display, Source_Sans_3, Pacifico, Dancing_Script, Noto_Sans_Sinhala } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
+import { MatrimonialPaymentsProvider } from '../context/MatrimonialPaymentsContext';
 import { LanguageProvider } from '../context/LanguageContext';
 import { MatrimonialNotificationsProvider } from '../context/MatrimonialNotificationsContext';
 import { ChatUnreadProvider } from '../context/ChatUnreadContext';
@@ -104,6 +105,7 @@ export default function RootLayout({
         <SmoothScroll>
           <CorsBootstrap />
           <AuthProvider>
+            <MatrimonialPaymentsProvider>
             <MatrimonialNotificationsProvider>
               <LanguageProvider>
                 <ChatUnreadProvider>
@@ -115,6 +117,7 @@ export default function RootLayout({
                 </ChatUnreadProvider>
               </LanguageProvider>
             </MatrimonialNotificationsProvider>
+            </MatrimonialPaymentsProvider>
           </AuthProvider>
         </SmoothScroll>
       </body>

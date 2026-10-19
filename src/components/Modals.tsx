@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, MouseEvent, useMemo, type ChangeEvent, type ReactNode, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialPayments } from '../context/MatrimonialPaymentsContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { matrimonialService, mapUserFieldsFromSignInResult, type RecoveryAccount, type ForgotPasswordInitiateRequest, type MatrimonialLoginResponse } from '../services/matrimonialService';
 import { sanitizeNicInput, parseNicToDobAndGender } from '../utils/nicInput';
@@ -728,6 +729,7 @@ function CountryResidenceDisplay({ value }: { value?: string | null }): ReactNod
 
 export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId = null, registerAsMatchmaker = false, selectedProfile: initialSelectedProfile = null }: ModalsProps) {
     const { login, user, updateUser } = useAuth();
+    const { paymentsRequired } = useMatrimonialPayments();
     const { subAccounts, ownedIds } = useOwnedSubAccountsForBrowse();
     const managedActionPicker = useManagedSubAccountActionPicker(user?.accountType, subAccounts, {
         onBlocked: (msg) => showToast(msg, 'info'),
@@ -2418,7 +2420,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             onSwitch('login');
             return;
         }
-        const canMessage = Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
+        const canMessage = !paymentsRequired || Boolean(selectedProfile?.canMessage ?? selectedProfile?.CanMessage);
         if (!canMessage) {
             setProfileAccessMessage('Messaging needs an active subscription.');
             return;
@@ -4222,7 +4224,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
             </div>
 
             {/* Subscription Modal */}
-            <div className={`modal-overlay subscription-modal ${activeModal === 'subscription' ? 'active' : ''}`} id="subscriptionModal" data-lenis-prevent onClick={handleOverlayClick}>
+            <div className={`modal-overlay subscription-modal ${paymentsRequired && activeModal === 'subscription' ? 'active' : ''}`} id="subscriptionModal" data-lenis-prevent onClick={handleOverlayClick}>
                 <div className="modal">
                     <button className="modal-close" onClick={close}>✕</button>
                     <div className="modal-header">

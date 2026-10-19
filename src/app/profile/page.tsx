@@ -8,6 +8,7 @@ import ManagedSubAccountActivityCard from '../../components/ManagedSubAccountAct
 import SubAccountPackagePickerModal from '../../components/SubAccountPackagePickerModal';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useMatrimonialPayments } from '../../context/MatrimonialPaymentsContext';
 import Modals from '../../components/Modals';
 import { matrimonialService } from '../../services/matrimonialService';
 import { sanitizeNicInput, nicOrPassportFormatError, NIC_PASSPORT_HINT, parseNicToDobAndGender } from '../../utils/nicInput';
@@ -346,6 +347,7 @@ function ProfilePageContent() {
     const { liveInterestRevision, refreshInterestNotifications, interestNotifications, markInterestNotificationRead } =
         useMatrimonialNotifications();
     const { language, setLanguage, t } = useLanguage();
+    const { paymentsRequired } = useMatrimonialPayments();
 
     const subscriptionRemainingInfo = user?.subscriptionExpiresAt
         ? parseSubscriptionRemaining(user.subscriptionExpiresAt)
@@ -741,6 +743,7 @@ function ProfilePageContent() {
     };
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
+        if (modal === 'subscription' && !paymentsRequired) return;
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) {
@@ -1554,7 +1557,7 @@ function ProfilePageContent() {
         e.preventDefault();
         setSubAccountError(null);
 
-        if (user && isFamilyParentAccountType(user.accountType)) {
+        if (paymentsRequired && user && isFamilyParentAccountType(user.accountType)) {
             const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
             const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
             if (consumed >= purchased) {
@@ -2611,8 +2614,8 @@ function ProfilePageContent() {
     const subSlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
     const subSlotsConsumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
     const subSlotsRemaining = Math.max(0, subSlotsPurchased - subSlotsConsumed);
-    const canCreateManagedSubAccount = usesSubAccountSlots && subSlotsRemaining > 0;
-    const needsSubAccountPayment = usesSubAccountSlots && subSlotsRemaining <= 0;
+    const canCreateManagedSubAccount = usesSubAccountSlots && (!paymentsRequired || subSlotsRemaining > 0);
+    const needsSubAccountPayment = paymentsRequired && usesSubAccountSlots && subSlotsRemaining <= 0;
     const matchmakerPackageDisplayName = isMatchmakerAccount
         ? (matchmakerPackages[0] ? packageName(matchmakerPackages[0]) : undefined)
         : undefined;
@@ -2980,7 +2983,7 @@ function ProfilePageContent() {
                         </div>
                     </div>
 
-                    {bankTransferResult === 'approved' ? (
+                    {paymentsRequired && bankTransferResult === 'approved' ? (
                         <div
                             role="status"
                             style={{
@@ -3022,7 +3025,7 @@ function ProfilePageContent() {
                                 {BANK_TRANSFER_APPROVED_BANNER_BODY}
                             </span>
                         </div>
-                    ) : bankTransferResult === 'rejected' ? (
+                    ) : paymentsRequired && bankTransferResult === 'rejected' ? (
                         <div
                             role="status"
                             style={{
@@ -3114,7 +3117,7 @@ function ProfilePageContent() {
                                 </button>
                             </div>
                         </div>
-                    ) : (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
+                    ) : paymentsRequired && (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
                         <div
                             role="status"
                             style={{
@@ -3238,7 +3241,7 @@ function ProfilePageContent() {
                     </div>
 
                     <div className="profile-page-actions">
-                        {!isBasicProfileOnlyAccountType(user.accountType) && (
+                        {!isBasicProfileOnlyAccountType(user.accountType) && paymentsRequired && (
                             <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
                         )}
                         {!isBasicProfileOnlyAccountType(user.accountType) && !isManagedSubAccount(user) && (
@@ -3469,6 +3472,7 @@ function ProfilePageContent() {
                         </section>
 
                         {/* Subscription */}
+                        {paymentsRequired ? (
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
                             {isFamilyParentAccount ? (
@@ -3606,6 +3610,7 @@ function ProfilePageContent() {
                             </div>
                             )}
                         </section>
+                        ) : null}
 
                         {/* Danger zone */}
                         <section>
@@ -3809,6 +3814,7 @@ function ProfilePageContent() {
                     </div>
                 )}
 
+                {paymentsRequired ? (
                 <SubAccountPackagePickerModal
                     open={showSubAccountPackageModal}
                     onClose={() => setShowSubAccountPackageModal(false)}
@@ -3835,6 +3841,7 @@ function ProfilePageContent() {
                     }
                     onSelectPackage={handleSelectSubAccountPackage}
                 />
+                ) : null}
 
                 {isFamilyParentAccount && (
                     <div className="profile-card" style={{ background: 'white', padding: '2rem', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', marginTop: '2rem' }}>
@@ -3862,10 +3869,12 @@ function ProfilePageContent() {
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem' }}>
                             {usesSubAccountSlots
-                                ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Premium also applies to each managed profile when created; expiry is shown per account below.`
+                                ? paymentsRequired
+                                    ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Premium also applies to each managed profile when created; expiry is shown per account below.`
+                                    : 'Create managed profiles for family members. Payments are turned off, so no package is required.'
                                 : null}
                         </p>
-                        {usesSubAccountSlots && canCreateManagedSubAccount && (
+                        {paymentsRequired && usesSubAccountSlots && canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused slot(s). Create a managed profile before purchasing another slot.
                             </p>
@@ -4035,9 +4044,11 @@ function ProfilePageContent() {
                             </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem', fontSize: '0.95rem' }}>
-                            {`Client profiles appear in browse with a matchmaker badge. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Messages and interest for each profile are grouped below.`}
+                            {paymentsRequired
+                                ? `Client profiles appear in browse with a matchmaker badge. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Messages and interest for each profile are grouped below.`
+                                : 'Client profiles appear in browse with a matchmaker badge. Payments are turned off, so you can add client profiles without buying a slot. Messages and interest for each profile are grouped below.'}
                         </p>
-                        {canCreateManagedSubAccount && (
+                        {paymentsRequired && canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused client-account slot(s). Create a profile before purchasing another slot.
                             </p>

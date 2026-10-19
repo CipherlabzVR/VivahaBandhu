@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
+import { useMatrimonialPayments } from '../../../context/MatrimonialPaymentsContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 import {
     CHECKOUT_PLAN_MATCHMAKER_CLIENT,
@@ -27,6 +28,7 @@ import {
 
 export default function DirectPayPaymentPage() {
     const router = useRouter();
+    const { paymentsRequired, loaded: paymentsLoaded } = useMatrimonialPayments();
     const { user, updateUser } = useAuth();
     const { refreshInterestNotifications } = useMatrimonialNotifications();
     const startedRef = useRef(false);
@@ -39,6 +41,13 @@ export default function DirectPayPaymentPage() {
         clearDirectPaySession();
         router.replace('/');
     };
+
+    useEffect(() => {
+        if (paymentsLoaded && !paymentsRequired) {
+            clearDirectPaySession();
+            router.replace('/');
+        }
+    }, [paymentsLoaded, paymentsRequired, router]);
 
     const failAndGoHome = (raw: unknown) => {
         const message = toUserFacingDirectPayMessage(raw);
@@ -177,6 +186,8 @@ export default function DirectPayPaymentPage() {
         setStatus('Payment successful. Redirecting to home…');
         window.setTimeout(() => router.replace('/'), 3000);
     };
+
+    if (paymentsLoaded && !paymentsRequired) return null;
 
     return (
         <div className="min-h-screen bg-cream pt-24 px-4 pb-10">

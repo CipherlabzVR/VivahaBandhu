@@ -2,6 +2,7 @@
 
 import { useEffect, type CSSProperties } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialPayments } from '../context/MatrimonialPaymentsContext';
 import { useLanguage } from '../context/LanguageContext';
 import { matrimonialService } from '../services/matrimonialService';
 import {
@@ -19,6 +20,7 @@ type Props = {
 
 export default function FreeDailyProfileViewsBanner({ onUpgrade, className, style }: Props) {
     const { user, updateUser } = useAuth();
+    const { paymentsRequired } = useMatrimonialPayments();
     const { t } = useLanguage();
 
     useEffect(() => {
@@ -55,7 +57,7 @@ export default function FreeDailyProfileViewsBanner({ onUpgrade, className, styl
         };
     }, [user?.id, user?.isSubscribed, user?.accountType, user?.familySubAccountSlotsPurchased, updateUser]);
 
-    if (!user || !isSubjectToDailyProfileViewLimit(user)) return null;
+    if (!paymentsRequired || !user || !isSubjectToDailyProfileViewLimit(user)) return null;
 
     const limit = resolveDailyProfileViewLimit(user);
     const remaining = resolveRemainingDailyProfileViews(user);

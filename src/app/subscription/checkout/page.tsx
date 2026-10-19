@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMatrimonialPayments } from '../../../context/MatrimonialPaymentsContext';
 import { useAuth } from '../../../context/AuthContext';
 import { matrimonialService } from '../../../services/matrimonialService';
 import {
@@ -53,6 +54,7 @@ function planLabel(plan: string, isMatchmaker: boolean): string {
 
 export default function SubscriptionCheckoutPage() {
     const router = useRouter();
+    const { paymentsRequired, loaded: paymentsLoaded } = useMatrimonialPayments();
     const { user, updateUser } = useAuth();
     const { refreshInterestNotifications } = useMatrimonialNotifications();
     const [checkoutPlan, setCheckoutPlan] = useState<string>(CHECKOUT_PLAN_PREMIUM_SELF);
@@ -83,6 +85,10 @@ export default function SubscriptionCheckoutPage() {
     const unusedSlotBlockMessage = isMatchmakerAccount
         ? `You have ${unusedSlotCount} unused client-account slot(s). Create a client profile before buying another.`
         : `You have ${unusedSlotCount} unused sub-account slot(s). Create a managed profile before buying another.`;
+
+    useEffect(() => {
+        if (paymentsLoaded && !paymentsRequired) router.replace('/');
+    }, [paymentsLoaded, paymentsRequired, router]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -537,6 +543,8 @@ export default function SubscriptionCheckoutPage() {
     };
 
     const planTitle = planLabel(checkoutPlan, isMatchmakerAccount);
+
+    if (paymentsLoaded && !paymentsRequired) return null;
 
     return (
         <div className="min-h-screen bg-cream pt-28 px-4 pb-10">

@@ -6,6 +6,7 @@ import Header from '../components/Header';
 import Hero from '../components/Hero';
 import AnimateIn from '../components/AnimateIn';
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialPayments } from '../context/MatrimonialPaymentsContext';
 import { useLanguage } from '../context/LanguageContext';
 import { matrimonialService } from '../services/matrimonialService';
 import { canConvertToMatchmakerAccountType } from '../utils/matrimonialAccountTypes';
@@ -30,6 +31,7 @@ const Modals = dynamic(() => import('../components/Modals'));
 
 export default function Home() {
   const { user, updateUser } = useAuth();
+  const { paymentsRequired } = useMatrimonialPayments();
   const { t } = useLanguage();
   const [activeModal, setActiveModal] = useState<'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify' | null>(null);
   const [selectedBlogId, setSelectedBlogId] = useState<number | null>(null);
@@ -40,6 +42,7 @@ export default function Home() {
   const [convertToMatchmakerError, setConvertToMatchmakerError] = useState<string | null>(null);
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
+    if (modal === 'subscription' && !paymentsRequired) return;
     setActiveModal(modal);
     if (modal === 'register') {
       setRegisterAsMatchmaker(false);
@@ -237,11 +240,13 @@ export default function Home() {
       <AnimateIn delay={150}>
         <FAQ />
       </AnimateIn>
+      {paymentsRequired ? (
       <AnimateIn delay={100}>
         <Pricing
           onOpenSubscription={() => openModal('subscription')}
         />
       </AnimateIn>
+      ) : null}
       <AnimateIn delay={50}>
         <Footer />
       </AnimateIn>

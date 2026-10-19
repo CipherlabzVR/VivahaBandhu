@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialPayments } from '../context/MatrimonialPaymentsContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
     cancelFooterScrollRestore,
@@ -34,6 +35,7 @@ function hashSectionIdFromHref(href: string): string | null {
 export default function Footer() {
     const { t } = useLanguage();
     const { user } = useAuth();
+    const { paymentsRequired } = useMatrimonialPayments();
     const pathname = usePathname();
     const router = useRouter();
     const isMatchmaker = user?.accountType === 'Matchmaker';
@@ -245,7 +247,7 @@ export default function Footer() {
                         {!isMatchmaker && (
                             <li>{footerLink('/#matchmaker', t('forMatchmakers'))}</li>
                         )}
-                        <li>{footerLink('/#pricing', t('pricingPlans'))}</li>
+                        {paymentsRequired ? <li>{footerLink('/#pricing', t('pricingPlans'))}</li> : null}
                     </ul>
                 </div>
                 <div className={colClass(2)} style={colStyle(2)}>

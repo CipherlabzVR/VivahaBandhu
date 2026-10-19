@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useMatrimonialPayments } from '../context/MatrimonialPaymentsContext';
 import CustomDropdown from './CustomDropdown';
 import { useOwnedSubAccountsForBrowse } from '../hooks/useOwnedSubAccountsForBrowse';
 import { managedParentShowsBothGenders } from '../utils/selfAccountBrowseGender';
@@ -56,6 +57,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
     const router = useRouter();
     const { language, t } = useLanguage();
     const { user } = useAuth();
+    const { paymentsRequired } = useMatrimonialPayments();
     const { subAccounts } = useOwnedSubAccountsForBrowse();
     const { stats: heroStats } = useHeroLiveStats({
         verifiedProfiles: DEFAULT_HERO_STATS.verifiedProfiles,
@@ -280,7 +282,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
 
                         <div className="hero-cta-row mb-2 flex flex-wrap gap-4">
                             {user ? (
-                                user.isSubscribed ? (
+                                user.isSubscribed || !paymentsRequired ? (
                                     <button
                                         type="button"
                                         className="flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-semibold text-white shadow-sm transition-colors hover:bg-primary-dark hover:shadow-md"
