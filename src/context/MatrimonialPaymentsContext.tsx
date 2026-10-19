@@ -16,31 +16,59 @@ const MatrimonialPaymentsContext = createContext<MatrimonialPaymentsContextValue
     paymentsRequired: true,
 });
 
+const CACHE_KEY = 'matrimonialPaymentsRequired';
+
+function readCachedPaymentsRequired(): boolean | null {
+    if (typeof window === 'undefined') return null;
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (raw === '0') return false;
+    if (raw === '1') return true;
+    return null;
+}
+
 export function MatrimonialPaymentsProvider({ children }: { children: ReactNode }) {
     const [loaded, setLoaded] = useState(false);
     const [paymentsRequired, setPaymentsRequired] = useState(true);
 
     useEffect(() => {
         let cancelled = false;
-        (async () => {
+
+        const apply = (enabled: unknown) => {
+            if (cancelled) return;
+            if (enabled === undefined || enabled === null || enabled === '') {
+                setLoaded(true);
+                return;
+            }
+            const required = !(enabled === false || enabled === 'false');
+            setPaymentsRequired(required);
+            sessionStorage.setItem(CACHE_KEY, required ? '1' : '0');
+            setLoaded(true);
+        };
+
+        const cached = readCachedPaymentsRequired();
+        if (cached === false) setPaymentsRequired(false);
+
+        const load = async () => {
             try {
                 const res = await fetch(`${API_BASE_URL}/Matrimonial/GetMatrimonialPaymentsEnabled`, {
                     cache: 'no-store',
                 });
                 const data = await res.json();
                 const result = data?.result ?? data?.Result ?? {};
-                const enabled = result.paymentsEnabled ?? result.PaymentsEnabled;
-                if (!cancelled && (enabled === false || enabled === 'false')) {
-                    setPaymentsRequired(false);
-                }
+                apply(result.paymentsEnabled ?? result.PaymentsEnabled);
             } catch {
-                /* Keep payments required if the setting cannot be loaded. */
-            } finally {
                 if (!cancelled) setLoaded(true);
             }
-        })();
+        };
+
+        void load();
+        const onFocus = () => { void load(); };
+        window.addEventListener('focus', onFocus);
+        const timer = window.setInterval(() => { void load(); }, 20000);
         return () => {
             cancelled = true;
+            window.removeEventListener('focus', onFocus);
+            window.clearInterval(timer);
         };
     }, []);
 

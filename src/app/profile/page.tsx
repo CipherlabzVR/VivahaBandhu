@@ -348,6 +348,13 @@ function ProfilePageContent() {
         useMatrimonialNotifications();
     const { language, setLanguage, t } = useLanguage();
     const { paymentsRequired } = useMatrimonialPayments();
+    const [serverPaymentsRequired, setServerPaymentsRequired] = useState<boolean | null>(null);
+    const paymentsOn = serverPaymentsRequired ?? paymentsRequired;
+
+    const rememberPaymentsFlag = (raw: unknown) => {
+        if (raw === false || raw === 'false') setServerPaymentsRequired(false);
+        else if (raw === true || raw === 'true') setServerPaymentsRequired(true);
+    };
 
     const subscriptionRemainingInfo = user?.subscriptionExpiresAt
         ? parseSubscriptionRemaining(user.subscriptionExpiresAt)
@@ -659,6 +666,7 @@ function ProfilePageContent() {
                             : { photoVisibility: 'everyone' as const }),
                     };
                     setPrefs(prev => ({ ...prev, ...loadedPrivacyPrefs }));
+                    rememberPaymentsFlag(r.paymentsEnabled ?? r.PaymentsEnabled);
 
                     const famPurchased = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
                     const famConsumed = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
@@ -743,7 +751,7 @@ function ProfilePageContent() {
     };
 
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
-        if (modal === 'subscription' && !paymentsRequired) return;
+        if (modal === 'subscription' && !paymentsOn) return;
         setActiveModal(modal);
         if (modal === 'blog' && blogId) setSelectedBlogId(blogId);
         if (modal === 'profile' && profile) {
@@ -1557,7 +1565,7 @@ function ProfilePageContent() {
         e.preventDefault();
         setSubAccountError(null);
 
-        if (paymentsRequired && user && isFamilyParentAccountType(user.accountType)) {
+        if (paymentsOn && user && isFamilyParentAccountType(user.accountType)) {
             const purchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
             const consumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
             if (consumed >= purchased) {
@@ -1766,6 +1774,7 @@ function ProfilePageContent() {
             const data = await res.json();
             const r = data?.result ?? data?.Result;
             if (!r || typeof r !== 'object') return;
+            rememberPaymentsFlag(r.paymentsEnabled ?? r.PaymentsEnabled);
 
             const purchasedRaw = r.familySubAccountSlotsPurchased ?? r.FamilySubAccountSlotsPurchased;
             const consumedRaw = r.familySubAccountSlotsConsumed ?? r.FamilySubAccountSlotsConsumed;
@@ -1810,8 +1819,10 @@ function ProfilePageContent() {
             const consumed = Number(updates.familySubAccountSlotsConsumed ?? user.familySubAccountSlotsConsumed ?? 0);
             const remaining = Math.max(0, purchased - consumed);
             if (user.accountType === 'Matchmaker') {
-                updates.matchmakerTier = purchased > 0 || updates.isSubscribed ? 'PAYG' : 'FREE';
-                updates.matchmakerCanAddClients = remaining > 0;
+                const paymentsOff = (r.paymentsEnabled ?? r.PaymentsEnabled) === false
+                    || (r.paymentsEnabled ?? r.PaymentsEnabled) === 'false';
+                updates.matchmakerTier = paymentsOff || purchased > 0 || updates.isSubscribed ? 'PAYG' : 'FREE';
+                updates.matchmakerCanAddClients = paymentsOff || remaining > 0;
                 updates.matchmakerMaxClientProfiles = 0;
                 updates.matchmakerClientSelectionPending = false;
             }
@@ -2557,6 +2568,10 @@ function ProfilePageContent() {
     }, [subAccountPackages, liveSubAccountPackage?.price, user?.familySubAccountAdditionalAmountLkr]);
 
     const openSubAccountPackageModal = useCallback(() => {
+        if (!paymentsOn) {
+            setIsCreateSubAccountModalOpen(true);
+            return;
+        }
         const purchased = Math.max(0, user?.familySubAccountSlotsPurchased ?? 0);
         const consumed = Math.max(0, user?.familySubAccountSlotsConsumed ?? 0);
         const remaining = Math.max(0, purchased - consumed);
@@ -2571,7 +2586,7 @@ function ProfilePageContent() {
             return;
         }
         setShowSubAccountPackageModal(true);
-    }, [user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed]);
+    }, [paymentsOn, user?.accountType, user?.familySubAccountSlotsPurchased, user?.familySubAccountSlotsConsumed]);
 
     const handleSelectSubAccountPackage = useCallback((pkg: PublicMatrimonialPackage) => {
         const purchased = Math.max(0, user?.familySubAccountSlotsPurchased ?? 0);
@@ -2614,8 +2629,8 @@ function ProfilePageContent() {
     const subSlotsPurchased = Math.max(0, user.familySubAccountSlotsPurchased ?? 0);
     const subSlotsConsumed = Math.max(0, user.familySubAccountSlotsConsumed ?? 0);
     const subSlotsRemaining = Math.max(0, subSlotsPurchased - subSlotsConsumed);
-    const canCreateManagedSubAccount = usesSubAccountSlots && (!paymentsRequired || subSlotsRemaining > 0);
-    const needsSubAccountPayment = paymentsRequired && usesSubAccountSlots && subSlotsRemaining <= 0;
+    const canCreateManagedSubAccount = usesSubAccountSlots && (!paymentsOn || subSlotsRemaining > 0);
+    const needsSubAccountPayment = paymentsOn && usesSubAccountSlots && subSlotsRemaining <= 0;
     const matchmakerPackageDisplayName = isMatchmakerAccount
         ? (matchmakerPackages[0] ? packageName(matchmakerPackages[0]) : undefined)
         : undefined;
@@ -2983,7 +2998,7 @@ function ProfilePageContent() {
                         </div>
                     </div>
 
-                    {paymentsRequired && bankTransferResult === 'approved' ? (
+                    {paymentsOn && bankTransferResult === 'approved' ? (
                         <div
                             role="status"
                             style={{
@@ -3025,7 +3040,7 @@ function ProfilePageContent() {
                                 {BANK_TRANSFER_APPROVED_BANNER_BODY}
                             </span>
                         </div>
-                    ) : paymentsRequired && bankTransferResult === 'rejected' ? (
+                    ) : paymentsOn && bankTransferResult === 'rejected' ? (
                         <div
                             role="status"
                             style={{
@@ -3117,7 +3132,7 @@ function ProfilePageContent() {
                                 </button>
                             </div>
                         </div>
-                    ) : paymentsRequired && (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
+                    ) : paymentsOn && (bankPremiumAwaitingApproval || bankSubAccountAwaitingApproval) ? (
                         <div
                             role="status"
                             style={{
@@ -3241,7 +3256,7 @@ function ProfilePageContent() {
                     </div>
 
                     <div className="profile-page-actions">
-                        {!isBasicProfileOnlyAccountType(user.accountType) && paymentsRequired && (
+                        {!isBasicProfileOnlyAccountType(user.accountType) && paymentsOn && (
                             <button className="btn btn-primary" onClick={() => openModal('subscription')}>Upgrade Membership</button>
                         )}
                         {!isBasicProfileOnlyAccountType(user.accountType) && !isManagedSubAccount(user) && (
@@ -3472,7 +3487,7 @@ function ProfilePageContent() {
                         </section>
 
                         {/* Subscription */}
-                        {paymentsRequired ? (
+                        {paymentsOn ? (
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
                             {isFamilyParentAccount ? (
@@ -3814,7 +3829,7 @@ function ProfilePageContent() {
                     </div>
                 )}
 
-                {paymentsRequired ? (
+                {paymentsOn ? (
                 <SubAccountPackagePickerModal
                     open={showSubAccountPackageModal}
                     onClose={() => setShowSubAccountPackageModal(false)}
@@ -3869,12 +3884,12 @@ function ProfilePageContent() {
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem' }}>
                             {usesSubAccountSlots
-                                ? paymentsRequired
+                                ? paymentsOn
                                     ? `Sub-account packages from ${subAccountPriceLabel}${subSlotValidityMonths ? ` (from ${subSlotValidityMonths} month${subSlotValidityMonths === 1 ? '' : 's'} per profile)` : ''}. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Premium also applies to each managed profile when created; expiry is shown per account below.`
                                     : 'Create managed profiles for family members. Payments are turned off, so no package is required.'
                                 : null}
                         </p>
-                        {paymentsRequired && usesSubAccountSlots && canCreateManagedSubAccount && (
+                        {paymentsOn && usesSubAccountSlots && canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused slot(s). Create a managed profile before purchasing another slot.
                             </p>
@@ -4044,11 +4059,11 @@ function ProfilePageContent() {
                             </button>
                         </div>
                         <p style={{ color: '#666', marginBottom: '1rem', fontSize: '0.95rem' }}>
-                            {paymentsRequired
+                            {paymentsOn
                                 ? `Client profiles appear in browse with a matchmaker badge. Create each purchased profile before buying another — ${subSlotsRemaining} ready · ${subSlotsConsumed}/${subSlotsPurchased} used. Messages and interest for each profile are grouped below.`
                                 : 'Client profiles appear in browse with a matchmaker badge. Payments are turned off, so you can add client profiles without buying a slot. Messages and interest for each profile are grouped below.'}
                         </p>
-                        {paymentsRequired && canCreateManagedSubAccount && (
+                        {paymentsOn && canCreateManagedSubAccount && (
                             <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused client-account slot(s). Create a profile before purchasing another slot.
                             </p>
