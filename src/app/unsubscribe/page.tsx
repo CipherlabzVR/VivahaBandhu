@@ -88,7 +88,7 @@ function UnsubscribeContent() {
                     </>
                 ) : (
                     <>
-                        <h1 style={{ fontSize: '1.35rem', marginBottom: '0.75rem', color: '#b45309' }}>
+                        <h1 style={{ fontSize: '1.35rem', marginBottom: '0.75rem', color: '#8E2B44' }}>
                             Unsubscribe failed
                         </h1>
                         <p style={{ color: '#374151', lineHeight: 1.55 }}>{message}</p>

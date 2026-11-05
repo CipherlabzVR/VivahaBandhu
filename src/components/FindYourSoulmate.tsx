@@ -41,7 +41,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
     } as React.CSSProperties);
 
     return (
-        <section className={`relative py-20 md:py-28 overflow-hidden bg-gradient-to-br from-rose-50 via-white to-orange-50 ${language === 'si' ? 'font-sinhala-sm' : ''}`}>
+        <section className={`relative py-20 md:py-28 overflow-hidden bg-gradient-to-br from-[#E5F1E8] via-white to-[#FFE8DE] ${language === 'si' ? 'font-sinhala-sm' : ''}`}>
             {/* Line-drawn hearts background (same design as footer, looping) */}
             <div className="absolute inset-0 z-0 pointer-events-none flex items-center justify-center overflow-hidden">
                 <div className="absolute left-[-5%] top-1/2 -translate-y-1/2 w-[280px] md:w-[360px] opacity-[0.25]">
@@ -49,7 +49,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                         <path
                             ref={pathRef}
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -63,7 +63,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -77,7 +77,7 @@ export default function FindYourSoulmate({ onOpenRegister }: FindYourSoulmatePro
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1"
                             strokeLinecap="round"
                             strokeLinejoin="round"

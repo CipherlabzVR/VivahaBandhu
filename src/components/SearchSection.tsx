@@ -880,7 +880,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                             <input type="number" name="maxAge" min={MATRIMONIAL_MIN_SEARCH_AGE} inputMode="numeric" value={draftFilters.maxAge} onChange={handleFilterChange} placeholder="Max" style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #eee' }} />
                         </div>
                         {ageFilterError ? (
-                            <p role="alert" style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#b45309' }}>
+                            <p role="alert" style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#8E2B44' }}>
                                 {ageFilterError}
                             </p>
                         ) : null}
@@ -909,7 +909,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                     </div>
                     </div>
 
-                    <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fdf8f3', borderRadius: '10px', textAlign: 'center' }}>
+                    <div className="save-search-box" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#FFF8FA', borderRadius: '10px', textAlign: 'center' }}>
                         <p style={{ margin: '0 0 12px 0', fontSize: '14px', color: '#666' }}>
                             Results update as you change filters. Click <strong>Save</strong> to remember this search for next time.
                         </p>
@@ -1041,7 +1041,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                     </div>
                     
                     {preferredSearch && !partnerPreferencesRequired && (
-                        <div style={{ marginBottom: '15px', padding: '12px 16px', backgroundColor: '#fdf8f3', borderRadius: '10px', border: '1px solid #f0e0c0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px' }}>
+                        <div style={{ marginBottom: '15px', padding: '12px 16px', backgroundColor: '#FFF8FA', borderRadius: '10px', border: '1px solid #f0e0c0', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 14px' }}>
                             <span style={{ fontSize: '1.2rem' }}>💡</span>
                             <p style={{ margin: 0, fontSize: '0.9rem', color: '#666', flex: '1 1 220px' }}>
                                 {isManagedParent && preferredSearchSubAccount ? (
@@ -1081,9 +1081,9 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                             style={{
                                 marginBottom: '20px',
                                 padding: '28px 24px',
-                                backgroundColor: '#fffbeb',
+                                backgroundColor: '#FFF5F7',
                                 borderRadius: '12px',
-                                border: '1px solid #fde68a',
+                                border: '1px solid #F7D6DC',
                                 textAlign: 'center',
                             }}
                         >
@@ -1229,7 +1229,7 @@ export default function SearchSection({ onOpenProfileDetail, onOpenSubscription 
                                                                 onClick={(e) => handleToggleShortlist(e, pid)}
                                                                 aria-label={isSaved ? 'Remove from saved' : 'Save profile'}
                                                                 title={isSaved ? 'Remove from saved' : 'Save profile'}
-                                                                style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: isSaved ? '#f59e0b' : '#fef3c7', color: isSaved ? 'white' : '#b45309', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.15s, color 0.15s' }}
+                                                                style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: isSaved ? '#F7D6DC' : '#FBEFF2', color: isSaved ? 'white' : '#8E2B44', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.15s, color 0.15s' }}
                                                             >
                                                                 <BookmarkIcon filled={isSaved} />
                                                             </button>

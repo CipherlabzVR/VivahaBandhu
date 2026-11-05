@@ -91,12 +91,12 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
 
     return (
         <section className="relative py-24 px-4 overflow-hidden" id="pricing">
-            <div className="absolute inset-0 bg-primary" aria-hidden />
+            <div className="absolute inset-0 bg-[#FBE5EB]" aria-hidden />
 
             <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
                 <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-primary-light/50 animate-price-pulse" />
                 <div
-                    className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-primary-dark/40 animate-price-pulse"
+                    className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-[#FFE8DE]/80 animate-price-pulse"
                     style={{ animationDelay: '1.5s' }}
                 />
                 <div
@@ -104,7 +104,7 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                     style={{ animationDelay: '0.5s' }}
                 />
                 <div
-                    className="absolute top-1/3 right-1/3 w-40 h-40 rounded-full bg-primary-light/30 animate-price-float"
+                    className="absolute top-1/3 right-1/3 w-40 h-40 rounded-full bg-[#F1EBF8]/80 animate-price-float"
                     style={{ animationDelay: '2s' }}
                 />
             </div>
@@ -120,8 +120,8 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
             <div className="absolute inset-0 bg-white/10 backdrop-blur-[1px]" aria-hidden />
             <div className="relative z-10">
                 <div className="text-center max-w-2xl mx-auto mb-16">
-                    <h2 className="text-4xl md:text-5xl font-playfair font-bold text-white mb-4">{t('pricingPlans')}</h2>
-                    <p className="text-white/90 text-lg md:text-xl">
+                    <h2 className="text-4xl md:text-5xl font-playfair font-bold text-text-dark mb-4">{t('pricingPlans')}</h2>
+                    <p className="text-text-light text-lg md:text-xl">
                         {userHasPlan ? t('pricingPlansDescSubscribed') : t('pricingPlansDesc')}
                     </p>
                 </div>
@@ -139,10 +139,10 @@ export default function Pricing({ onOpenSubscription }: PricingProps) {
                                 className="rounded-3xl p-8 bg-white/40 border border-white/30 min-h-[420px] animate-pulse"
                             />
                         ))}
-                        <p className="col-span-full text-center text-white/90 text-sm">Loading plans…</p>
+                        <p className="col-span-full text-center text-text-light text-sm">Loading plans…</p>
                     </div>
                 ) : packages.length === 0 ? (
-                    <p className="text-center text-white/90 text-sm py-8 max-w-md mx-auto">
+                    <p className="text-center text-text-light text-sm py-8 max-w-md mx-auto">
                         No plans are available right now. Please check back later or contact support.
                     </p>
                 ) : (

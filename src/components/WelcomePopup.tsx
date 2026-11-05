@@ -54,7 +54,7 @@ export default function WelcomePopup({ firstName, onClose }: WelcomePopupProps) 
                     {/* Logo at top center */}
                     <div className="flex justify-center items-center w-full mb-5">
                         <Image 
-                            src="/logo2.png" 
+                            src="/logo-rose-popup.png" 
                             alt="MyMatch.lk Logo" 
                             width={200} 
                             height={100}

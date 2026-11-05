@@ -551,12 +551,12 @@ export default function SubscriptionCheckoutPage() {
             <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-lg p-6 md:p-8">
                 <h1 className="text-3xl font-playfair font-bold text-text-dark mb-2">Complete Your Payment</h1>
                 {isResubmitCheckout ? (
-                    <p className="text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
+                    <p className="text-brand-rich bg-brand-blush border border-primary/25 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
                         Upload a new bank transfer slip for the plan below. Our team will review it and activate your subscription after approval.
                     </p>
                 ) : null}
                 {mustCreateProfileBeforeBuySlot ? (
-                    <p className="text-amber-900 bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
+                    <p className="text-brand-darkest bg-brand-blush border border-primary/35 rounded-xl px-4 py-3 mb-4 text-sm leading-relaxed">
                         {unusedSlotBlockMessage}{' '}
                         <button
                             type="button"
@@ -657,7 +657,7 @@ export default function SubscriptionCheckoutPage() {
                                     <span className="font-bold text-primary">LKR {amount}</span>
                                 </div>
                                 {isMatchmakerClientCheckout ? (
-                                    <p className="text-xs text-amber-800 mt-3 leading-relaxed">
+                                    <p className="text-xs text-brand-rich mt-3 leading-relaxed">
                                         Transfer exactly <strong>LKR {amount}</strong> for one client-account slot.
                                         After admin approval you can create that client profile. Buy again anytime for more accounts.
                                     </p>
@@ -737,8 +737,8 @@ export default function SubscriptionCheckoutPage() {
                             </div>
                         </div>
 
-                        <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-                            <p className="text-sm text-amber-800">
+                        <div className="mt-4 p-3 rounded-lg bg-brand-blush border border-primary/25">
+                            <p className="text-sm text-brand-rich">
                                 <strong>Note:</strong> After uploading the slip, your subscription will be activated once our admin verifies the payment.
                             </p>
                         </div>

@@ -55,7 +55,7 @@ export default function LoadingScreen() {
           {/* Outer soft glow */}
           <path
             d={HEART_PATH}
-            stroke="#ffa20d"
+            stroke="#F7D6DC"
             strokeWidth="3"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -65,7 +65,7 @@ export default function LoadingScreen() {
           {/* Mid glow */}
           <path
             d={HEART_PATH}
-            stroke="#ffb84d"
+            stroke="#F7D6DC"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -76,7 +76,7 @@ export default function LoadingScreen() {
           <path
             ref={pathRef}
             d={HEART_PATH}
-            stroke="#ffa20d"
+            stroke="#F7D6DC"
             strokeWidth="0.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -88,7 +88,7 @@ export default function LoadingScreen() {
                 strokeDashoffset: length,
                 '--heart-length': length,
                 filter:
-                  'drop-shadow(0 0 1.5px #ffa20d) drop-shadow(0 0 4px #ffb84d) drop-shadow(0 0 8px #FED7AA)',
+                  'drop-shadow(0 0 1.5px #F7D6DC) drop-shadow(0 0 4px #F7D6DC) drop-shadow(0 0 8px #FED7AA)',
               } as React.CSSProperties
             }
           />

@@ -226,7 +226,7 @@ export default function ManagedSubAccountSettingsPicker({
                                     marginBottom: '8px',
                                     border: isSelected ? '2px solid var(--primary, #c8922a)' : '1px solid #eee',
                                     borderRadius: '12px',
-                                    background: isSelected ? '#fdf8f3' : 'white',
+                                    background: isSelected ? '#FFF8FA' : 'white',
                                     cursor: isSubmitting ? 'wait' : 'pointer',
                                     textAlign: 'left',
                                     opacity: isSubmitting ? 0.75 : 1,

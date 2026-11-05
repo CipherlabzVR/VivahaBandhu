@@ -338,7 +338,7 @@ export default function PrivacyPolicyBody() {
                     For privacy-related inquiries, data subject requests, or concerns about how we handle your personal
                     information, please contact us at:
                 </p>
-                <div className="rounded-xl border border-orange-100 bg-white p-6 shadow-[0_4px_24px_-8px_rgba(255,162,13,0.2)]">
+                <div className="rounded-xl border border-orange-100 bg-white p-6 shadow-[0_4px_24px_-8px_rgba(193,75,112,0.2)]">
                     <p className="mb-2 font-semibold text-text-dark">MyMatch.lk</p>
                     <p className="mb-4 text-sm">150/1 Ja-Ela Road, Gampaha, Sri Lanka</p>
                     <ul className="list-none space-y-2 !pl-0 text-sm">

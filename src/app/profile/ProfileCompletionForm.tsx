@@ -2371,7 +2371,7 @@ export default function ProfileCompletionForm({
                         marginBottom: '1.25rem',
                         padding: '0.85rem 1rem',
                         borderRadius: '10px',
-                        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                        background: 'linear-gradient(135deg, #FFF5F7 0%, #FBEFF2 100%)',
                         border: '1px solid #fcd34d',
                         color: '#92400e',
                         fontSize: '0.92rem',

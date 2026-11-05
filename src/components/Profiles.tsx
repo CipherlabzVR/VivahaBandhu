@@ -299,7 +299,7 @@ export default function Profiles({ onOpenSubscription, onOpenProfileDetail }: Pr
                                                         onClick={(e) => handleToggleShortlist(e, pid)}
                                                         aria-label={isSaved ? 'Remove from saved' : 'Save profile'}
                                                         title={isSaved ? 'Remove from saved' : 'Save profile'}
-                                                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isSaved ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
+                                                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${isSaved ? 'bg-primary text-white' : 'bg-brand-blush text-primary hover:bg-brand-light/50'}`}
                                                     >
                                                         <BookmarkIcon filled={isSaved} />
                                                     </button>

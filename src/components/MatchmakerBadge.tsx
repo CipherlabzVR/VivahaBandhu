@@ -21,7 +21,7 @@ export default function MatchmakerBadge({ variant = 'compact', style }: Matchmak
         gap: '4px',
         padding: variant === 'full' ? '4px 10px' : '2px 8px',
         borderRadius: '999px',
-        background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
+        background: 'linear-gradient(135deg, #FBEFF2, #F7D6DC)',
         color: '#92400e',
         border: '1px solid #fcd34d',
         fontSize: variant === 'full' ? '0.8rem' : '0.7rem',

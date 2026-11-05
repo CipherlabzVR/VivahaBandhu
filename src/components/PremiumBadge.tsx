@@ -21,15 +21,14 @@ export default function PremiumBadge({ variant = 'compact', label = 'Premium', s
         gap: '4px',
         padding: variant === 'full' ? '4px 12px' : '3px 9px',
         borderRadius: '999px',
-        background: 'linear-gradient(135deg, #fde68a 0%, #f59e0b 50%, #b45309 100%)',
-        color: '#3f2a06',
-        border: '1px solid #d97706',
+        background: 'linear-gradient(135deg, #C14B70 0%, #A8365A 100%)',
+        color: '#ffffff',
+        border: '1px solid #A8365A',
         fontSize: variant === 'full' ? '0.8rem' : '0.7rem',
         fontWeight: 700,
         lineHeight: 1,
         whiteSpace: 'nowrap',
-        boxShadow: '0 2px 6px rgba(217, 119, 6, 0.35)',
-        textShadow: '0 1px 0 rgba(255,255,255,0.35)',
+        boxShadow: '0 2px 6px rgba(193, 75, 112, 0.22)',
         ...style,
     };
 
@@ -58,8 +57,8 @@ export default function PremiumBadge({ variant = 'compact', label = 'Premium', s
 export const PREMIUM_CARD_FRAME_STYLE: CSSProperties = {
     border: '2px solid transparent',
     backgroundImage:
-        'linear-gradient(white, white), linear-gradient(135deg, #fde68a 0%, #f59e0b 50%, #b45309 100%)',
+        'linear-gradient(white, white), linear-gradient(135deg, #FBE5EB 0%, #E889A8 50%, #C14B70 100%)',
     backgroundOrigin: 'border-box',
     backgroundClip: 'padding-box, border-box',
-    boxShadow: '0 6px 22px rgba(217, 119, 6, 0.30), 0 0 0 1px rgba(217, 119, 6, 0.15)',
+    boxShadow: '0 6px 22px rgba(193, 75, 112, 0.20), 0 0 0 1px rgba(193, 75, 112, 0.12)',
 };

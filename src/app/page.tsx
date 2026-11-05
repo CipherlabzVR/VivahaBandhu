@@ -292,7 +292,7 @@ export default function Home() {
                   marginBottom: '1rem',
                   fontSize: '0.9rem',
                   color: '#92400e',
-                  background: '#fffbeb',
+                  background: '#FFF5F7',
                   padding: '0.75rem 0.9rem',
                   borderRadius: '8px',
                   border: '1px solid #fcd34d',

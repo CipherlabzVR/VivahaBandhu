@@ -202,7 +202,7 @@ export default function SuccessStories() {
                         <path
                             ref={pathRef}
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1.25"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -216,7 +216,7 @@ export default function SuccessStories() {
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1.25"
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -230,7 +230,7 @@ export default function SuccessStories() {
                     <svg viewBox="0 0 120 60" fill="none" className="w-full h-auto" preserveAspectRatio="xMidYMid meet">
                         <path
                             d={HEART_PATH}
-                            stroke="#ffa20d"
+                            stroke="#F7D6DC"
                             strokeWidth="1.25"
                             strokeLinecap="round"
                             strokeLinejoin="round"

@@ -63,6 +63,6 @@ export function normalizeBrowseProfiles<T extends Record<string, unknown>>(items
 
 export function matchScoreBadgeColors(score: number): { background: string; color: string } {
     if (score >= 75) return { background: '#15803d', color: '#ffffff' };
-    if (score >= 50) return { background: '#b45309', color: '#ffffff' };
+    if (score >= 50) return { background: '#8E2B44', color: '#ffffff' };
     return { background: '#475569', color: '#ffffff' };
 }

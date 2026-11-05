@@ -24,21 +24,21 @@ const VARIANT_STYLES: Record<
 > = {
   home: {
     tileColor: '#2a2118',
-    textColor: '#ffa20d',
+    textColor: '#B23C59',
     fontSize: 'clamp(20px, 4.6vw, 42px)',
     gap: 5,
     cycleDelay: 2400,
   },
   page: {
     tileColor: '#111827',
-    textColor: '#fff7ed',
+    textColor: '#FFF1F4',
     fontSize: 'clamp(22px, 5.4vw, 48px)',
     gap: 6,
     cycleDelay: 500,
   },
   legal: {
     tileColor: '#111827',
-    textColor: '#ffa20d',
+    textColor: '#B23C59',
     fontSize: 'clamp(20px, 4.2vw, 36px)',
     gap: 4,
     cycleDelay: 500,

@@ -486,12 +486,12 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                 return (
                                     <div
                                         key={rowKey}
-                                        className="relative shrink-0 rounded-xl border border-amber-300 bg-amber-50/60 shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-amber-200 transition-shadow overflow-hidden"
+                                        className="relative shrink-0 rounded-xl border border-primary/35 bg-brand-blush/70 shadow-[0_8px_30px_-12px_rgba(193,75,112,0.35)] ring-1 ring-primary/20 transition-shadow overflow-hidden"
                                     >
-                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-amber-500 rounded-l-xl" aria-hidden />
+                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl" aria-hidden />
                                         <div className="flex gap-3 pl-4 pr-3 py-3">
                                             <div
-                                                className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-amber-100 to-orange-50 flex items-center justify-center text-xl ring-2 ring-white shadow-sm"
+                                                className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-br from-brand-light via-brand-blush to-cream flex items-center justify-center text-xl ring-2 ring-white shadow-sm"
                                                 aria-hidden
                                             >
                                                 👑
@@ -512,7 +512,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                                 setOpenNotificationScope(null);
                                                                 router.push('/profiles');
                                                             }}
-                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
                                                         >
                                                             Browse profiles
                                                         </button>
@@ -534,7 +534,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                                 setOpenNotificationScope(null);
                                                                 router.push('/profile?settings=open');
                                                             }}
-                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
                                                         >
                                                             View status
                                                         </button>
@@ -551,7 +551,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                                 if (purpose) params.set('purpose', purpose);
                                                                 router.push(`/subscription/plans?${params.toString()}`);
                                                             }}
-                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
                                                         >
                                                             Submit new slip
                                                         </button>
@@ -563,7 +563,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                                 setOpenNotificationScope(null);
                                                                 router.push('/profile?settings=open');
                                                             }}
-                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 shadow-sm transition-colors"
+                                                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold bg-primary text-white hover:bg-primary-dark shadow-sm transition-colors"
                                                         >
                                                             Manage subscription
                                                         </button>
@@ -571,7 +571,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                     <button
                                                         type="button"
                                                         onClick={() => markInterestNotificationRead(n)}
-                                                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-amber-400 text-amber-900/90 bg-white hover:bg-amber-50/80 transition-colors"
+                                                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary text-brand-darkest bg-white hover:bg-brand-blush/80 transition-colors"
                                                     >
                                                         Dismiss
                                                     </button>
@@ -585,7 +585,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                             return (
                                 <div
                                     key={rowKey}
-                                    className="relative shrink-0 rounded-xl border border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(255,162,13,0.35)] ring-1 ring-primary/15 transition-shadow overflow-hidden"
+                                    className="relative shrink-0 rounded-xl border border-primary/35 bg-white shadow-[0_8px_30px_-12px_rgba(193,75,112,0.35)] ring-1 ring-primary/15 transition-shadow overflow-hidden"
                                 >
                                     <div
                                         className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl"
@@ -605,7 +605,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-start gap-2">
                                                 <span
-                                                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(255,162,13,0.25)]"
+                                                    className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary shadow-[0_0_0_3px_rgba(193,75,112,0.25)]"
                                                     title="New"
                                                 />
                                                 <div className="min-w-0">
@@ -638,7 +638,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                                                 <button
                                                     type="button"
                                                     onClick={() => handleViewInterestProfile(n)}
-                                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary text-amber-900/90 bg-white hover:bg-amber-50/80 transition-colors"
+                                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary text-brand-darkest bg-white hover:bg-brand-blush/80 transition-colors"
                                                 >
                                                     View profile
                                                 </button>
@@ -681,17 +681,17 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                 </div>
             )}
             <header className={`mobile-app-header fixed w-full bg-white shadow-gold z-[1000] ${user && user.isVerified === false ? 'top-[36px]' : 'top-0'}`}>
-            <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-2 flex justify-between items-center">
-                <Link href="/" className="flex items-center h-11 md:h-14">
+            <div className={`mx-auto px-4 2xl:px-6 py-2 flex flex-nowrap justify-between items-center gap-3 ${language === 'si' ? 'max-w-[1600px]' : 'max-w-[1400px]'}`}>
+                <Link href="/" className="flex shrink-0 items-center h-11 md:h-14">
                     <Image 
-                        src="/logo4.webp" 
+                        src="/logo-rose-header.webp" 
                         alt="MyMatch.lk Logo" 
-                        width={240} 
-                        height={120}
+                        width={180} 
+                        height={60}
                         className="h-full w-auto object-contain"
                     />
                 </Link>
-                <nav className="hidden md:flex gap-8 items-center">
+                <nav className={`desktop-header-nav min-w-max shrink-0 items-center gap-4 2xl:gap-6 ${language === 'si' ? 'hidden 2xl:flex' : 'hidden xl:flex'}`}>
                     <Link href="/" className="text-text-dark font-medium hover:text-primary transition-colors relative after:content-[''] after:absolute after:bottom-[-4px] after:left-0 after:w-0 after:h-0.5 after:bg-gold hover:after:w-full after:transition-all">
                         {t('home')}
                     </Link>
@@ -710,8 +710,8 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                         {t('contactUs')}
                     </Link>
                 </nav>
-                <div className="flex items-center gap-4">
-                    <div className="hidden md:flex gap-2">
+                <div className="desktop-header-actions flex shrink-0 flex-nowrap items-center gap-3">
+                    <div className={`gap-2 ${language === 'si' ? 'hidden 2xl:flex' : 'hidden xl:flex'}`}>
                         <button 
                             onClick={() => setLanguage('en')}
                             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
@@ -894,15 +894,15 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
                             )}
                         </div>
                     ) : (
-                        <div className="hidden md:flex gap-4">
+                        <div className={`gap-3 whitespace-nowrap ${language === 'si' ? 'hidden 2xl:flex' : 'hidden xl:flex'}`}>
                             <button 
-                                className="px-6 py-2 border-2 border-primary text-primary rounded-full font-medium hover:bg-primary hover:text-white transition-colors" 
+                                className="px-3 py-2 border-2 border-primary text-primary rounded-full font-medium hover:bg-primary hover:text-white transition-colors" 
                                 onClick={onOpenLogin}
                             >
                                 {t('login')}
                             </button>
                             <button 
-                                className="px-6 py-2 bg-primary text-white rounded-full font-medium hover:bg-primary-dark transition-colors" 
+                                className="px-3 py-2 bg-primary text-white rounded-full font-medium hover:bg-primary-dark transition-colors" 
                                 onClick={onOpenRegister}
                             >
                                 {t('registerFree')}
@@ -912,7 +912,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
 
                     {/* Mobile Menu Button */}
                     <button 
-                        className="md:hidden p-2 text-text-dark"
+                        className={`${language === 'si' ? '2xl:hidden' : 'xl:hidden'} p-2 text-text-dark`}
                         aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
                         aria-expanded={mobileMenuOpen}
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -935,7 +935,7 @@ export default function Header({ onOpenLogin, onOpenRegister, onOpenVerify }: He
             )}
         </header>
         {mobileMenuOpen ? (
-            <div className="mobile-sidebar-root md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className={`mobile-sidebar-root ${language === 'si' ? '2xl:hidden' : 'xl:hidden'}`} role="dialog" aria-modal="true" aria-label="Menu">
                 <button
                     type="button"
                     className="mobile-sidebar-backdrop"

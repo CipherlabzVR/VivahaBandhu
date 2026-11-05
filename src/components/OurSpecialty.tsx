@@ -13,7 +13,7 @@ const FEATURE_KEYS = [
 export default function OurSpecialty() {
     const { t, language } = useLanguage();
     return (
-        <section className={`relative py-20 md:py-28 overflow-hidden bg-black ${language === 'si' ? 'font-sinhala-sm' : ''}`}>
+        <section className={`relative py-20 md:py-28 overflow-hidden bg-[#F1EBF8] ${language === 'si' ? 'font-sinhala-sm' : ''}`}>
             {/* Background image */}
             <div className="absolute inset-0 z-0">
                 <Image
@@ -24,7 +24,7 @@ export default function OurSpecialty() {
                     sizes="100vw"
                     priority={false}
                 />
-                <div className="absolute inset-0 bg-black/60" aria-hidden />
+                <div className="absolute inset-0 bg-[#F1EBF8]/90" aria-hidden />
             </div>
             {/* Starfield / constellation background */}
             <div className="absolute inset-0 z-[1] opacity-30" aria-hidden>
@@ -42,13 +42,13 @@ export default function OurSpecialty() {
             <div className="relative z-10 max-w-[1200px] mx-auto px-4 lg:px-8">
                 {/* Header */}
                 <div className="text-center mb-14 md:mb-16">
-                    <p className="text-orange-400 text-sm uppercase tracking-[0.2em] mb-2 font-medium">
+                    <p className="text-brand-rich text-sm uppercase tracking-[0.2em] mb-2 font-medium">
                         {t('ourSpecialtySubtitle')}
                     </p>
-                    <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-6 font-playfair">
+                    <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-text-dark mb-6 font-playfair">
                         {t('ourSpecialty')}
                     </h2>
-                    <p className="text-slate-300 text-lg md:text-xl max-w-3xl mx-auto leading-relaxed">
+                    <p className="text-text-light text-lg md:text-xl max-w-3xl mx-auto leading-relaxed">
                         {t('ourSpecialtyIntro')}
                     </p>
                 </div>
@@ -58,16 +58,16 @@ export default function OurSpecialty() {
                     {FEATURE_KEYS.map((item) => (
                         <article
                             key={item.keyTitle}
-                            className="relative bg-slate-800/60 backdrop-blur-sm border border-orange-500/20 rounded-xl p-6 md:p-8 shadow-xl hover:border-orange-400/30 transition-colors"
+                            className="relative bg-white/85 backdrop-blur-sm border border-brand-light/40 rounded-xl p-6 md:p-8 shadow-lg hover:border-brand transition-colors"
                         >
                             {/* Corner ornament */}
-                            <span className="absolute top-4 right-4 text-orange-400/50 text-2xl" aria-hidden>
+                            <span className="absolute top-4 right-4 text-brand-light text-2xl" aria-hidden>
                                 {item.icon}
                             </span>
-                            <h3 className="text-xl md:text-2xl font-semibold text-orange-400 mb-3 pr-8 font-playfair">
+                            <h3 className="text-xl md:text-2xl font-semibold text-brand-rich mb-3 pr-8 font-playfair">
                                 {t(item.keyTitle)}
                             </h3>
-                            <p className="text-slate-300 leading-relaxed">
+                            <p className="text-text-light leading-relaxed">
                                 {t(item.keyText)}
                             </p>
                         </article>

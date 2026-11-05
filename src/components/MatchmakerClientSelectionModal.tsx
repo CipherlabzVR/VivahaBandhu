@@ -117,8 +117,8 @@ export function MatchmakerClientSelectionModal({
                                         gap: '0.75rem',
                                         padding: '0.75rem 0.85rem',
                                         borderRadius: '10px',
-                                        border: checked ? '2px solid var(--primary, #b45309)' : '1px solid #e5e7eb',
-                                        background: checked ? '#fffbeb' : '#fff',
+                                        border: checked ? '2px solid var(--primary, #8E2B44)' : '1px solid #e5e7eb',
+                                        background: checked ? '#FFF5F7' : '#fff',
                                         cursor: isSubmitting ? 'wait' : 'pointer',
                                     }}
                                 >

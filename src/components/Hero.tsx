@@ -212,16 +212,16 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                 className={`relative z-10 mx-auto max-w-[1400px] px-4 pb-10 max-md:pt-[3.5rem] ${language === 'si' ? 'font-sinhala' : ''}`}
             >
                 <div className="isolate grid min-h-[calc(100vh-120px)] items-center gap-10 py-10 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-end lg:gap-14 lg:py-14 lg:pb-8 xl:grid-cols-[minmax(0,1.22fr)_minmax(0,0.78fr)]">
-                    <div className="relative z-30 rounded-3xl border border-primary/55 bg-black/82 p-6 shadow-2xl backdrop-blur-md md:backdrop-blur-lg md:p-8 lg:-translate-y-20 lg:p-10 xl:-translate-y-32">
-                        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/10 px-3 py-1.5">
-                            <ShieldIcon className="h-4 w-4 shrink-0 text-white" />
-                            <span className="text-xs font-semibold uppercase tracking-wide text-white">
+                    <div className="relative z-30 rounded-3xl border border-white/80 bg-[#FFFAF8]/95 p-6 shadow-2xl backdrop-blur-md md:backdrop-blur-lg md:p-8 lg:-translate-y-20 lg:p-10 xl:-translate-y-32">
+                        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-[#FBE5EB] px-3 py-1.5">
+                            <ShieldIcon className="h-4 w-4 shrink-0 text-primary" />
+                            <span className="text-xs font-semibold uppercase tracking-wide text-primary-dark">
                                 {t('heroTrustBadge')}
                             </span>
                         </div>
 
                         <h1
-                            className={`mb-6 leading-tight text-white ${
+                            className={`mb-6 leading-tight text-text-dark ${
                                 language === 'en'
                                     ? 'font-playfair text-4xl font-bold md:text-5xl lg:text-6xl'
                                     : 'font-sinhala text-2xl font-bold md:text-3xl lg:text-4xl'
@@ -231,7 +231,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                 <>
                                     Find Your{' '}
                                     <span
-                                        className="font-dancing-script relative text-5xl font-semibold text-primary md:text-6xl lg:text-7xl [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_14px_rgba(0,0,0,0.55)]"
+                                        className="font-dancing-script relative text-5xl font-semibold text-primary md:text-6xl lg:text-7xl"
                                     >
                                         {t('heroTitlePerfect')} <br /> {t('heroTitlePartner')}
                                     </span>{' '}
@@ -241,7 +241,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                                 <>
                                     විශ්වාසයෙන් ඔබේ{' '}
                                     <span
-                                        className="relative font-sinhala text-3xl font-semibold text-primary md:text-4xl lg:text-5xl [text-shadow:0_1px_3px_rgba(0,0,0,0.95),0_2px_12px_rgba(0,0,0,0.55)]"
+                                        className="relative font-sinhala text-3xl font-semibold text-primary md:text-4xl lg:text-5xl"
                                     >
                                         {t('heroTitlePerfect')} <br /> {t('heroTitlePartner')}
                                     </span>{' '}
@@ -251,12 +251,12 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                         </h1>
 
                         <p
-                            className={`mb-6 max-w-xl text-lg leading-relaxed text-white/85 md:text-xl lg:max-w-none ${language === 'si' ? 'font-sinhala' : ''}`}
+                            className={`mb-6 max-w-xl text-lg leading-relaxed text-text-light md:text-xl lg:max-w-none ${language === 'si' ? 'font-sinhala' : ''}`}
                         >
                             {t('heroDescription')}
                         </p>
 
-                        <div className="mb-6 flex overflow-hidden rounded-2xl border border-white/25 bg-white shadow-sm">
+                        <div className="mb-6 flex overflow-hidden rounded-2xl border border-primary/20 bg-white shadow-sm">
                             <input
                                 type="search"
                                 value={heroQuery}
@@ -327,7 +327,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                             ) : (
                                 <button
                                     type="button"
-                                    className="flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-semibold text-white transition-colors hover:bg-white hover:text-primary"
+                                    className="flex items-center gap-2 rounded-full bg-primary px-8 py-4 font-semibold text-white transition-colors hover:bg-primary-dark"
                                     onClick={onOpenRegister}
                                 >
                                     <svg
@@ -349,7 +349,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                             )}
                             <button
                                 type="button"
-                                className="rounded-full border-2 border-white/90 px-8 py-4 font-semibold text-white transition-colors hover:bg-white/15"
+                                className="rounded-full border-2 border-primary/60 px-8 py-4 font-semibold text-primary-dark transition-colors hover:bg-[#FBE5EB]"
                                 onClick={scrollToHowItWorks}
                             >
                                 {t('howItWorks')}
@@ -357,7 +357,7 @@ export default function Hero({ onOpenRegister, onOpenLogin, onOpenSubscription }
                         </div>
 
                         {!user && (
-                            <div className={`mt-4 text-sm text-white/75 ${language === 'si' ? 'font-sinhala' : ''}`}>
+                            <div className={`mt-4 text-sm text-text-light ${language === 'si' ? 'font-sinhala' : ''}`}>
                                 <button
                                     type="button"
                                     className="font-semibold text-primary underline-offset-2 hover:underline"

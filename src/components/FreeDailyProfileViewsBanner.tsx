@@ -74,7 +74,7 @@ export default function FreeDailyProfileViewsBanner({ onUpgrade, className, styl
                 border: exhausted ? '1px solid #fca5a5' : '1px solid #fcd34d',
                 background: exhausted
                     ? 'linear-gradient(135deg, #fef2f2, #fff1f2)'
-                    : 'linear-gradient(135deg, #fffbeb, #fef3c7)',
+                    : 'linear-gradient(135deg, #FFF5F7, #FBEFF2)',
                 display: 'flex',
                 flexWrap: 'wrap',
                 alignItems: 'center',
@@ -120,7 +120,7 @@ export default function FreeDailyProfileViewsBanner({ onUpgrade, className, styl
                         fontWeight: 800,
                         fontSize: '1.05rem',
                         color: exhausted ? '#991b1b' : '#92400e',
-                        background: exhausted ? '#fecaca' : '#fde68a',
+                        background: exhausted ? '#fecaca' : '#F7D6DC',
                         padding: '0.35rem 0.75rem',
                         borderRadius: '999px',
                         whiteSpace: 'nowrap',

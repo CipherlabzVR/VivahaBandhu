@@ -389,7 +389,7 @@ function getPasswordStrength(password: string, checks: PwdChecks): { level: numb
     if (!password) return { level: 0, label: '', color: '#e5e7eb' };
     const passed = [checks.minLength, checks.hasUpper, checks.hasLower, checks.hasDigit, checks.hasSpecial].filter(Boolean).length;
     if (passed <= 1) return { level: 1, label: 'Weak', color: '#ef4444' };
-    if (passed === 2) return { level: 2, label: 'Fair', color: '#ffa20d' };
+    if (passed === 2) return { level: 2, label: 'Fair', color: '#C14B70' };
     if (passed <= 4) return { level: 3, label: 'Good', color: '#eab308' };
     return { level: 4, label: 'Strong', color: '#22c55e' };
 }
@@ -557,7 +557,7 @@ function RegisterErrorBox({
                         border: 'none',
                         padding: 0,
                         margin: 0,
-                        color: '#b45309',
+                        color: '#8E2B44',
                         fontWeight: 700,
                         textDecoration: 'underline',
                         cursor: continueLoading ? 'wait' : 'pointer',
@@ -583,7 +583,7 @@ function RegisterErrorBox({
                     border: 'none',
                     padding: 0,
                     margin: 0,
-                    color: '#b45309',
+                    color: '#8E2B44',
                     fontWeight: 700,
                     textDecoration: 'underline',
                     cursor: continueLoading ? 'wait' : 'pointer',
@@ -2673,7 +2673,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {!codeSent ? 'Select a verification method to receive your code' : `We've sent a 6-digit code to your ${verificationMethod.toLowerCase()}`}
                                     </p>
                                     {verificationResumeHint && (
-                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#FFF1F4', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
                                             {verificationResumeHint}
                                         </p>
                                     )}
@@ -3718,7 +3718,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         {!codeSent ? 'Select a verification method to receive your code' : `We've sent a 6-digit code to your ${verificationMethod.toLowerCase()}`}
                                     </p>
                                     {verificationResumeHint && (
-                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
+                                        <p style={{ textAlign: 'center', marginBottom: '1.25rem', marginTop: '-1rem', padding: '0.65rem 0.75rem', backgroundColor: '#FFF1F4', border: '1px solid #fdba74', borderRadius: '8px', color: '#9a3412', fontSize: '0.88rem', lineHeight: 1.45 }}>
                                             {verificationResumeHint}
                                         </p>
                                     )}
@@ -4336,7 +4336,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     marginBottom: '1rem',
                                     fontSize: '0.88rem',
                                     color: '#92400e',
-                                    background: '#fffbeb',
+                                    background: '#FFF5F7',
                                     padding: '0.75rem 0.9rem',
                                     borderRadius: '8px',
                                     border: '1px solid #fcd34d',
@@ -4364,8 +4364,8 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                     style={{
                                         padding: '0.6rem 1.1rem',
                                         borderRadius: '8px',
-                                        border: '1px solid #b45309',
-                                        background: isSwitchingToFreePlan ? '#fde68a' : 'white',
+                                        border: '1px solid #8E2B44',
+                                        background: isSwitchingToFreePlan ? '#F7D6DC' : 'white',
                                         color: '#92400e',
                                         fontWeight: 600,
                                         cursor: isSwitchingToFreePlan ? 'not-allowed' : 'pointer',
@@ -4446,7 +4446,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                         marginBottom: '1.25rem',
                                         padding: '1.1rem 1.25rem',
                                         borderRadius: '12px',
-                                        background: 'linear-gradient(135deg, #fdf8f3 0%, #fff7ed 100%)',
+                                        background: 'linear-gradient(135deg, #FFF8FA 0%, #FFF1F4 100%)',
                                         border: '2px solid var(--primary-light, #e9c46a)',
                                         boxShadow: '0 4px 18px rgba(217, 119, 6, 0.12)',
                                     }}

@@ -2,25 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+.desktop-header-nav a,
+.desktop-header-actions > div > button {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 @layer base {
     :root {
-        /* Primary Orange */
-        --primary: #ffa20d;
-        --primary-dark: #d98809;
-        --primary-light: #ffb84d;
+        /* Brand palette */
+        --primary: #C14B70;
+        --primary-dark: #A8365A;
+        --primary-light: #E889A8;
+        --brand-rose: #D65F83;
+        --brand-light: #E889A8;
+        --brand-darkest: #40343A;
+        --brand-deep: #754759;
+        --brand-rich: #A8365A;
+        --brand-blush: #FBE5EB;
+        --accent-peach: #FFE8DE;
+        --accent-sage: #E5F1E8;
+        --accent-lavender: #F1EBF8;
 
-        /* Secondary/Accent Orange */
-        --gold: #ffa20d;
-        --gold-light: #ffb84d;
+        /* Secondary accent */
+        --gold: #C14B70;
+        --gold-light: #E889A8;
 
-        --cream: #FDF8F3;
-        --cream-dark: #F5EDE3;
-        --text-dark: #2D2A26;
-        --text-light: #6B6560;
+        --cream: #FFFAF8;
+        --cream-dark: #FBE5EB;
+        --text-dark: #40343A;
+        --text-light: #6E6269;
         --white: #FFFFFF;
 
-        /* Updated shadow to match Orange theme */
-        --shadow: rgba(255, 162, 13, 0.25);
+        /* Brand shadow */
+        --shadow: rgba(193, 75, 112, 0.16);
         --overlay: rgba(45, 42, 38, 0.7);
     }
 
@@ -366,7 +381,7 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            background: var(--primary);
             color: var(--white);
             box-shadow: 0 4px 15px var(--shadow);
         }
@@ -595,7 +610,7 @@
         }
 
         section.features .features-cta-button {
-            background: #FF6B9D !important;
+            background: var(--primary) !important;
             color: white !important;
             border: none !important;
             padding: 1rem 2.5rem !important;
@@ -610,9 +625,9 @@
         }
 
         .features-cta-button:hover {
-            background: #ff5a8a;
+            background: var(--primary-dark) !important;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(255, 107, 157, 0.3);
+            box-shadow: 0 5px 15px rgba(193, 75, 112, 0.24);
         }
 
         section.features .features-main-heading {
@@ -817,7 +832,7 @@
             overscroll-behavior: contain;
             scrollbar-gutter: stable;
             scrollbar-width: thin;
-            scrollbar-color: #d4c4b0 #f8f4ef;
+            scrollbar-color: #E889A8 #FFFAF8;
             padding-right: 0.35rem;
         }
 
@@ -826,17 +841,17 @@
         }
 
         .header-notifications-scroll--scrollable::-webkit-scrollbar-track {
-            background: #f8f4ef;
+            background: #FFFAF8;
             border-radius: 999px;
         }
 
         .header-notifications-scroll--scrollable::-webkit-scrollbar-thumb {
-            background: #d4c4b0;
+            background: #E889A8;
             border-radius: 999px;
         }
 
         .header-notifications-scroll--scrollable::-webkit-scrollbar-thumb:hover {
-            background: #c4b09a;
+            background: #D65F83;
         }
 
         /* Managed / matchmaker sub-account lists: show ~3 cards, scroll for more */
@@ -856,12 +871,12 @@
         }
 
         .managed-sub-accounts-scroll::-webkit-scrollbar-track {
-            background: #f8f4ef;
+            background: #FFFAF8;
             border-radius: 999px;
         }
 
         .managed-sub-accounts-scroll::-webkit-scrollbar-thumb {
-            background: #d4c4b0;
+            background: #E889A8;
             border-radius: 999px;
         }
 
@@ -1242,8 +1257,9 @@
         }
 
         .pricing-card.featured {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: var(--white);
+            background: var(--primary);
+            color: var(--brand-darkest);
+            border: 2px solid var(--brand-rose);
             transform: scale(1.05);
         }
 
@@ -1301,7 +1317,7 @@
         }
 
         .pricing-card.featured .pricing-features li {
-            border-bottom-color: rgba(255, 255, 255, 0.1);
+            border-bottom-color: rgba(75, 15, 30, 0.15);
         }
 
         .pricing-features li span {
@@ -1325,8 +1341,8 @@
 
         /* Footer */
         .footer {
-            background: var(--text-dark);
-            color: var(--white);
+            background: var(--brand-blush);
+            color: var(--text-dark);
             padding: 4rem 2rem 2rem;
         }
 
@@ -1339,7 +1355,7 @@
         }
 
         .footer-brand .logo-text {
-            color: var(--white);
+            color: var(--text-dark);
             margin-bottom: 1rem;
         }
 
@@ -1385,7 +1401,7 @@
         }
 
         .footer-links a {
-            color: var(--white);
+            color: var(--text-dark);
             opacity: 0.7;
             text-decoration: none;
             transition: opacity 0.3s;
@@ -1550,7 +1566,7 @@
             padding: 1.25rem 1.25rem 0.85rem;
             flex-shrink: 0;
             border-bottom: 1px solid #f0ebe3;
-            background: linear-gradient(180deg, #fffcf9 0%, #ffffff 100%);
+            background: linear-gradient(180deg, #FFFAF8 0%, #ffffff 100%);
         }
 
         .modal.managed-profile-modal .modal-header h2 {
@@ -3170,7 +3186,7 @@
         }
 
         .star-rating {
-            color: #fbbf24;
+            color: #F7D6DC;
             font-size: 1.2rem;
             margin-bottom: 1rem;
         }
@@ -3509,7 +3525,7 @@
         }
 
         .profile-detail-photo--premium {
-            box-shadow: 0 0 0 4px #fde68a, 0 0 0 6px #d97706, 0 8px 24px rgba(217, 119, 6, 0.45);
+            box-shadow: 0 0 0 4px #FBE5EB, 0 0 0 6px #C14B70, 0 8px 24px rgba(193, 75, 112, 0.24);
         }
 
         .verified-badge-large {
@@ -4485,6 +4501,90 @@
     display: none;
 }
 
+@media (min-width: 768px) and (max-width: 1699px) {
+    .mobile-sidebar-root {
+        position: fixed;
+        inset: 0;
+        z-index: 1400;
+    }
+
+    .mobile-sidebar-backdrop {
+        position: absolute;
+        inset: 0;
+        border: none;
+        background: rgba(64, 52, 58, 0.38);
+        cursor: pointer;
+    }
+
+    .mobile-sidebar {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(84vw, 360px);
+        background: #fff;
+        box-shadow: -12px 0 40px rgba(64, 52, 58, 0.18);
+        padding: 18px 22px;
+        overflow-y: auto;
+        animation: mobileSidebarIn 0.28s ease forwards;
+    }
+
+    .mobile-sidebar__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+    }
+
+    .mobile-sidebar__title {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: var(--text-dark);
+    }
+
+    .mobile-sidebar__close {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 999px;
+        background: var(--cream-dark);
+        color: var(--text-dark);
+        cursor: pointer;
+    }
+
+    .mobile-sidebar__link {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: 12px 10px;
+        border: none;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--text-dark);
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .mobile-sidebar__link:hover,
+    .mobile-sidebar__link:active {
+        background: var(--cream-dark);
+        color: var(--primary);
+    }
+
+    .mobile-sidebar__link--danger {
+        color: #dc2626;
+    }
+
+    @keyframes mobileSidebarIn {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+    }
+}
+
 @media (max-width: 767px) {
     html {
         -webkit-tap-highlight-color: transparent;
@@ -4498,7 +4598,7 @@
 
     .mobile-app-header {
         padding-top: env(safe-area-inset-top, 0px);
-        box-shadow: 0 1px 0 rgba(45, 42, 38, 0.06), 0 8px 20px rgba(255, 162, 13, 0.08);
+        box-shadow: 0 1px 0 rgba(45, 42, 38, 0.06), 0 8px 20px rgba(193, 75, 112, 0.08);
         backdrop-filter: saturate(180%) blur(12px);
         background: rgba(255, 255, 255, 0.96);
     }
@@ -4574,7 +4674,7 @@
 
     .mobile-sidebar__link:hover,
     .mobile-sidebar__link:active {
-        background: #fff6e8;
+        background: #FFF1F4;
         color: var(--primary);
     }
 

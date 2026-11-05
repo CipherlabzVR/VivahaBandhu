@@ -54,7 +54,7 @@ export const metadata: Metadata = {
   title: "MyMatch.lk - Find your Perfect Match",
   description: "Join thousands of families who found meaningful connections through our trusted matrimonial platform.",
   icons: {
-    icon: "/favicon.png",
+    icon: "/favicon-rose.png",
   },
   appleWebApp: {
     capable: true,
@@ -70,7 +70,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#ffffff",
+  themeColor: "#C14B70",
 };
 
 export default function RootLayout({

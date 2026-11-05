@@ -139,8 +139,8 @@ function ProfileListRemoveButton({
                 padding: '0.35rem 0.65rem',
                 fontSize: '0.75rem',
                 fontWeight: 600,
-                color: '#b45309',
-                background: '#fff7ed',
+                color: '#8E2B44',
+                background: '#FFF1F4',
                 border: '1px solid #fed7aa',
                 borderRadius: '8px',
                 cursor: removing ? 'wait' : 'pointer',
@@ -197,7 +197,7 @@ function ManagedSubAccountTabBar({
                             minWidth: '76px',
                             padding: '0.5rem',
                             borderRadius: '12px',
-                            border: isActive ? '1px solid rgba(255,162,13,0.45)' : '1px solid #eee',
+                            border: isActive ? '1px solid rgba(193,75,112,0.45)' : '1px solid #eee',
                             background: isActive ? '#fff8ed' : '#fff',
                             cursor: 'pointer',
                         }}
@@ -209,7 +209,7 @@ function ManagedSubAccountTabBar({
                                     height: '44px',
                                     borderRadius: '50%',
                                     overflow: 'hidden',
-                                    border: isActive ? '2px solid var(--primary, #ffa20d)' : '2px solid #fff',
+                                    border: isActive ? '2px solid var(--primary, #C14B70)' : '2px solid #fff',
                                     boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
                                 }}
                             >
@@ -252,7 +252,7 @@ function ManagedSubAccountTabBar({
                                         width: '16px',
                                         height: '16px',
                                         borderRadius: '50%',
-                                        background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
+                                        background: 'linear-gradient(135deg, #FBEFF2, #F7D6DC)',
                                         border: '2px solid #fff',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -282,7 +282,7 @@ function ManagedSubAccountTabBar({
                                 fontSize: '0.68rem',
                                 lineHeight: 1.2,
                                 textAlign: 'center',
-                                color: isActive ? 'var(--primary, #ffa20d)' : '#666',
+                                color: isActive ? 'var(--primary, #C14B70)' : '#666',
                                 fontWeight: isActive ? 600 : 500,
                                 maxWidth: '72px',
                                 overflow: 'hidden',
@@ -2937,8 +2937,8 @@ function ProfilePageContent() {
                                     <span
                                         className="badge"
                                         style={{
-                                            background: '#fffbeb',
-                                            color: '#b45309',
+                                            background: '#FFF5F7',
+                                            color: '#8E2B44',
                                             padding: '0.4rem 1rem',
                                             borderRadius: '20px',
                                             fontSize: '0.85rem',
@@ -2968,7 +2968,7 @@ function ProfilePageContent() {
                                     <span
                                         className="badge"
                                         style={{
-                                            background: subscriptionRemainingInfo?.expired ? '#fef2f2' : '#fff7ed',
+                                            background: subscriptionRemainingInfo?.expired ? '#fef2f2' : '#FFF1F4',
                                             color: subscriptionRemainingInfo?.expired ? '#b91c1c' : '#c2410c',
                                             padding: '0.4rem 1rem',
                                             borderRadius: '20px',
@@ -3139,7 +3139,7 @@ function ProfilePageContent() {
                                 marginBottom: '1.5rem',
                                 padding: '1rem 1.25rem',
                                 borderRadius: '12px',
-                                background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                                background: 'linear-gradient(135deg, #FFF5F7 0%, #FBEFF2 100%)',
                                 border: '1px solid #fcd34d',
                                 color: '#92400e',
                             }}
@@ -3351,7 +3351,7 @@ function ProfilePageContent() {
                                         alignItems: 'center',
                                         gap: '1rem',
                                         padding: '0.85rem 1rem',
-                                        background: '#FDF8F3',
+                                        background: '#FFF8FA',
                                         borderRadius: '10px',
                                         cursor: isSavingPrivacyPref || settingsPickerDraft ? 'wait' : 'pointer',
                                         opacity: isSavingPrivacyPref || settingsPickerDraft ? 0.7 : 1,
@@ -3386,7 +3386,7 @@ function ProfilePageContent() {
                                         alignItems: 'center',
                                         gap: '1rem',
                                         padding: '0.85rem 1rem',
-                                        background: '#FDF8F3',
+                                        background: '#FFF8FA',
                                         borderRadius: '10px',
                                         opacity: isSavingPrivacyPref || settingsPickerDraft ? 0.7 : 1,
                                     }}
@@ -3437,7 +3437,7 @@ function ProfilePageContent() {
                                     alignItems: 'center',
                                     gap: '1rem',
                                     padding: '0.85rem 1rem',
-                                    background: '#FDF8F3',
+                                    background: '#FFF8FA',
                                     borderRadius: '10px',
                                     cursor: isSavingEmailPref || settingsPickerDraft ? 'wait' : 'pointer',
                                     opacity: isSavingEmailPref || settingsPickerDraft ? 0.7 : 1,
@@ -3470,7 +3470,7 @@ function ProfilePageContent() {
                         {/* Preferences */}
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Preferences</h4>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FDF8F3', borderRadius: '10px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '0.85rem 1rem', background: '#FFF8FA', borderRadius: '10px' }}>
                                 <span>
                                     <span style={{ display: 'block', fontWeight: 500 }}>Language</span>
                                     <span style={{ display: 'block', color: '#6b7280', fontSize: '0.85rem' }}>Used across the site interface.</span>
@@ -3491,7 +3491,7 @@ function ProfilePageContent() {
                         <section style={{ marginBottom: '2rem' }}>
                             <h4 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem', color: '#374151' }}>Subscription</h4>
                             {isFamilyParentAccount ? (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user.isSubscribed ? 'linear-gradient(135deg, #FBEFF2, #F7D6DC)' : '#FFF8FA', borderRadius: '10px', flexWrap: 'wrap' }}>
                                     <div>
                                         <div style={{ fontWeight: 600, color: user.isSubscribed ? '#7c2d12' : '#374151' }}>
                                             {user.isSubscribed ? 'Premium — active' : 'Free plan'}
@@ -3522,9 +3522,9 @@ function ProfilePageContent() {
                                     </button>
                                 </div>
                             ) : user.accountType === 'Matchmaker' ? (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: canCreateManagedSubAccount ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankSubAccountAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankSubAccountAwaitingApproval && !canCreateManagedSubAccount ? '1px solid #fcd34d' : undefined }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: canCreateManagedSubAccount ? 'linear-gradient(135deg, #FBEFF2, #F7D6DC)' : bankSubAccountAwaitingApproval ? '#FFF5F7' : '#FFF8FA', borderRadius: '10px', flexWrap: 'wrap', border: bankSubAccountAwaitingApproval && !canCreateManagedSubAccount ? '1px solid #fcd34d' : undefined }}>
                                     <div>
-                                        <div style={{ fontWeight: 600, color: canCreateManagedSubAccount ? '#7c2d12' : bankSubAccountAwaitingApproval ? '#b45309' : '#374151' }}>
+                                        <div style={{ fontWeight: 600, color: canCreateManagedSubAccount ? '#7c2d12' : bankSubAccountAwaitingApproval ? '#8E2B44' : '#374151' }}>
                                             {bankSubAccountAwaitingApproval && !canCreateManagedSubAccount
                                                 ? 'Matchmaker — payment pending approval'
                                                 : 'Matchmaker · pay per client account'}
@@ -3558,9 +3558,9 @@ function ProfilePageContent() {
                                     </div>
                                 </div>
                             ) : (
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #fef3c7, #fde68a)' : bankPremiumAwaitingApproval ? '#fffbeb' : '#FDF8F3', borderRadius: '10px', flexWrap: 'wrap', border: bankPremiumAwaitingApproval && !user?.isSubscribed ? '1px solid #fcd34d' : undefined }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', background: user?.isSubscribed ? 'linear-gradient(135deg, #FBEFF2, #F7D6DC)' : bankPremiumAwaitingApproval ? '#FFF5F7' : '#FFF8FA', borderRadius: '10px', flexWrap: 'wrap', border: bankPremiumAwaitingApproval && !user?.isSubscribed ? '1px solid #fcd34d' : undefined }}>
                                 <div>
-                                    <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : bankPremiumAwaitingApproval ? '#b45309' : '#374151' }}>
+                                    <div style={{ fontWeight: 600, color: user?.isSubscribed ? '#7c2d12' : bankPremiumAwaitingApproval ? '#8E2B44' : '#374151' }}>
                                         {user?.isSubscribed ? (user.subscriptionCancelled ? 'Premium plan — cancelled' : 'Premium plan — active') : bankPremiumAwaitingApproval ? 'Premium — payment pending approval' : 'Free plan'}
                                     </div>
                                     <div style={{ color: '#6b7280', fontSize: '0.85rem', marginTop: 2 }}>
@@ -3578,7 +3578,7 @@ function ProfilePageContent() {
                                                 {subscriptionRemainingDisplay.primary}
                                             </strong>
                                             {subscriptionRemainingDisplay.secondary ? (
-                                                <span style={{ display: 'block', marginTop: 4, color: '#b45309' }}>
+                                                <span style={{ display: 'block', marginTop: 4, color: '#8E2B44' }}>
                                                     {subscriptionRemainingDisplay.secondary}
                                                     {' · '}
                                                     {subscriptionPeriodLabel}
@@ -3607,7 +3607,7 @@ function ProfilePageContent() {
                                         type="button"
                                         onClick={() => setShowCancelSubscriptionModal(true)}
                                         disabled={isCancellingSubscription}
-                                        style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#b45309', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
+                                        style={{ padding: '0.55rem 1rem', borderRadius: '8px', border: '1px solid #d97706', background: 'white', color: '#8E2B44', fontWeight: 600, cursor: isCancellingSubscription ? 'not-allowed' : 'pointer', opacity: isCancellingSubscription ? 0.7 : 1 }}
                                     >
                                         {isCancellingSubscription ? 'Cancelling…' : 'Cancel subscription'}
                                     </button>
@@ -3695,8 +3695,8 @@ function ProfilePageContent() {
                                         style={{
                                             padding: '0.6rem 1.1rem',
                                             borderRadius: '8px',
-                                            border: '1px solid #b45309',
-                                            background: isCancellingSubscription ? '#fde68a' : 'white',
+                                            border: '1px solid #8E2B44',
+                                            background: isCancellingSubscription ? '#F7D6DC' : 'white',
                                             color: '#92400e',
                                             fontWeight: 600,
                                             cursor: isCancellingSubscription ? 'not-allowed' : 'pointer',
@@ -3890,12 +3890,12 @@ function ProfilePageContent() {
                                 : null}
                         </p>
                         {paymentsOn && usesSubAccountSlots && canCreateManagedSubAccount && (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#FFF5F7', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused slot(s). Create a managed profile before purchasing another slot.
                             </p>
                         )}
                         {usesSubAccountSlots && !canCreateManagedSubAccount && (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#FFF5F7', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 {bankSubAccountAwaitingApproval
                                     ? 'Your bank transfer for a sub-account slot is pending admin approval.'
                                     : needsSubAccountPayment
@@ -3932,7 +3932,7 @@ function ProfilePageContent() {
                                     />
                                 ))
                             ) : (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FDF8F3', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: '#FFF8FA', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
                                     <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '1.5rem' }}>
                                         +
                                     </div>
@@ -4064,12 +4064,12 @@ function ProfilePageContent() {
                                 : 'Client profiles appear in browse with a matchmaker badge. Payments are turned off, so you can add client profiles without buying a slot. Messages and interest for each profile are grouped below.'}
                         </p>
                         {paymentsOn && canCreateManagedSubAccount && (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#FFF5F7', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 You have {subSlotsRemaining} unused client-account slot(s). Create a profile before purchasing another slot.
                             </p>
                         )}
                         {needsSubAccountPayment && (
-                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#fffbeb', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                            <p style={{ color: '#92400e', fontSize: '0.88rem', marginBottom: '1rem', background: '#FFF5F7', padding: '0.65rem 0.85rem', borderRadius: '8px', border: '1px solid #fcd34d' }}>
                                 {bankSubAccountAwaitingApproval
                                     ? 'Your bank transfer for a client-account slot is pending admin approval.'
                                     : `Pay for a client account (from ${subAccountPriceLabel}) before creating a profile.`}
@@ -4107,7 +4107,7 @@ function ProfilePageContent() {
                                     />
                                 ))
                             ) : (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.25rem', background: '#FDF8F3', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1.25rem', background: '#FFF8FA', borderRadius: '12px', border: '1px dashed var(--cream-dark)' }}>
                                     <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999', fontSize: '1.5rem' }}>+</div>
                                     <div>
                                         <h5 style={{ fontWeight: 600, marginBottom: '0.25rem', fontSize: '1rem', color: '#666' }}>No client profiles yet</h5>
@@ -4199,7 +4199,7 @@ function ProfilePageContent() {
                             >
                                 <p
                                     style={{
-                                        color: 'var(--primary, #ffa20d)',
+                                        color: 'var(--primary, #C14B70)',
                                         fontSize: '0.85rem',
                                         fontWeight: 600,
                                         margin: 0,
@@ -4246,7 +4246,7 @@ function ProfilePageContent() {
                                                 alignItems: 'center',
                                                 gap: '0.75rem',
                                                 padding: '0.5rem',
-                                                background: '#fdf8f3',
+                                                background: '#FFF8FA',
                                                 borderRadius: '10px',
                                             }}
                                         >
@@ -4373,7 +4373,7 @@ function ProfilePageContent() {
                             >
                                 <p
                                     style={{
-                                        color: 'var(--primary, #ffa20d)',
+                                        color: 'var(--primary, #C14B70)',
                                         fontSize: '0.85rem',
                                         fontWeight: 600,
                                         margin: 0,
@@ -4512,9 +4512,9 @@ function ProfilePageContent() {
                                                                 openModal('profile', undefined, p);
                                                             }
                                                         }}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#FFF8FA', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
                                                         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
-                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#FFF8FA'; }}
                                                         title={`View ${p.firstName} ${p.lastName}'s profile`}
                                                     >
                                                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>
@@ -4594,9 +4594,9 @@ function ProfilePageContent() {
                                                                 openModal('profile', undefined, p);
                                                             }
                                                         }}
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#fdf8f3', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem', background: '#FFF8FA', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s' }}
                                                         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#f8efe2'; }}
-                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#fdf8f3'; }}
+                                                        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#FFF8FA'; }}
                                                         title={`View ${p.firstName} ${p.lastName}'s profile`}
                                                     >
                                                         <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#eee', overflow: 'hidden', flexShrink: 0 }}>

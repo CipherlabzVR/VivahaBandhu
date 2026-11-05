@@ -220,7 +220,7 @@ function SubscriptionPlansContent() {
                                             {desc ? (
                                                 <p className="text-sm text-text-light mb-1">{desc}</p>
                                             ) : null}
-                                            <p className="text-sm text-amber-800">
+                                            <p className="text-sm text-brand-rich">
                                                 {validity ? `Valid ${validity} per profile` : 'Premium per managed profile'}
                                             </p>
                                         </div>

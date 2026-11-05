@@ -126,7 +126,7 @@ export default function ManagedSubAccountActivityCard({
         <div
             style={{
                 padding: '1rem',
-                background: isActive ? '#FDF8F3' : '#f3f4f6',
+                background: isActive ? '#FFF8FA' : '#f3f4f6',
                 borderRadius: '12px',
                 border: isActive ? '1px solid #f1e8dc' : '1px solid #e5e7eb',
                 opacity: isActive ? 1 : 0.92,
@@ -180,12 +180,12 @@ export default function ManagedSubAccountActivityCard({
                         ) : null}
                     </div>
                     {!isActive ? (
-                        <p style={{ color: '#b45309', fontSize: '0.82rem', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
+                        <p style={{ color: '#8E2B44', fontSize: '0.82rem', margin: '0.35rem 0 0', lineHeight: 1.45 }}>
                             Premium ended — pay for a plan again to re-enable this profile in browse.
                         </p>
                     ) : null}
                     {detailLine ? (
-                        <p style={{ color: '#6B6560', fontSize: '0.875rem', wordBreak: 'break-word' }}>{detailLine}</p>
+                        <p style={{ color: '#6E6269', fontSize: '0.875rem', wordBreak: 'break-word' }}>{detailLine}</p>
                     ) : null}
                     {subscriptionLine && isActive ? (
                         <p style={{ color: '#92400e', fontSize: '0.82rem', marginTop: '0.35rem', fontWeight: 500 }}>
@@ -224,7 +224,7 @@ export default function ManagedSubAccountActivityCard({
                         <button
                             type="button"
                             onClick={() => onInterestClick(subAccount.id)}
-                            style={badgeButtonStyle('#fef3c7', '#92400e')}
+                            style={badgeButtonStyle('#FBEFF2', '#92400e')}
                             title="View incoming interest"
                         >
                             {unreadInterest > 0 ? `${unreadInterest} interest` : 'Interest'}

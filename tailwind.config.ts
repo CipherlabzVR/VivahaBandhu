@@ -10,26 +10,43 @@ const config: Config = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#ffa20d',
-          dark: '#d98809',
-          light: '#ffb84d',
+          DEFAULT: '#C14B70',
+          dark: '#A8365A',
+          light: '#E889A8',
+        },
+        brand: {
+          darkest: '#40343A',
+          deep: '#754759',
+          rich: '#A8365A',
+          dark: '#C14B70',
+          DEFAULT: '#D65F83',
+          rose: '#D65F83',
+          light: '#E889A8',
+          blush: '#FBE5EB',
         },
         gold: {
-          DEFAULT: '#ffa20d',
-          light: '#ffb84d',
+          DEFAULT: '#C14B70',
+          light: '#E889A8',
         },
-        /* Brand orange for `orange-500` / `orange-600` utilities (rest keep default palette) */
+        /* Legacy orange utilities use the matching brand shades. */
         orange: {
-          500: '#ffa20d',
-          600: '#d98809',
+          50: '#FFF5F8',
+          200: '#FBE5EB',
+          300: '#F3B9CA',
+          400: '#E889A8',
+          500: '#C14B70',
+          600: '#A8365A',
+          700: '#8A294B',
+          800: '#754759',
+          900: '#40343A',
         },
         cream: {
-          DEFAULT: '#FDF8F3',
-          dark: '#F5EDE3',
+          DEFAULT: '#FFFAF8',
+          dark: '#FBE5EB',
         },
         text: {
-          dark: '#2D2A26',
-          light: '#6B6560',
+          dark: '#40343A',
+          light: '#6E6269',
         },
         white: '#FFFFFF',
       },
@@ -45,7 +62,7 @@ const config: Config = {
         sinhala: ['var(--font-sinhala)', '"Noto Sans Sinhala"', 'sans-serif'],
       },
       boxShadow: {
-        'gold': '0 2px 20px rgba(255, 162, 13, 0.25)',
+        'gold': '0 2px 20px rgba(193, 75, 112, 0.25)',
       },
       keyframes: {
         'heart-pulse': {
@@ -85,7 +102,7 @@ const config: Config = {
         },
         'glass-shine': {
           '0%, 100%': { boxShadow: '0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.6)' },
-          '50%': { boxShadow: '0 8px 40px rgba(255,162,13,0.15), inset 0 1px 0 rgba(255,255,255,0.8)' },
+          '50%': { boxShadow: '0 8px 40px rgba(193,75,112,0.15), inset 0 1px 0 rgba(255,255,255,0.8)' },
         },
       },
       animation: {

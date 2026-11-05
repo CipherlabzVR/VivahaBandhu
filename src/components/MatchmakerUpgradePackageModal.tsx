@@ -78,8 +78,8 @@ export default function MatchmakerUpgradePackageModal({
                                         style={{
                                             padding: '1rem 1.1rem',
                                             borderRadius: '12px',
-                                            border: popular ? '2px solid #f59e0b' : '1px solid #e5e7eb',
-                                            background: popular ? '#fffbeb' : '#fafafa',
+                                            border: popular ? '2px solid #C14B70' : '1px solid #e5e7eb',
+                                            background: popular ? '#FFF5F7' : '#fafafa',
                                         }}
                                     >
                                         <div
@@ -109,7 +109,7 @@ export default function MatchmakerUpgradePackageModal({
                                                             style={{
                                                                 fontSize: '0.72rem',
                                                                 fontWeight: 600,
-                                                                background: '#f59e0b',
+                                                                background: '#C14B70',
                                                                 color: '#fff',
                                                                 padding: '0.15rem 0.5rem',
                                                                 borderRadius: '999px',

@@ -420,7 +420,7 @@ export default function DashboardPage() {
                                                 <circle
                                                     cx="100" cy="100" r="56"
                                                     fill="none"
-                                                    stroke="#F59E0B"
+                                                    stroke="#B23C59"
                                                     strokeWidth="20"
                                                     strokeDasharray={`${stats.totalUserCount > 0 ? (stats.paidMemberCount / stats.totalUserCount) * 351.86 : 0} 351.86`}
                                                     strokeLinecap="round"
@@ -444,7 +444,7 @@ export default function DashboardPage() {
                                                 <span className="legend-value">{stats.activeUserCount}</span>
                                             </div>
                                             <div className="legend-item">
-                                                <span className="legend-dot" style={{ background: '#F59E0B' }} />
+                                                <span className="legend-dot" style={{ background: '#B23C59' }} />
                                                 <span className="legend-label">Premium Members</span>
                                                 <span className="legend-value">{stats.paidMemberCount}</span>
                                             </div>
