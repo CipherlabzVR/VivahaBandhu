@@ -3187,6 +3187,11 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                             </>
                                         ) : (
                                             <>
+                                                {forgotSuccess && (
+                                                    <div style={{ color: '#166534', backgroundColor: '#dcfce7', borderRadius: '6px', padding: '0.6rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
+                                                        {forgotSuccess}
+                                                    </div>
+                                                )}
                                                 <p style={{ fontSize: '0.9rem', color: 'var(--text-light)' }}>
                                                     Enter the 6-digit code sent via <strong>{forgotSentVia}</strong>, then set your new password.
                                                 </p>
@@ -3330,7 +3335,7 @@ export default function Modals({ activeModal, onClose, onSwitch, selectedBlogId 
                                                 {forgotError}
                                             </div>
                                         )}
-                                        {forgotSuccess && (
+                                        {forgotSuccess && forgotStep === 'entry' && (
                                             <div style={{ color: '#166534', backgroundColor: '#dcfce7', borderRadius: '6px', padding: '0.6rem', marginTop: '1rem', fontSize: '0.9rem' }}>
                                                 {forgotSuccess}
                                             </div>

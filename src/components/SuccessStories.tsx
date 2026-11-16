@@ -9,12 +9,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://developerq
 /** Shown when CMS leaves image empty or uploads nothing — always loads from this site. */
 const SUCCESS_STORY_PLACEHOLDER = '/success-story-placeholder.svg';
 
-const DEFAULT_IMAGES = [
-    'https://images.unsplash.com/photo-1519741497674-611481863552?w=400&h=300&fit=crop',
-    'https://images.unsplash.com/photo-1522673607200-164d1b6ce486?w=400&h=300&fit=crop',
-    'https://images.unsplash.com/photo-1529634801-b469c85b2bcc?w=400&h=300&fit=crop',
-];
-
 function resolveStoryImageSrc(raw: unknown): string {
     if (raw == null) return SUCCESS_STORY_PLACEHOLDER;
     const s = String(raw).trim();
@@ -68,12 +62,6 @@ function SuccessStoryQuote({
         </div>
     );
 }
-const FALLBACK_KEYS = [
-    { couple: 'story1Couple' as const, quote: 'story1Quote' as const },
-    { couple: 'story2Couple' as const, quote: 'story2Quote' as const },
-    { couple: 'story3Couple' as const, quote: 'story3Quote' as const },
-] as const;
-
 const HEART_PATH =
     'M 5 25 ' +
     'C 15 45, 45 50, 60 35 ' +
@@ -126,11 +114,10 @@ export default function SuccessStories() {
     const pathRef = useRef<SVGPathElement>(null);
     const [pathLength, setPathLength] = useState<number | null>(null);
     const [stories, setStories] = useState<StoryItem[]>([]);
-    const [useFallback, setUseFallback] = useState(false);
     const [page, setPage] = useState(0);
     const { t, language } = useLanguage();
 
-    const totalItems = useFallback ? FALLBACK_KEYS.length : stories.length;
+    const totalItems = stories.length;
     const totalPages = Math.max(1, Math.ceil(totalItems / SUCCESS_STORIES_PAGE_SIZE));
 
     useEffect(() => {
@@ -139,20 +126,9 @@ export default function SuccessStories() {
 
     const pageOffset = page * SUCCESS_STORIES_PAGE_SIZE;
 
-    const fallbackSlice = useMemo(
-        () =>
-            useFallback
-                ? FALLBACK_KEYS.slice(pageOffset, pageOffset + SUCCESS_STORIES_PAGE_SIZE)
-                : [],
-        [useFallback, pageOffset]
-    );
-
     const storiesSlice = useMemo(
-        () =>
-            !useFallback
-                ? stories.slice(pageOffset, pageOffset + SUCCESS_STORIES_PAGE_SIZE)
-                : [],
-        [useFallback, stories, pageOffset]
+        () => stories.slice(pageOffset, pageOffset + SUCCESS_STORIES_PAGE_SIZE),
+        [stories, pageOffset]
     );
 
     useEffect(() => {
@@ -165,12 +141,11 @@ export default function SuccessStories() {
                     setStories(
                         rawList.map((row: Record<string, unknown>) => normalizeSuccessStory(row))
                     );
-                    setUseFallback(false);
                 } else {
-                    setUseFallback(true);
+                    setStories([]);
                 }
             } catch {
-                setUseFallback(true);
+                setStories([]);
             }
         };
         fetchStories();
@@ -248,34 +223,7 @@ export default function SuccessStories() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 lg:gap-10">
-                    {useFallback
-                        ? fallbackSlice.map(({ couple, quote }, i) => {
-                            const imgIdx = pageOffset + i;
-                            return (
-                            <article
-                                key={`${couple}-${page}-${i}`}
-                                className="relative bg-slate-50 border border-orange-200/50 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl hover:border-orange-300/60 transition-all duration-300 flex flex-col"
-                            >
-                                <div className="relative w-full aspect-[4/3] bg-slate-200">
-                                    <Image
-                                        src={DEFAULT_IMAGES[imgIdx % DEFAULT_IMAGES.length] || DEFAULT_IMAGES[0]}
-                                        alt={t(couple)}
-                                        fill
-                                        className="object-cover"
-                                        sizes="(max-width: 768px) 100vw, 33vw"
-                                    />
-                                </div>
-                                <div className="relative p-6 md:p-8 flex flex-col flex-1">
-                                    <div className="absolute top-6 right-8 text-orange-400/40 text-4xl font-serif leading-none" aria-hidden>{'"'}</div>
-                                    <SuccessStoryQuote text={t(quote)} t={t} />
-                                    <p className="text-orange-500 font-semibold text-lg font-playfair">
-                                        — {t(couple)}
-                                    </p>
-                                </div>
-                            </article>
-                            );
-                        })
-                        : storiesSlice.map((story) => {
+                    {storiesSlice.map((story) => {
                             const name = resolveStoryCoupleName(story, language);
                             const quoteText = resolveStoryQuote(story, language);
                             const imgSrc = resolveStoryImageSrc(story.imageUrl);
@@ -298,12 +246,12 @@ export default function SuccessStories() {
                                         <div className="absolute top-6 right-8 text-orange-400/40 text-4xl font-serif leading-none" aria-hidden>{'"'}</div>
                                         <SuccessStoryQuote text={quoteText} t={t} />
                                         <p className="text-orange-500 font-semibold text-lg font-playfair">
-                                            — {name}
-                                        </p>
-                                    </div>
-                                </article>
+                                        — {name}
+                                    </p>
+                                </div>
+                            </article>
                             );
-                        })}
+                    })}
                 </div>
 
                 {totalPages > 1 && (
