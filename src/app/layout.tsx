@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Playfair_Display, Source_Sans_3, Pacifico, Dancing_Script, Noto_Sans_Sinhala } from "next/font/google";
 import { AuthProvider } from '../context/AuthContext';
 import { MatrimonialPaymentsProvider } from '../context/MatrimonialPaymentsContext';
@@ -81,6 +82,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <Script id="gtm-datalayer" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());`}
+        </Script>
+        <Script
+          src="https://www.googletagmanager.com/gtm.js?id=GTM-NNX6W2BG"
+          strategy="afterInteractive"
+        />
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
         <link
