@@ -41,6 +41,14 @@ export default function Home() {
   const [isConvertingToMatchmaker, setIsConvertingToMatchmaker] = useState(false);
   const [convertToMatchmakerError, setConvertToMatchmakerError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openSignup = params.get('signup') === '1' || window.location.hash === '#signup';
+    if (!openSignup) return;
+    setRegisterAsMatchmaker(false);
+    setActiveModal('register');
+  }, []);
+
     const openModal = (modal: 'login' | 'register' | 'subscription' | 'profile' | 'blog' | 'verify', blogId?: number, profile?: any) => {
     if (modal === 'subscription' && !paymentsRequired) return;
     setActiveModal(modal);
